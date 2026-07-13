@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\build\BankMore.API.props" />
-</Project>

@@ -1,0 +1,103 @@
+package intelligence
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/devdsfr/cornerlab/internal/repository"
+	"github.com/devdsfr/cornerlab/internal/usecase"
+)
+
+type StabilityUsecase struct {
+	matches repository.MatchRepository
+	teams   repository.TeamRepository
+	leagues repository.LeagueRepository
+}
+
+func NewStabilityUsecase(matches repository.MatchRepository, teams repository.TeamRepository, leagues repository.LeagueRepository) *StabilityUsecase {
+	return &StabilityUsecase{matches: matches, teams: teams, leagues: leagues}
+}
+
+// StabilityReport traduz o "Índice de Estabilidade" (0 a 100) do documento de
+// requisitos: metade do peso vem do coeficiente de variação (quanto menor a
+// variabilidade da amostra, mais estável) e metade vem da frequência média com que
+// a equipe supera as linhas de escanteios usuais (4 a 10) — ambos derivados
+// exclusivamente dos jogos históricos analisados.
+type StabilityReport struct {
+	TeamID      int64   `json:"team_id"`
+	TeamName    string  `json:"team_name"`
+	Score       float64 `json:"score"`
+	Label       string  `json:"label"`
+	Mean        float64 `json:"mean"`
+	StdDev      float64 `json:"std_dev"`
+	CV          float64 `json:"coefficient_of_variation"`
+	AvgFreqAboveLines float64 `json:"avg_frequency_above_lines_pct"`
+	Meta        Meta    `json:"meta"`
+}
+
+func (u *StabilityUsecase) Compute(ctx context.Context, teamID int64, leagueID int64, limit int) (*StabilityReport, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	team, err := u.teams.GetByID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("equipe não encontrada: %w", err)
+	}
+	league, err := u.leagues.GetByID(ctx, leagueID)
+	if err != nil {
+		return nil, fmt.Errorf("campeonato não encontrado: %w", err)
+	}
+
+	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{TeamID: teamID, LeagueID: &leagueID, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	values := make([]int, 0, len(views))
+	for _, v := range views {
+		values = append(values, v.TotalCorners)
+	}
+	summary := usecase.Summarize(values)
+	freqs := usecase.FrequencyAboveThresholds(values, defaultThresholds)
+
+	totalPct := 0.0
+	for _, f := range freqs {
+		totalPct += f.Pct
+	}
+	avgFreqPct := 0.0
+	if len(freqs) > 0 {
+		avgFreqPct = totalPct / float64(len(freqs))
+	}
+
+	cvScore := clamp01(1 - summary.CoefficientOfVar)
+	freqScore := clamp01(avgFreqPct / 100)
+	score := round2(100 * (0.5*cvScore + 0.5*freqScore))
+
+	label := "Baixa estabilidade"
+	switch {
+	case score >= 85:
+		label = "Excelente estabilidade"
+	case score >= 70:
+		label = "Boa estabilidade"
+	case score >= 50:
+		label = "Estabilidade moderada"
+	}
+
+	return &StabilityReport{
+		TeamID:            team.ID,
+		TeamName:          team.Name,
+		Score:             score,
+		Label:             label,
+		Mean:              summary.Mean,
+		StdDev:            summary.StdDev,
+		CV:                summary.CoefficientOfVar,
+		AvgFreqAboveLines: round2(avgFreqPct),
+		Meta: Meta{
+			LeagueID:      league.ID,
+			LeagueName:    league.Name,
+			Period:        fmt.Sprintf("Últimos %d jogos", limit),
+			GamesAnalyzed: len(views),
+			UpdatedAt:     time.Now(),
+		},
+	}, nil
+}

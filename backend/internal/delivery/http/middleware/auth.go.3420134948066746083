@@ -1,0 +1,38 @@
+package middleware
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/devdsfr/cornerlab/pkg/jwtutil"
+)
+
+const ContextUserIDKey = "user_id"
+
+func AuthRequired(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if header == "" || !strings.HasPrefix(header, "Bearer ") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token ausente"})
+			return
+		}
+		tokenStr := strings.TrimPrefix(header, "Bearer ")
+		claims, err := jwtutil.ParseToken(secret, tokenStr)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token inválido"})
+			return
+		}
+		c.Set(ContextUserIDKey, claims.UserID)
+		c.Next()
+	}
+}
+
+func UserIDFromContext(c *gin.Context) int64 {
+	v, ok := c.Get(ContextUserIDKey)
+	if !ok {
+		return 0
+	}
+	id, _ := v.(int64)
+	return id
+}

@@ -1,0 +1,104 @@
+package intelligence
+
+import (
+	"context"
+	"time"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/repository"
+)
+
+type ExecutiveDashboardUsecase struct {
+	leagues  repository.LeagueRepository
+	ranking  *RankingUsecase
+	strategy repository.StrategyHistoryRepository
+}
+
+func NewExecutiveDashboardUsecase(leagues repository.LeagueRepository, ranking *RankingUsecase, strategy repository.StrategyHistoryRepository) *ExecutiveDashboardUsecase {
+	return &ExecutiveDashboardUsecase{leagues: leagues, ranking: ranking, strategy: strategy}
+}
+
+type TopFilterEntry struct {
+	ID        int64   `json:"id"`
+	LeagueID  *int64  `json:"league_id"`
+	ROI       float64 `json:"roi"`
+	Profit    float64 `json:"profit"`
+	HitRate   float64 `json:"hit_rate"`
+	CreatedAt string  `json:"created_at"`
+}
+
+type ExecutiveDashboard struct {
+	TopConsistent  []RankingEntry    `json:"top_consistent"`
+	TopConcedeMost []RankingEntry    `json:"top_concede_most"`
+	TopGrowth      []RankingEntry    `json:"top_growth"`
+	TopDecline     []RankingEntry    `json:"top_decline"`
+	TopLeagues     []domain.League   `json:"top_leagues"`
+	TopFilters     []TopFilterEntry  `json:"top_filters"`
+	Meta           Meta              `json:"meta"`
+}
+
+func (u *ExecutiveDashboardUsecase) Compute(ctx context.Context, leagueID int64, seasonIDs []int64, limit int) (*ExecutiveDashboard, error) {
+	league, err := u.leagues.GetByID(ctx, leagueID)
+	if err != nil {
+		return nil, err
+	}
+
+	consistent, err := u.ranking.Compute(ctx, leagueID, seasonIDs, MetricConsistency, limit, 10)
+	if err != nil {
+		return nil, err
+	}
+	concedeMost, err := u.ranking.Compute(ctx, leagueID, seasonIDs, MetricConcededMost, limit, 10)
+	if err != nil {
+		return nil, err
+	}
+	growth, err := u.ranking.Compute(ctx, leagueID, seasonIDs, MetricGrowth, limit, 10)
+	if err != nil {
+		return nil, err
+	}
+	decline, err := u.ranking.Compute(ctx, leagueID, seasonIDs, MetricDecline, limit, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	leagues, err := u.leagues.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(leagues) > 10 {
+		leagues = leagues[:10]
+	}
+
+	topFiltersRaw, err := u.strategy.TopPerforming(ctx, 10)
+	if err != nil {
+		return nil, err
+	}
+	topFilters := make([]TopFilterEntry, 0, len(topFiltersRaw))
+	for _, f := range topFiltersRaw {
+		roi, profit, hitRate := extractBacktestSummary(f.Result)
+		topFilters = append(topFilters, TopFilterEntry{
+			ID:        f.ID,
+			LeagueID:  f.LeagueID,
+			ROI:       roi,
+			Profit:    profit,
+			HitRate:   hitRate,
+			CreatedAt: f.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	return &ExecutiveDashboard{
+		TopConsistent:  consistent.Entries,
+		TopConcedeMost: concedeMost.Entries,
+		TopGrowth:      growth.Entries,
+		TopDecline:     decline.Entries,
+		TopLeagues:     leagues,
+		TopFilters:     topFilters,
+		Meta: Meta{
+			LeagueID:      league.ID,
+			LeagueName:    league.Name,
+			SeasonIDs:     seasonIDs,
+			Period:        periodLabel(limit),
+			GamesAnalyzed: 0,
+			UpdatedAt:     time.Now(),
+		},
+	}, nil
+}

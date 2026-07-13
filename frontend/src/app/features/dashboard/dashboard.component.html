@@ -1,0 +1,183 @@
+<div class="max-w-6xl mx-auto flex flex-col gap-6">
+  <h1 class="text-xl font-semibold text-slate-100">Dashboard Principal</h1>
+
+  <div class="cl-card p-4 flex flex-wrap items-end gap-4">
+    <mat-form-field appearance="outline" class="w-56">
+      <mat-label>Campeonato</mat-label>
+      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()">
+        @for (l of leagues(); track l.id) {
+          <mat-option [value]="l.id">{{ l.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-44">
+      <mat-label>Temporada</mat-label>
+      <mat-select [(ngModel)]="selectedSeasonId">
+        <mat-option [value]="undefined">Todas</mat-option>
+        @for (s of seasons(); track s.id) {
+          <mat-option [value]="s.id">{{ s.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-64">
+      <mat-label>Equipe</mat-label>
+      <mat-select [(ngModel)]="selectedTeamId">
+        @for (t of teams(); track t.id) {
+          <mat-option [value]="t.id">{{ t.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-button-toggle-group [(ngModel)]="limit">
+      <mat-button-toggle [value]="5">5</mat-button-toggle>
+      <mat-button-toggle [value]="10">10</mat-button-toggle>
+      <mat-button-toggle [value]="15">15</mat-button-toggle>
+      <mat-button-toggle [value]="20">20</mat-button-toggle>
+    </mat-button-toggle-group>
+
+    <button mat-flat-button color="primary" (click)="runDashboard()" [disabled]="!selectedTeamId || loading()">
+      Analisar
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+  }
+
+  @if (error()) {
+    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+  }
+
+  @if (result(); as r) {
+    <div class="cl-card p-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-medium">{{ r.team.name }}</h2>
+        <span class="text-sm text-slate-400">{{ r.period }} · amostra de {{ r.sample_size }} jogos</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-2">Escanteios conquistados</h3>
+        <dl class="grid grid-cols-2 gap-y-1 text-sm">
+          <dt class="text-slate-400">Média</dt><dd>{{ r.corners_for.mean }}</dd>
+          <dt class="text-slate-400">Maior</dt><dd>{{ r.corners_for.max }}</dd>
+          <dt class="text-slate-400">Menor</dt><dd>{{ r.corners_for.min }}</dd>
+          <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.corners_for.std_dev }}</dd>
+          <dt class="text-slate-400">Mediana</dt><dd>{{ r.corners_for.median }}</dd>
+          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_for.mode.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Total</dt><dd>{{ r.corners_for.total }}</dd>
+        </dl>
+      </div>
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-2">Escanteios sofridos</h3>
+        <dl class="grid grid-cols-2 gap-y-1 text-sm">
+          <dt class="text-slate-400">Média</dt><dd>{{ r.corners_against.mean }}</dd>
+          <dt class="text-slate-400">Maior</dt><dd>{{ r.corners_against.max }}</dd>
+          <dt class="text-slate-400">Menor</dt><dd>{{ r.corners_against.min }}</dd>
+          <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.corners_against.std_dev }}</dd>
+          <dt class="text-slate-400">Mediana</dt><dd>{{ r.corners_against.median }}</dd>
+          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_against.mode.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Total</dt><dd>{{ r.corners_against.total }}</dd>
+        </dl>
+      </div>
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-2">Total de escanteios (saldo: {{ r.balance }})</h3>
+        <dl class="grid grid-cols-2 gap-y-1 text-sm">
+          <dt class="text-slate-400">Média</dt><dd>{{ r.total_corners.mean }}</dd>
+          <dt class="text-slate-400">Maior</dt><dd>{{ r.total_corners.max }}</dd>
+          <dt class="text-slate-400">Menor</dt><dd>{{ r.total_corners.min }}</dd>
+          <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.total_corners.std_dev }}</dd>
+          <dt class="text-slate-400">Consistência</dt><dd>{{ r.total_corners.consistency_index }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-3">Frequências (total de escanteios acima de N)</h3>
+        <table class="w-full text-sm">
+          <thead class="text-slate-400 text-left">
+            <tr><th class="font-normal">Limite</th><th class="font-normal">Ocorrências</th><th class="font-normal">%</th></tr>
+          </thead>
+          <tbody>
+            @for (f of r.frequencies; track f.threshold) {
+              <tr class="border-t border-slate-800">
+                <td class="py-1">Acima de {{ f.threshold }}</td>
+                <td>{{ f.count }}/{{ f.total }}</td>
+                <td>{{ f.pct }}%</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-3">Tendência (total de escanteios por jogo)</h3>
+        <cl-simple-chart type="line" [labels]="trendLabels()" [datasets]="[{label: 'Escanteios', data: r.trend}]"></cl-simple-chart>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      @if (r.home_stats) {
+        <div class="cl-card p-4">
+          <h3 class="text-sm text-slate-400 mb-2">Casa</h3>
+          <dl class="grid grid-cols-2 gap-y-1 text-sm">
+            <dt class="text-slate-400">Amostra</dt><dd>{{ r.home_stats.sample_size }}</dd>
+            <dt class="text-slate-400">Média</dt><dd>{{ r.home_stats.mean }}</dd>
+            <dt class="text-slate-400">Maior</dt><dd>{{ r.home_stats.max }}</dd>
+            <dt class="text-slate-400">Menor</dt><dd>{{ r.home_stats.min }}</dd>
+            <dt class="text-slate-400">Consistência</dt><dd>{{ r.home_stats.consistency }}</dd>
+          </dl>
+        </div>
+      }
+      @if (r.away_stats) {
+        <div class="cl-card p-4">
+          <h3 class="text-sm text-slate-400 mb-2">Fora</h3>
+          <dl class="grid grid-cols-2 gap-y-1 text-sm">
+            <dt class="text-slate-400">Amostra</dt><dd>{{ r.away_stats.sample_size }}</dd>
+            <dt class="text-slate-400">Média</dt><dd>{{ r.away_stats.mean }}</dd>
+            <dt class="text-slate-400">Maior</dt><dd>{{ r.away_stats.max }}</dd>
+            <dt class="text-slate-400">Menor</dt><dd>{{ r.away_stats.min }}</dd>
+            <dt class="text-slate-400">Consistência</dt><dd>{{ r.away_stats.consistency }}</dd>
+          </dl>
+        </div>
+      }
+    </div>
+
+    <div class="cl-card p-4">
+      <h3 class="text-sm text-slate-400 mb-3">Últimos jogos</h3>
+      <table mat-table [dataSource]="r.recent_matches" class="w-full !bg-transparent">
+        <ng-container matColumnDef="match_date">
+          <th mat-header-cell *matHeaderCellDef>Data</th>
+          <td mat-cell *matCellDef="let m">{{ m.match_date | date:'dd/MM/yyyy' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="opponent">
+          <th mat-header-cell *matHeaderCellDef>Adversário</th>
+          <td mat-cell *matCellDef="let m">{{ m.opponent.name }} ({{ m.opponent_tier }})</td>
+        </ng-container>
+        <ng-container matColumnDef="is_home">
+          <th mat-header-cell *matHeaderCellDef>Mando</th>
+          <td mat-cell *matCellDef="let m">{{ m.is_home ? 'Casa' : 'Fora' }}</td>
+        </ng-container>
+        <ng-container matColumnDef="corners_for">
+          <th mat-header-cell *matHeaderCellDef>A favor</th>
+          <td mat-cell *matCellDef="let m">{{ m.corners_for }}</td>
+        </ng-container>
+        <ng-container matColumnDef="corners_against">
+          <th mat-header-cell *matHeaderCellDef>Sofridos</th>
+          <td mat-cell *matCellDef="let m">{{ m.corners_against }}</td>
+        </ng-container>
+        <ng-container matColumnDef="total_corners">
+          <th mat-header-cell *matHeaderCellDef>Total</th>
+          <td mat-cell *matCellDef="let m">{{ m.total_corners }}</td>
+        </ng-container>
+        <tr mat-header-row *matHeaderRowDef="matchColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: matchColumns;"></tr>
+      </table>
+    </div>
+
+    <p class="cl-disclaimer">Estatísticas baseadas em dados históricos. Não constituem recomendação de aposta.</p>
+  }
+</div>

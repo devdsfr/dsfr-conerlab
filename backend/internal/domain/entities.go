@@ -1,0 +1,127 @@
+package domain
+
+import (
+	"fmt"
+	"time"
+)
+
+// League representa um campeonato (ex: Brasileirão Série A)
+type League struct {
+	ID        int64     `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name"`
+	Country   string    `json:"country" db:"country"`
+	Tier      string    `json:"tier" db:"tier"` // ex: G6, G4 etc para classificação de força
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+// Season representa uma temporada de um campeonato (ex: 2024)
+type Season struct {
+	ID       int64  `json:"id" db:"id"`
+	LeagueID int64  `json:"league_id" db:"league_id"`
+	Year     int    `json:"year" db:"year"`
+	Label    string `json:"label" db:"label"` // ex: "2024" ou "2024/2025"
+}
+
+// Team representa uma equipe
+type Team struct {
+	ID        int64     `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name"`
+	ShortName string    `json:"short_name" db:"short_name"`
+	Country   string    `json:"country" db:"country"`
+	Tier      string    `json:"tier" db:"tier"` // força do adversário (ex: G6)
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+// Match representa uma partida com dados de escanteios (mercado único do MVP)
+type Match struct {
+	ID          int64     `json:"id" db:"id"`
+	LeagueID    int64     `json:"league_id" db:"league_id"`
+	SeasonID    int64     `json:"season_id" db:"season_id"`
+	Round       int       `json:"round" db:"round"`
+	MatchDate   time.Time `json:"match_date" db:"match_date"`
+	HomeTeamID  int64     `json:"home_team_id" db:"home_team_id"`
+	AwayTeamID  int64     `json:"away_team_id" db:"away_team_id"`
+	HomeCorners int       `json:"home_corners" db:"home_corners"`
+	AwayCorners int       `json:"away_corners" db:"away_corners"`
+	HomeGoals   int       `json:"home_goals" db:"home_goals"`
+	AwayGoals   int       `json:"away_goals" db:"away_goals"`
+	// CornerOdds mapeia "linha" (ex: "4.5", "5.5" ... "10.5") -> odd histórica registrada
+	// para o mercado "mais de X escanteios". Usado pelo motor de filtros/backtesting e
+	// pelo simulador financeiro para calcular ROI/yield/lucro de forma reproduzível.
+	CornerOdds map[string]float64 `json:"corner_odds" db:"corner_odds"`
+	CreatedAt  time.Time          `json:"created_at" db:"created_at"`
+}
+
+// OddForThreshold retorna a odd histórica para "mais de N escanteios" (equivalente à
+// linha N+0.5), e um bool indicando se a odd está disponível.
+func (m Match) OddForThreshold(threshold int) (float64, bool) {
+	if m.CornerOdds == nil {
+		return 0, false
+	}
+	key := fmt.Sprintf("%d.5", threshold)
+	v, ok := m.CornerOdds[key]
+	return v, ok
+}
+
+// TotalCorners retorna o total de escanteios da partida.
+func (m Match) TotalCorners() int {
+	return m.HomeCorners + m.AwayCorners
+}
+
+// TeamMatchView é uma visão "por equipe" de uma partida — usada para estatísticas
+// de uma equipe específica (a favor/sofridos, mandante/visitante).
+type TeamMatchView struct {
+	MatchID        int64     `json:"match_id"`
+	MatchDate      time.Time `json:"match_date"`
+	Opponent       Team      `json:"opponent"`
+	IsHome         bool      `json:"is_home"`
+	CornersFor     int       `json:"corners_for"`
+	CornersAgainst int       `json:"corners_against"`
+	TotalCorners   int       `json:"total_corners"`
+	OpponentTier   string    `json:"opponent_tier"`
+}
+
+// User representa um usuário da plataforma
+type User struct {
+	ID           int64     `json:"id" db:"id"`
+	Name         string    `json:"name" db:"name"`
+	Email        string    `json:"email" db:"email"`
+	PasswordHash string    `json:"-" db:"password_hash"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+// SavedFilter representa um filtro personalizado salvo pelo usuário (Módulo 3)
+type SavedFilter struct {
+	ID          int64     `json:"id" db:"id"`
+	UserID      int64     `json:"user_id" db:"user_id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	Definition  string    `json:"definition" db:"definition"` // JSON serializado do FilterCriteria
+	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// BetStatus representa o status de uma aposta registrada
+type BetStatus string
+
+const (
+	BetStatusPending BetStatus = "pending"
+	BetStatusWon     BetStatus = "won"
+	BetStatusLost    BetStatus = "lost"
+	BetStatusVoid    BetStatus = "void"
+)
+
+// Bet representa uma aposta registrada manualmente pelo usuário (Módulo 5)
+type Bet struct {
+	ID         int64     `json:"id" db:"id"`
+	UserID     int64     `json:"user_id" db:"user_id"`
+	MatchLabel string    `json:"match_label" db:"match_label"`
+	LeagueID   *int64    `json:"league_id" db:"league_id"`
+	Market     string    `json:"market" db:"market"`
+	Odd        float64   `json:"odd" db:"odd"`
+	Stake      float64   `json:"stake" db:"stake"`
+	Status     BetStatus `json:"status" db:"status"`
+	ProfitLoss float64   `json:"profit_loss" db:"profit_loss"`
+	EventDate  time.Time `json:"event_date" db:"event_date"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+}

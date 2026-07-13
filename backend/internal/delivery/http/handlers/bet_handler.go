@@ -1,0 +1,115 @@
+package handlers
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/devdsfr/cornerlab/internal/delivery/http/dto"
+	"github.com/devdsfr/cornerlab/internal/delivery/http/middleware"
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/usecase"
+	"github.com/gin-gonic/gin"
+)
+
+type BetHandler struct {
+	bets *usecase.BetUsecase
+}
+
+func NewBetHandler(bets *usecase.BetUsecase) *BetHandler {
+	return &BetHandler{bets: bets}
+}
+
+// Create godoc
+// @Summary Registrar aposta (Módulo 5)
+// @Tags bets
+// @Accept json
+// @Produce json
+// @Param request body dto.BetRequest true "Aposta"
+// @Success 201 {object} domain.Bet
+// @Router /api/v1/bets [post]
+func (h *BetHandler) Create(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	var req dto.BetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	eventDate, err := time.Parse("2006-01-02", req.EventDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "event_date deve estar no formato AAAA-MM-DD"})
+		return
+	}
+	status := domain.BetStatusPending
+	if req.Status != "" {
+		status = domain.BetStatus(req.Status)
+	}
+
+	bet := &domain.Bet{
+		UserID:     userID,
+		MatchLabel: req.MatchLabel,
+		LeagueID:   req.LeagueID,
+		Market:     req.Market,
+		Odd:        req.Odd,
+		Stake:      req.Stake,
+		Status:     status,
+		EventDate:  eventDate,
+	}
+	if err := h.bets.Register(c.Request.Context(), bet); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, bet)
+}
+
+// List godoc
+// @Summary Listar histórico de apostas
+// @Tags bets
+// @Produce json
+// @Success 200 {array} domain.Bet
+// @Router /api/v1/bets [get]
+func (h *BetHandler) List(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	bets, err := h.bets.List(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, bets)
+}
+
+// Dashboard godoc
+// @Summary Dashboard financeiro (Módulo 5 / Módulo 8)
+// @Tags bets
+// @Produce json
+// @Success 200 {object} usecase.FinancialDashboard
+// @Router /api/v1/bets/dashboard [get]
+func (h *BetHandler) Dashboard(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	result, err := h.bets.FinancialDashboard(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// Delete godoc
+// @Summary Excluir aposta
+// @Tags bets
+// @Param id path int true "Bet ID"
+// @Success 204
+// @Router /api/v1/bets/{id} [delete]
+func (h *BetHandler) Delete(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})
+		return
+	}
+	if err := h.bets.Delete(c.Request.Context(), id, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

@@ -1,0 +1,172 @@
+<div class="max-w-6xl mx-auto flex flex-col gap-6">
+  <h1 class="text-xl font-semibold text-slate-100">Simulador de Filtros</h1>
+  <p class="text-sm text-slate-400 -mt-4">Monte critérios e rode o backtest sobre o histórico de jogos. A plataforma nunca recomenda apostas — apenas mede o desempenho histórico do filtro.</p>
+
+  <div class="cl-card p-4 flex flex-col gap-4">
+    <div class="flex flex-wrap items-end gap-4">
+      <mat-form-field appearance="outline" class="w-56">
+        <mat-label>Campeonato</mat-label>
+        <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()">
+          @for (l of leagues(); track l.id) {
+            <mat-option [value]="l.id">{{ l.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-64">
+        <mat-label>Temporadas (backtest)</mat-label>
+        <mat-select [(ngModel)]="selectedSeasonIds" multiple>
+          @for (s of seasons(); track s.id) {
+            <mat-option [value]="s.id">{{ s.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-64">
+        <mat-label>Equipe (opcional)</mat-label>
+        <mat-select [(ngModel)]="selectedTeamId">
+          <mat-option [value]="undefined">Todas as equipes</mat-option>
+          @for (t of teams(); track t.id) {
+            <mat-option [value]="t.id">{{ t.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div class="flex flex-wrap items-end gap-4">
+      <mat-form-field appearance="outline" class="w-40">
+        <mat-label>Últimos jogos</mat-label>
+        <input matInput type="number" [(ngModel)]="lastNGames" min="0" placeholder="ex: 10">
+      </mat-form-field>
+
+      <div>
+        <div class="text-xs text-slate-400 mb-1">Mando</div>
+        <mat-button-toggle-group [(ngModel)]="homeAway">
+          <mat-button-toggle value="">Qualquer</mat-button-toggle>
+          <mat-button-toggle value="home">Casa</mat-button-toggle>
+          <mat-button-toggle value="away">Fora</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
+
+      <mat-form-field appearance="outline" class="w-52">
+        <mat-label>Acima de (escanteios)</mat-label>
+        <input matInput type="number" [(ngModel)]="cornersThreshold" min="1">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-44">
+        <mat-label>Contra equipes</mat-label>
+        <mat-select [(ngModel)]="opponentTier">
+          <mat-option value="">Qualquer</mat-option>
+          <mat-option value="G6">G6</mat-option>
+          <mat-option value="G12">G12</mat-option>
+          <mat-option value="Z4">Z4</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-40">
+        <mat-label>Odds máximas</mat-label>
+        <input matInput type="number" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-36">
+        <mat-label>Stake</mat-label>
+        <input matInput type="number" [(ngModel)]="stake" min="1">
+      </mat-form-field>
+
+      <button mat-flat-button color="primary" (click)="runFilter()" [disabled]="!selectedLeagueId || loading()">
+        Executar backtest
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+  }
+  @if (error()) {
+    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+  }
+
+  @if (result(); as r) {
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Partidas encontradas</div>
+        <div class="text-2xl font-semibold">{{ r.match_count }}</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Taxa de acerto</div>
+        <div class="text-2xl font-semibold text-cornerlab-primary">{{ r.hit_rate }}%</div>
+        <div class="text-xs text-slate-500">{{ r.hits }} acertos / {{ r.misses }} erros</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">ROI / Yield</div>
+        <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.roi >= 0" [class.text-red-400]="r.roi < 0">{{ r.roi }}%</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Lucro (unidades de stake)</div>
+        <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.profit >= 0" [class.text-red-400]="r.profit < 0">{{ r.profit }}</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Média de escanteios</div>
+        <div class="text-xl font-semibold">{{ r.average_corners }}</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Maior sequência (acertos)</div>
+        <div class="text-xl font-semibold">{{ r.longest_win_streak }}</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Maior sequência (erros)</div>
+        <div class="text-xl font-semibold">{{ r.longest_lose_streak }}</div>
+      </div>
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Drawdown máximo</div>
+        <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
+      </div>
+    </div>
+
+    <div class="cl-card p-4">
+      <h3 class="text-sm text-slate-400 mb-3">Ocorrências ({{ r.entries.length }})</h3>
+      <div class="max-h-96 overflow-auto">
+        <table mat-table [dataSource]="r.entries" class="w-full !bg-transparent">
+          <ng-container matColumnDef="match_date">
+            <th mat-header-cell *matHeaderCellDef>Data</th>
+            <td mat-cell *matCellDef="let e">{{ e.match_date }}</td>
+          </ng-container>
+          <ng-container matColumnDef="team">
+            <th mat-header-cell *matHeaderCellDef>Equipe</th>
+            <td mat-cell *matCellDef="let e">{{ e.team }}</td>
+          </ng-container>
+          <ng-container matColumnDef="opponent">
+            <th mat-header-cell *matHeaderCellDef>Adversário</th>
+            <td mat-cell *matCellDef="let e">{{ e.opponent }}</td>
+          </ng-container>
+          <ng-container matColumnDef="is_home">
+            <th mat-header-cell *matHeaderCellDef>Mando</th>
+            <td mat-cell *matCellDef="let e">{{ e.is_home ? 'Casa' : 'Fora' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="total_corners">
+            <th mat-header-cell *matHeaderCellDef>Escanteios</th>
+            <td mat-cell *matCellDef="let e">{{ e.total_corners }}</td>
+          </ng-container>
+          <ng-container matColumnDef="hit">
+            <th mat-header-cell *matHeaderCellDef>Resultado</th>
+            <td mat-cell *matCellDef="let e">
+              <span [class.text-cornerlab-primary]="e.hit" [class.text-red-400]="!e.hit">{{ e.hit ? 'Acerto' : 'Erro' }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="odd">
+            <th mat-header-cell *matHeaderCellDef>Odd</th>
+            <td mat-cell *matCellDef="let e">{{ e.odd }}</td>
+          </ng-container>
+          <ng-container matColumnDef="profit_loss">
+            <th mat-header-cell *matHeaderCellDef>Resultado (stake)</th>
+            <td mat-cell *matCellDef="let e">{{ e.profit_loss }}</td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="entryColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: entryColumns;"></tr>
+        </table>
+      </div>
+    </div>
+
+    <p class="cl-disclaimer">{{ r.disclaimer }}</p>
+  }
+</div>

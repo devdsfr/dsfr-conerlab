@@ -1,0 +1,172 @@
+package intelligence
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/devdsfr/cornerlab/internal/repository"
+)
+
+type ScoreUsecase struct {
+	matches     repository.MatchRepository
+	teams       repository.TeamRepository
+	leagues     repository.LeagueRepository
+	leagueStats repository.LeagueStatsRepository
+	consistency *ConsistencyUsecase
+	trend       *TrendUsecase
+}
+
+func NewScoreUsecase(
+	matches repository.MatchRepository,
+	teams repository.TeamRepository,
+	leagues repository.LeagueRepository,
+	leagueStats repository.LeagueStatsRepository,
+	consistency *ConsistencyUsecase,
+	trend *TrendUsecase,
+) *ScoreUsecase {
+	return &ScoreUsecase{matches: matches, teams: teams, leagues: leagues, leagueStats: leagueStats, consistency: consistency, trend: trend}
+}
+
+// ScoreComponents detalha a contribuição (já ponderada, em pontos de 0 a 100) de cada
+// fator no Score Estatístico final, conforme os pesos do documento de requisitos:
+// consistência 35%, forma recente 20%, casa/fora 15%, força do adversário 15%,
+// escanteios cedidos pelo adversário 15%.
+type ScoreComponents struct {
+	Consistency          float64 `json:"consistency"`
+	RecentForm           float64 `json:"recent_form"`
+	HomeAwayBalance      float64 `json:"home_away_balance"`
+	OpponentStrength     float64 `json:"opponent_strength"`
+	OpponentCornersConceded float64 `json:"opponent_corners_conceded"`
+}
+
+type ScoreReport struct {
+	TeamID     int64            `json:"team_id"`
+	TeamName   string           `json:"team_name"`
+	OpponentID *int64           `json:"opponent_id,omitempty"`
+	Score      float64          `json:"score"`
+	Components ScoreComponents  `json:"components"`
+	Meta       Meta             `json:"meta"`
+}
+
+// Compute calcula o Score Estatístico (0 a 100) de uma equipe, opcionalmente
+// contextualizado por um próximo adversário. Sem adversário informado, os
+// componentes "força do adversário" e "escanteios cedidos pelo adversário" usam
+// valores neutros (média da liga) em vez de zerar a pontuação.
+func (u *ScoreUsecase) Compute(ctx context.Context, teamID int64, leagueID int64, opponentID *int64, limit int) (*ScoreReport, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	team, err := u.teams.GetByID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("equipe não encontrada: %w", err)
+	}
+	league, err := u.leagues.GetByID(ctx, leagueID)
+	if err != nil {
+		return nil, fmt.Errorf("campeonato não encontrado: %w", err)
+	}
+
+	consistencyReport, err := u.consistency.Compute(ctx, teamID, leagueID, nil, limit)
+	if err != nil {
+		return nil, err
+	}
+	trendReport, err := u.trend.Compute(ctx, teamID, leagueID, limit/2, limit)
+	if err != nil {
+		return nil, err
+	}
+	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{TeamID: teamID, LeagueID: &leagueID, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+
+	homeVals, awayVals := []int{}, []int{}
+	for _, v := range views {
+		if v.IsHome {
+			homeVals = append(homeVals, v.TotalCorners)
+		} else {
+			awayVals = append(awayVals, v.TotalCorners)
+		}
+	}
+	homeAvg := average(homeVals)
+	awayAvg := average(awayVals)
+	balance := 1.0
+	if homeAvg+awayAvg > 0 {
+		diff := homeAvg - awayAvg
+		if diff < 0 {
+			diff = -diff
+		}
+		balance = clamp01(1 - diff/(homeAvg+awayAvg))
+	}
+
+	aggregates, err := u.leagueStats.TeamAggregates(ctx, leagueID, nil, limit)
+	if err != nil {
+		return nil, err
+	}
+	leagueAvgConceded := 0.0
+	if len(aggregates) > 0 {
+		sum := 0.0
+		for _, a := range aggregates {
+			sum += a.AvgAgainst
+		}
+		leagueAvgConceded = sum / float64(len(aggregates))
+	}
+
+	opponentStrengthNorm := 0.6 // neutro: equivale a um adversário de força mediana (G12)
+	opponentConcededNorm := 0.5 // neutro: equivale à média da liga
+	if opponentID != nil {
+		if opp, err := u.teams.GetByID(ctx, *opponentID); err == nil {
+			opponentStrengthNorm = tierWeight(opp.Tier)
+		}
+		for _, a := range aggregates {
+			if opponentID != nil && a.Team.ID == *opponentID {
+				if leagueAvgConceded > 0 {
+					ratio := a.AvgAgainst / leagueAvgConceded
+					opponentConcededNorm = clamp01(ratio / 2)
+				}
+				break
+			}
+		}
+	}
+
+	recentFormNorm := clamp01(0.5 + trendReport.VariationPct/200)
+
+	components := ScoreComponents{
+		Consistency:             round2(consistencyReport.ConsistencyIndex / 100 * 35),
+		RecentForm:              round2(recentFormNorm * 20),
+		HomeAwayBalance:         round2(balance * 15),
+		OpponentStrength:        round2(opponentStrengthNorm * 15),
+		OpponentCornersConceded: round2(opponentConcededNorm * 15),
+	}
+	score := round2(components.Consistency + components.RecentForm + components.HomeAwayBalance + components.OpponentStrength + components.OpponentCornersConceded)
+
+	return &ScoreReport{
+		TeamID:     team.ID,
+		TeamName:   team.Name,
+		OpponentID: opponentID,
+		Score:      score,
+		Components: components,
+		Meta: Meta{
+			LeagueID:      league.ID,
+			LeagueName:    league.Name,
+			Period:        periodLabel(limit),
+			GamesAnalyzed: len(views),
+			UpdatedAt:     time.Now(),
+		},
+	}, nil
+}
+
+// tierWeight converte a classificação de força da equipe (G6/G12/Z4) em um peso de
+// 0 a 1 usado no componente "força do adversário": quanto mais fraco o adversário,
+// maior o peso (adversários fracos favorecem estatisticamente o desempenho ofensivo).
+func tierWeight(tier string) float64 {
+	switch tier {
+	case "G6":
+		return 0.3
+	case "Z4":
+		return 0.9
+	case "G12":
+		return 0.6
+	default:
+		return 0.6
+	}
+}

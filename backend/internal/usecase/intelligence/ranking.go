@@ -1,0 +1,138 @@
+package intelligence
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/devdsfr/cornerlab/internal/repository"
+)
+
+type RankingMetric string
+
+const (
+	MetricAverageCorners RankingMetric = "average_corners"
+	MetricConsistency    RankingMetric = "consistency"
+	MetricGrowth         RankingMetric = "growth"
+	MetricDecline        RankingMetric = "decline"
+	MetricConcededMost   RankingMetric = "corners_conceded_most"
+	MetricConcededLeast  RankingMetric = "corners_conceded_least"
+)
+
+type RankingEntry struct {
+	Rank     int     `json:"rank"`
+	TeamID   int64   `json:"team_id"`
+	TeamName string  `json:"team_name"`
+	Value    float64 `json:"value"`
+}
+
+type RankingResult struct {
+	Metric  RankingMetric  `json:"metric"`
+	Entries []RankingEntry `json:"entries"`
+	Meta    Meta           `json:"meta"`
+}
+
+type RankingUsecase struct {
+	leagues repository.LeagueRepository
+	stats   repository.LeagueStatsRepository
+}
+
+func NewRankingUsecase(leagues repository.LeagueRepository, stats repository.LeagueStatsRepository) *RankingUsecase {
+	return &RankingUsecase{leagues: leagues, stats: stats}
+}
+
+func (u *RankingUsecase) Compute(ctx context.Context, leagueID int64, seasonIDs []int64, metric RankingMetric, limit int, topN int) (*RankingResult, error) {
+	if topN <= 0 {
+		topN = 10
+	}
+	league, err := u.leagues.GetByID(ctx, leagueID)
+	if err != nil {
+		return nil, fmt.Errorf("campeonato não encontrado: %w", err)
+	}
+
+	var entries []RankingEntry
+	gamesAnalyzed := 0
+
+	switch metric {
+	case MetricGrowth, MetricDecline:
+		shortLimit := limit
+		if shortLimit <= 0 {
+			shortLimit = 5
+		}
+		longLimit := shortLimit * 2
+
+		shortAgg, err := u.stats.TeamAggregates(ctx, leagueID, seasonIDs, shortLimit)
+		if err != nil {
+			return nil, err
+		}
+		longAgg, err := u.stats.TeamAggregates(ctx, leagueID, seasonIDs, longLimit)
+		if err != nil {
+			return nil, err
+		}
+		longByTeam := make(map[int64]repository.TeamAggregate, len(longAgg))
+		for _, a := range longAgg {
+			longByTeam[a.Team.ID] = a
+		}
+
+		for _, s := range shortAgg {
+			l, ok := longByTeam[s.Team.ID]
+			if !ok || l.AvgTotal == 0 {
+				continue
+			}
+			variation := round2(100 * (s.AvgTotal - l.AvgTotal) / l.AvgTotal)
+			entries = append(entries, RankingEntry{TeamID: s.Team.ID, TeamName: s.Team.Name, Value: variation})
+			gamesAnalyzed += s.SampleSize
+		}
+		if metric == MetricGrowth {
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Value > entries[j].Value })
+		} else {
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Value < entries[j].Value })
+		}
+
+	default:
+		aggregates, err := u.stats.TeamAggregates(ctx, leagueID, seasonIDs, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range aggregates {
+			var value float64
+			switch metric {
+			case MetricConsistency:
+				value = round2(a.ConsistencyIdx * 100)
+			case MetricConcededMost, MetricConcededLeast:
+				value = a.AvgAgainst
+			default: // MetricAverageCorners
+				value = a.AvgTotal
+			}
+			entries = append(entries, RankingEntry{TeamID: a.Team.ID, TeamName: a.Team.Name, Value: value})
+			gamesAnalyzed += a.SampleSize
+		}
+		switch metric {
+		case MetricConcededLeast:
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Value < entries[j].Value })
+		default:
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Value > entries[j].Value })
+		}
+	}
+
+	if len(entries) > topN {
+		entries = entries[:topN]
+	}
+	for i := range entries {
+		entries[i].Rank = i + 1
+	}
+
+	return &RankingResult{
+		Metric:  metric,
+		Entries: entries,
+		Meta: Meta{
+			LeagueID:      league.ID,
+			LeagueName:    league.Name,
+			SeasonIDs:     seasonIDs,
+			Period:        periodLabel(limit),
+			GamesAnalyzed: gamesAnalyzed,
+			UpdatedAt:     time.Now(),
+		},
+	}, nil
+}

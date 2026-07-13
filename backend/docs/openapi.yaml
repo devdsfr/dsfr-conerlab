@@ -1,0 +1,642 @@
+openapi: 3.0.3
+info:
+  title: CornerLab API
+  description: >
+    Plataforma de inteligência estatística, backtesting e gestão de estratégia
+    para o mercado de escanteios. A API nunca recomenda apostas — apenas
+    organiza dados históricos, calcula estatísticas e simula cenários.
+    O Módulo de Inteligência Estatística (grupo `intelligence`) segue as mesmas
+    restrições: nenhum endpoint prevê resultados futuros, promete lucro ou
+    recomenda mercados — todo indicador é derivado de dados históricos
+    armazenados, com rastreabilidade (liga/temporada/jogos analisados/data de
+    atualização) em `meta` nas respostas.
+  version: "0.2.0"
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+  - name: catalog
+  - name: dashboard
+  - name: comparator
+  - name: filters
+  - name: bets
+  - name: intelligence
+  - name: alerts
+  - name: strategy-history
+  - name: export
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Cadastrar novo usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { description: Usuário criado }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Autenticar usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: Login efetuado }
+  /leagues:
+    get:
+      tags: [catalog]
+      summary: Listar campeonatos
+      responses:
+        '200': { description: Lista de campeonatos }
+  /leagues/{id}/seasons:
+    get:
+      tags: [catalog]
+      summary: Listar temporadas de um campeonato
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Lista de temporadas }
+  /teams:
+    get:
+      tags: [catalog]
+      summary: Listar ou pesquisar equipes
+      parameters:
+        - in: query
+          name: league_id
+          schema: { type: integer }
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200': { description: Lista de equipes }
+  /dashboard:
+    get:
+      tags: [dashboard]
+      summary: Dashboard principal de uma equipe (Módulo 1)
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          schema: { type: integer }
+        - in: query
+          name: season_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: Estatísticas de escanteios da equipe }
+  /comparator:
+    get:
+      tags: [comparator]
+      summary: Comparar duas equipes (Módulo 2)
+      parameters:
+        - in: query
+          name: team_a
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: team_b
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: Comparação entre as duas equipes }
+  /filters/run:
+    post:
+      tags: [filters]
+      summary: Executar filtro/backtest (Módulo 3)
+      description: >
+        Se um token JWT válido for enviado (opcional), a execução é registrada
+        automaticamente no Histórico da Estratégia do usuário.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FilterRunRequest' }
+      responses:
+        '200': { description: Resultado do backtest }
+  /filters:
+    get:
+      tags: [filters]
+      summary: Listar filtros salvos (autenticado)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Lista de filtros salvos }
+    post:
+      tags: [filters]
+      summary: Salvar filtro personalizado (autenticado)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveFilterRequest' }
+      responses:
+        '201': { description: Filtro salvo }
+  /filters/{id}/duplicate:
+    post:
+      tags: [filters]
+      summary: Duplicar filtro salvo (autenticado)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '201': { description: Filtro duplicado }
+  /filters/{id}:
+    delete:
+      tags: [filters]
+      summary: Excluir filtro salvo (autenticado)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Filtro excluído }
+  /bets:
+    get:
+      tags: [bets]
+      summary: Listar histórico de apostas (autenticado)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Lista de apostas }
+    post:
+      tags: [bets]
+      summary: Registrar aposta (autenticado, Módulo 5)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BetRequest' }
+      responses:
+        '201': { description: Aposta registrada }
+  /bets/dashboard:
+    get:
+      tags: [bets]
+      summary: Dashboard financeiro (autenticado, Módulo 5/8)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Métricas financeiras agregadas }
+  /bets/{id}:
+    delete:
+      tags: [bets]
+      summary: Excluir aposta (autenticado)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Aposta excluída }
+
+  /intelligence/consistency:
+    get:
+      tags: [intelligence]
+      summary: Índice de consistência por linha de escanteios de uma equipe
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: season_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Relatório de consistência por threshold, com meta de rastreabilidade" }
+  /intelligence/trend:
+    get:
+      tags: [intelligence]
+      summary: Tendência recente (curto x longo prazo) e detecção de queda
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: short_window
+          schema: { type: integer, default: 5 }
+        - in: query
+          name: long_window
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Variação percentual entre janelas e sinalização de tendência negativa" }
+  /intelligence/stability:
+    get:
+      tags: [intelligence]
+      summary: Índice de Estabilidade (0-100)
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Score de estabilidade com rótulo (Excelente/Boa/Moderada/Baixa)" }
+  /intelligence/score:
+    get:
+      tags: [intelligence]
+      summary: Score Estatístico ponderado (0-100)
+      description: >
+        Combina consistência (35%), forma recente (20%), equilíbrio casa/fora
+        (15%), força do adversário (15%) e escanteios sofridos pelo adversário
+        (15%). Se `opponent_id` não for informado, os componentes relativos ao
+        adversário usam peso neutro.
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: opponent_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Score final e detalhamento por componente" }
+  /intelligence/compatibility:
+    get:
+      tags: [intelligence]
+      summary: Cruzamento estatístico entre duas equipes (compatibilidade)
+      parameters:
+        - in: query
+          name: team_a
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: team_b
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Percentual de compatibilidade entre o ataque de A e a defesa de B" }
+  /intelligence/opponent:
+    get:
+      tags: [intelligence]
+      summary: Análise de adversário e posição no ranking de escanteios sofridos
+      parameters:
+        - in: query
+          name: opponent_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 0 }
+      responses:
+        '200': { description: "Média sofrida e posição no ranking da liga" }
+  /intelligence/ranking:
+    get:
+      tags: [intelligence]
+      summary: Rankings automáticos (consistência, crescimento, queda, escanteios sofridos etc.)
+      parameters:
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: metric
+          schema:
+            type: string
+            enum: [average_corners, consistency, growth, decline, conceded_most, conceded_least]
+            default: average_corners
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: top
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Lista ordenada com posição, equipe e valor da métrica" }
+  /intelligence/executive-dashboard:
+    get:
+      tags: [intelligence]
+      summary: Dashboard Executivo (top 10 em múltiplas dimensões)
+      parameters:
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: "Top consistência, top escanteios sofridos, top crescimento/queda e melhores estratégias salvas" }
+  /intelligence/explain:
+    post:
+      tags: [intelligence]
+      summary: Explicação em linguagem analítica (IA restrita a dados armazenados)
+      description: >
+        Usa exclusivamente os dados estatísticos já calculados (consistência,
+        tendência, estabilidade, score e, se informado, adversário) como
+        contexto para o modelo de linguagem. Nunca recomenda apostas, prevê
+        resultados ou promete lucro — respostas com linguagem proibida são
+        filtradas antes de retornar. Requer ANTHROPIC_API_KEY configurada no
+        servidor; retorna 503 se não configurada.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExplainRequest' }
+      responses:
+        '200': { description: "Resposta em linguagem natural + snapshot dos dados usados" }
+        '503': { description: "IA não configurada (ANTHROPIC_API_KEY ausente)" }
+
+  /alerts:
+    get:
+      tags: [alerts]
+      summary: Listar regras de alerta do usuário autenticado
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Lista de regras de alerta }
+    post:
+      tags: [alerts]
+      summary: Criar regra de alerta inteligente (Módulo 7)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAlertRequest' }
+      responses:
+        '201': { description: Regra criada }
+  /alerts/{id}/evaluate:
+    post:
+      tags: [alerts]
+      summary: Avaliar uma regra de alerta agora
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: "Resultado da avaliação (disparada ou não, com jogos/equipes que casaram)" }
+  /alerts/{id}:
+    delete:
+      tags: [alerts]
+      summary: Excluir regra de alerta
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Regra excluída }
+
+  /strategy-history:
+    get:
+      tags: [strategy-history]
+      summary: Histórico de execuções de filtros/backtests do usuário
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: "Lista de execuções salvas, com resultado (ROI, hit rate etc.)" }
+
+  /exports/dashboard:
+    get:
+      tags: [export]
+      summary: Exportar Dashboard (CSV/Excel)
+      parameters:
+        - in: query
+          name: team_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          schema: { type: integer }
+        - in: query
+          name: season_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: format
+          schema: { type: string, enum: [csv, xlsx], default: csv }
+      responses:
+        '200': { description: "Arquivo CSV ou XLSX" }
+  /exports/comparator:
+    get:
+      tags: [export]
+      summary: Exportar Comparador (CSV/Excel)
+      parameters:
+        - in: query
+          name: team_a
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: team_b
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: league_id
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: format
+          schema: { type: string, enum: [csv, xlsx], default: csv }
+      responses:
+        '200': { description: "Arquivo CSV ou XLSX" }
+  /exports/filters/run:
+    get:
+      tags: [export]
+      summary: Exportar resultado do Simulador de Filtros (CSV/Excel)
+      parameters:
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: season_ids
+          schema: { type: string, description: "IDs separados por vírgula" }
+        - in: query
+          name: team_id
+          schema: { type: integer }
+        - in: query
+          name: last_n_games
+          schema: { type: integer }
+        - in: query
+          name: home_away
+          schema: { type: string, enum: ['', home, away] }
+        - in: query
+          name: corners_threshold
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: opponent_tier
+          schema: { type: string }
+        - in: query
+          name: max_odds
+          schema: { type: number }
+        - in: query
+          name: stake
+          schema: { type: number }
+        - in: query
+          name: format
+          schema: { type: string, enum: [csv, xlsx], default: csv }
+      responses:
+        '200': { description: "Arquivo CSV ou XLSX com todos os jogos do backtest" }
+  /exports/ranking:
+    get:
+      tags: [export]
+      summary: Exportar Ranking (CSV/Excel)
+      parameters:
+        - in: query
+          name: league_id
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: metric
+          schema:
+            type: string
+            enum: [average_corners, consistency, growth, decline, conceded_most, conceded_least]
+            default: average_corners
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: top
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: format
+          schema: { type: string, enum: [csv, xlsx], default: csv }
+      responses:
+        '200': { description: "Arquivo CSV ou XLSX" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        password: { type: string, minLength: 6 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    FilterRunRequest:
+      type: object
+      required: [league_id, corners_threshold]
+      properties:
+        league_id: { type: integer }
+        season_ids: { type: array, items: { type: integer } }
+        team_id: { type: integer, nullable: true }
+        last_n_games: { type: integer, example: 10 }
+        home_away: { type: string, enum: ['', home, away] }
+        corners_threshold: { type: integer, example: 5 }
+        opponent_tier: { type: string, example: G6 }
+        max_odds: { type: number, example: 1.6 }
+        stake: { type: number, example: 1 }
+    SaveFilterRequest:
+      type: object
+      required: [name, definition]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        definition: { type: string, description: "JSON serializado do FilterRunRequest" }
+    BetRequest:
+      type: object
+      required: [match_label, market, odd, stake, event_date]
+      properties:
+        match_label: { type: string }
+        league_id: { type: integer, nullable: true }
+        market: { type: string, example: "Mais de 9.5 escanteios" }
+        odd: { type: number }
+        stake: { type: number }
+        status: { type: string, enum: [pending, won, lost, void] }
+        event_date: { type: string, example: "2025-05-10" }
+    ExplainRequest:
+      type: object
+      required: [team_id, league_id]
+      properties:
+        team_id: { type: integer }
+        league_id: { type: integer }
+        opponent_id: { type: integer, nullable: true }
+        question: { type: string, example: "Por que o Flamengo é considerado consistente na linha de 9.5 escanteios?" }
+        limit: { type: integer, default: 10 }
+    AlertDefinition:
+      type: object
+      required: [type, league_id]
+      description: >
+        `type=team_frequency` avalia a frequência de uma equipe acima de um
+        threshold de escanteios nos últimos N jogos. `type=opponent_average`
+        avalia se a média sofrida por um adversário está acima de um mínimo.
+      properties:
+        type: { type: string, enum: [team_frequency, opponent_average] }
+        league_id: { type: integer }
+        team_id: { type: integer, nullable: true }
+        last_n_games: { type: integer, example: 10 }
+        corners_threshold: { type: integer, example: 9 }
+        threshold_pct: { type: number, example: 70, description: "% mínimo de jogos acima do threshold (team_frequency)" }
+        min_avg_conceded: { type: number, example: 6.5, description: "Média mínima sofrida (opponent_average)" }
+    CreateAlertRequest:
+      type: object
+      required: [name, definition]
+      properties:
+        name: { type: string, example: "Flamengo acima de 9.5 em 70% dos jogos" }
+        definition: { $ref: '#/components/schemas/AlertDefinition' }

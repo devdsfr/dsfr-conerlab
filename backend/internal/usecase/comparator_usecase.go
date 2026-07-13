@@ -1,0 +1,99 @@
+package usecase
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/repository"
+)
+
+type ComparatorUsecase struct {
+	matches repository.MatchRepository
+	teams   repository.TeamRepository
+}
+
+func NewComparatorUsecase(matches repository.MatchRepository, teams repository.TeamRepository) *ComparatorUsecase {
+	return &ComparatorUsecase{matches: matches, teams: teams}
+}
+
+type TeamComparisonSide struct {
+	Team           domain.Team `json:"team"`
+	SampleSize     int         `json:"sample_size"`
+	TotalCorners   StatSummary `json:"total_corners"`
+	CornersFor     StatSummary `json:"corners_for"`
+	CornersAgainst StatSummary `json:"corners_against"`
+	Home           *SplitStats `json:"home"`
+	Away           *SplitStats `json:"away"`
+	Trend          []int       `json:"trend"`
+}
+
+type ComparisonResult struct {
+	Period string             `json:"period"`
+	TeamA  TeamComparisonSide `json:"team_a"`
+	TeamB  TeamComparisonSide `json:"team_b"`
+}
+
+func (u *ComparatorUsecase) Compare(ctx context.Context, teamAID, teamBID int64, leagueID *int64, limit int) (*ComparisonResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	sideA, err := u.buildSide(ctx, teamAID, leagueID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("equipe A: %w", err)
+	}
+	sideB, err := u.buildSide(ctx, teamBID, leagueID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("equipe B: %w", err)
+	}
+
+	return &ComparisonResult{
+		Period: fmt.Sprintf("Últimos %d jogos", limit),
+		TeamA:  *sideA,
+		TeamB:  *sideB,
+	}, nil
+}
+
+func (u *ComparatorUsecase) buildSide(ctx context.Context, teamID int64, leagueID *int64, limit int) (*TeamComparisonSide, error) {
+	team, err := u.teams.GetByID(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{TeamID: teamID, LeagueID: leagueID, Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+
+	total := make([]int, 0, len(views))
+	forVals := make([]int, 0, len(views))
+	againstVals := make([]int, 0, len(views))
+	homeVals := []int{}
+	awayVals := []int{}
+	trend := make([]int, 0, len(views))
+
+	for _, v := range views {
+		total = append(total, v.TotalCorners)
+		forVals = append(forVals, v.CornersFor)
+		againstVals = append(againstVals, v.CornersAgainst)
+		if v.IsHome {
+			homeVals = append(homeVals, v.TotalCorners)
+		} else {
+			awayVals = append(awayVals, v.TotalCorners)
+		}
+	}
+	for i := len(views) - 1; i >= 0; i-- {
+		trend = append(trend, views[i].TotalCorners)
+	}
+
+	return &TeamComparisonSide{
+		Team:           *team,
+		SampleSize:     len(views),
+		TotalCorners:   Summarize(total),
+		CornersFor:     Summarize(forVals),
+		CornersAgainst: Summarize(againstVals),
+		Home:           buildSplitStats(homeVals),
+		Away:           buildSplitStats(awayVals),
+		Trend:          trend,
+	}, nil
+}

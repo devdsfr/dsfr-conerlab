@@ -42,3 +42,33 @@ html, body {
   padding-top: 0.5rem;
   margin-top: 0.5rem;
 }
+
+// Ícone de ajuda inline (ex.: "Consistência ?", "Drawdown máximo ?") usado para
+// explicar métricas técnicas via tooltip, sem exigir MatIconModule.
+.cl-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid #64748b;
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+// Painel de opções dos <mat-select>: evita que campeonatos com nomes longos
+// façam o painel crescer a ponto de cobrir campos vizinhos na mesma linha, e
+// garante que fique acima de qualquer outro conteúdo da página.
+.cl-select-panel {
+  max-width: min(28rem, 90vw) !important;
+  z-index: 1100 !important;
+}
+.cl-select-panel .mat-mdc-option .mdc-list-item__primary-text {
+  white-space: normal !important;
+  line-height: 1.3;
+}

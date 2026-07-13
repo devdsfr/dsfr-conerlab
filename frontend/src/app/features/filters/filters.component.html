@@ -4,9 +4,9 @@
 
   <div class="cl-card p-4 flex flex-col gap-4">
     <div class="flex flex-wrap items-end gap-4">
-      <mat-form-field appearance="outline" class="w-56">
+      <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
         <mat-label>Campeonato</mat-label>
-        <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()">
+        <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()" panelClass="cl-select-panel">
           @for (l of leagues(); track l.id) {
             <mat-option [value]="l.id">{{ l.name }}</mat-option>
           }
@@ -15,16 +15,16 @@
 
       <mat-form-field appearance="outline" class="w-64">
         <mat-label>Temporadas (backtest)</mat-label>
-        <mat-select [(ngModel)]="selectedSeasonIds" multiple>
+        <mat-select [(ngModel)]="selectedSeasonIds" multiple panelClass="cl-select-panel">
           @for (s of seasons(); track s.id) {
             <mat-option [value]="s.id">{{ s.label }}</mat-option>
           }
         </mat-select>
       </mat-form-field>
 
-      <mat-form-field appearance="outline" class="w-64">
+      <mat-form-field appearance="outline" class="w-72">
         <mat-label>Equipe (opcional)</mat-label>
-        <mat-select [(ngModel)]="selectedTeamId">
+        <mat-select [(ngModel)]="selectedTeamId" panelClass="cl-select-panel">
           <mat-option [value]="undefined">Todas as equipes</mat-option>
           @for (t of teams(); track t.id) {
             <mat-option [value]="t.id">{{ t.name }}</mat-option>
@@ -34,10 +34,16 @@
     </div>
 
     <div class="flex flex-wrap items-end gap-4">
-      <mat-form-field appearance="outline" class="w-40">
-        <mat-label>Últimos jogos</mat-label>
-        <input matInput type="number" [(ngModel)]="lastNGames" min="0" placeholder="ex: 10">
-      </mat-form-field>
+      <div>
+        <div class="text-xs text-slate-400 mb-1">Últimos jogos</div>
+        <mat-button-toggle-group [(ngModel)]="lastNGames">
+          <mat-button-toggle [value]="0">Todos</mat-button-toggle>
+          <mat-button-toggle [value]="5">5</mat-button-toggle>
+          <mat-button-toggle [value]="10">10</mat-button-toggle>
+          <mat-button-toggle [value]="15">15</mat-button-toggle>
+          <mat-button-toggle [value]="20">20</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
 
       <div>
         <div class="text-xs text-slate-400 mb-1">Mando</div>
@@ -86,6 +92,12 @@
     <div class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
+  @if (!loading() && !error() && !result()) {
+    <div class="cl-card p-8 text-center text-slate-400">
+      Ajuste os critérios acima e clique em <strong class="text-slate-200">Executar backtest</strong> para ver o desempenho histórico do filtro.
+    </div>
+  }
+
   @if (result(); as r) {
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       <div class="cl-card p-4">
@@ -95,7 +107,7 @@
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Taxa de acerto</div>
         <div class="text-2xl font-semibold text-cornerlab-primary">{{ r.hit_rate }}%</div>
-        <div class="text-xs text-slate-500">{{ r.hits }} acertos / {{ r.misses }} erros</div>
+        <div class="text-xs text-slate-400">{{ r.hits }} acertos / {{ r.misses }} erros</div>
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">ROI / Yield</div>
@@ -118,7 +130,7 @@
         <div class="text-xl font-semibold">{{ r.longest_lose_streak }}</div>
       </div>
       <div class="cl-card p-4">
-        <div class="text-xs text-slate-400">Drawdown máximo</div>
+        <div class="text-xs text-slate-400">Drawdown máximo <span class="cl-help" [matTooltip]="drawdownTooltip">?</span></div>
         <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
       </div>
     </div>

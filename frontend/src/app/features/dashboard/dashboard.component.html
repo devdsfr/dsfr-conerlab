@@ -2,9 +2,9 @@
   <h1 class="text-xl font-semibold text-slate-100">Dashboard Principal</h1>
 
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
-    <mat-form-field appearance="outline" class="w-56">
+    <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
       <mat-label>Campeonato</mat-label>
-      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()">
+      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()" panelClass="cl-select-panel">
         @for (l of leagues(); track l.id) {
           <mat-option [value]="l.id">{{ l.name }}</mat-option>
         }
@@ -13,7 +13,7 @@
 
     <mat-form-field appearance="outline" class="w-44">
       <mat-label>Temporada</mat-label>
-      <mat-select [(ngModel)]="selectedSeasonId">
+      <mat-select [(ngModel)]="selectedSeasonId" panelClass="cl-select-panel">
         <mat-option [value]="undefined">Todas</mat-option>
         @for (s of seasons(); track s.id) {
           <mat-option [value]="s.id">{{ s.label }}</mat-option>
@@ -21,9 +21,9 @@
       </mat-select>
     </mat-form-field>
 
-    <mat-form-field appearance="outline" class="w-64">
+    <mat-form-field appearance="outline" class="w-72" [title]="selectedTeamName()">
       <mat-label>Equipe</mat-label>
-      <mat-select [(ngModel)]="selectedTeamId">
+      <mat-select [(ngModel)]="selectedTeamId" panelClass="cl-select-panel">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
@@ -48,6 +48,12 @@
 
   @if (error()) {
     <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+  }
+
+  @if (!loading() && !error() && !result()) {
+    <div class="cl-card p-8 text-center text-slate-400">
+      Escolha campeonato, temporada e equipe acima e clique em <strong class="text-slate-200">Analisar</strong> para ver as estatísticas de escanteios.
+    </div>
   }
 
   @if (result(); as r) {
@@ -90,7 +96,7 @@
           <dt class="text-slate-400">Maior</dt><dd>{{ r.total_corners.max }}</dd>
           <dt class="text-slate-400">Menor</dt><dd>{{ r.total_corners.min }}</dd>
           <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.total_corners.std_dev }}</dd>
-          <dt class="text-slate-400">Consistência</dt><dd>{{ r.total_corners.consistency_index }}</dd>
+          <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ r.total_corners.consistency_index }}</dd>
         </dl>
       </div>
     </div>
@@ -115,7 +121,7 @@
       </div>
       <div class="cl-card p-4">
         <h3 class="text-sm text-slate-400 mb-3">Tendência (total de escanteios por jogo)</h3>
-        <cl-simple-chart type="line" [labels]="trendLabels()" [datasets]="[{label: 'Escanteios', data: r.trend}]"></cl-simple-chart>
+        <cl-simple-chart type="line" [labels]="trendChart().labels" [datasets]="trendChart().datasets"></cl-simple-chart>
       </div>
     </div>
 
@@ -128,7 +134,7 @@
             <dt class="text-slate-400">Média</dt><dd>{{ r.home_stats.mean }}</dd>
             <dt class="text-slate-400">Maior</dt><dd>{{ r.home_stats.max }}</dd>
             <dt class="text-slate-400">Menor</dt><dd>{{ r.home_stats.min }}</dd>
-            <dt class="text-slate-400">Consistência</dt><dd>{{ r.home_stats.consistency }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ r.home_stats.consistency }}</dd>
           </dl>
         </div>
       }
@@ -140,7 +146,7 @@
             <dt class="text-slate-400">Média</dt><dd>{{ r.away_stats.mean }}</dd>
             <dt class="text-slate-400">Maior</dt><dd>{{ r.away_stats.max }}</dd>
             <dt class="text-slate-400">Menor</dt><dd>{{ r.away_stats.min }}</dd>
-            <dt class="text-slate-400">Consistência</dt><dd>{{ r.away_stats.consistency }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ r.away_stats.consistency }}</dd>
           </dl>
         </div>
       }

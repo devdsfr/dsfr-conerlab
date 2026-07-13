@@ -8,10 +8,20 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardResult, League, Season, Team } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
+
+// Rótulo/valor de um gráfico já "congelado": só é recalculado quando um novo
+// resultado chega do backend, nunca a cada ciclo de change detection. Isso
+// evita recriar o gráfico (e, com ele, o bug de canvas em branco) a cada
+// digest do Angular — ver comentário em shared/simple-chart.component.ts.
+interface ChartData {
+  labels: number[];
+  datasets: { label: string; data: number[] }[];
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -26,6 +36,7 @@ import { SimpleChartComponent } from '../../shared/simple-chart.component';
     MatButtonToggleModule,
     MatProgressSpinnerModule,
     MatTableModule,
+    MatTooltipModule,
     SimpleChartComponent,
   ],
   templateUrl: './dashboard.component.html',
@@ -43,8 +54,12 @@ export class DashboardComponent implements OnInit {
   loading = signal(false);
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
+  trendChart = signal<ChartData>({ labels: [], datasets: [] });
 
   matchColumns = ['match_date', 'opponent', 'is_home', 'corners_for', 'corners_against', 'total_corners'];
+
+  readonly consistencyTooltip =
+    'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo. Valores baixos indicam resultados mais imprevisíveis.';
 
   constructor(private api: ApiService) {}
 
@@ -61,7 +76,15 @@ export class DashboardComponent implements OnInit {
   onLeagueChange(): void {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonId = undefined;
-    this.api.listSeasons(this.selectedLeagueId).subscribe(s => this.seasons.set(s));
+    this.api.listSeasons(this.selectedLeagueId).subscribe(seasons => {
+      this.seasons.set(seasons);
+      // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
+      // Analisar sem nenhuma seleção visível): assume a mais recente por
+      // padrão. "Todas" continua disponível como opção explícita.
+      if (seasons.length) {
+        this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
+      }
+    });
     this.api.listTeams(this.selectedLeagueId).subscribe(teams => {
       this.teams.set(teams);
       if (teams.length && !this.selectedTeamId) {
@@ -77,6 +100,10 @@ export class DashboardComponent implements OnInit {
     this.api.getDashboard(this.selectedTeamId, this.selectedLeagueId, this.selectedSeasonId, this.limit).subscribe({
       next: res => {
         this.result.set(res);
+        this.trendChart.set({
+          labels: res.trend.map((_, i) => i + 1),
+          datasets: [{ label: 'Escanteios', data: res.trend }],
+        });
         this.loading.set(false);
       },
       error: err => {
@@ -86,8 +113,11 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  trendLabels(): number[] {
-    const r = this.result();
-    return r ? r.trend.map((_, i) => i + 1) : [];
+  selectedLeagueName(): string {
+    return this.leagues().find(l => l.id === this.selectedLeagueId)?.name ?? '';
+  }
+
+  selectedTeamName(): string {
+    return this.teams().find(t => t.id === this.selectedTeamId)?.name ?? '';
   }
 }

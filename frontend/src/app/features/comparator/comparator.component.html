@@ -2,27 +2,27 @@
   <h1 class="text-xl font-semibold text-slate-100">Comparador de Equipes</h1>
 
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
-    <mat-form-field appearance="outline" class="w-56">
+    <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
       <mat-label>Campeonato</mat-label>
-      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()">
+      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()" panelClass="cl-select-panel">
         @for (l of leagues(); track l.id) {
           <mat-option [value]="l.id">{{ l.name }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
 
-    <mat-form-field appearance="outline" class="w-56">
+    <mat-form-field appearance="outline" class="w-64">
       <mat-label>Equipe A</mat-label>
-      <mat-select [(ngModel)]="teamAId">
+      <mat-select [(ngModel)]="teamAId" panelClass="cl-select-panel">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
 
-    <mat-form-field appearance="outline" class="w-56">
+    <mat-form-field appearance="outline" class="w-64">
       <mat-label>Equipe B</mat-label>
-      <mat-select [(ngModel)]="teamBId">
+      <mat-select [(ngModel)]="teamBId" panelClass="cl-select-panel">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
@@ -48,35 +48,34 @@
     <div class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
+  @if (!loading() && !error() && !result()) {
+    <div class="cl-card p-8 text-center text-slate-400">
+      Escolha campeonato e as duas equipes acima e clique em <strong class="text-slate-200">Comparar</strong> para ver a comparação lado a lado.
+    </div>
+  }
+
   @if (result(); as r) {
     <p class="text-sm text-slate-400">{{ r.period }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      @for (side of [r.team_a, r.team_b]; track side.team.id) {
+      @for (side of [{ data: r.team_a, chart: chartA() }, { data: r.team_b, chart: chartB() }]; track side.data.team.id) {
         <div class="cl-card p-4">
-          <h2 class="text-lg font-medium mb-2">{{ side.team.name }} <span class="text-xs text-slate-400">({{ side.team.tier }})</span></h2>
+          <h2 class="text-lg font-medium mb-2">{{ side.data.team.name }} <span class="text-xs text-slate-400">({{ side.data.team.tier }})</span></h2>
           <dl class="grid grid-cols-2 gap-y-1 text-sm mb-3">
-            <dt class="text-slate-400">Média (total)</dt><dd>{{ side.total_corners.mean }}</dd>
-            <dt class="text-slate-400">Desvio padrão</dt><dd>{{ side.total_corners.std_dev }}</dd>
-            <dt class="text-slate-400">Consistência</dt><dd>{{ side.total_corners.consistency_index }}</dd>
-            <dt class="text-slate-400">Média casa</dt><dd>{{ side.home?.mean ?? '—' }}</dd>
-            <dt class="text-slate-400">Média fora</dt><dd>{{ side.away?.mean ?? '—' }}</dd>
+            <dt class="text-slate-400">Média (total)</dt><dd>{{ side.data.total_corners.mean }}</dd>
+            <dt class="text-slate-400">Desvio padrão</dt><dd>{{ side.data.total_corners.std_dev }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.total_corners.consistency_index }}</dd>
+            <dt class="text-slate-400">Média casa</dt><dd>{{ side.data.home?.mean ?? '—' }}</dd>
+            <dt class="text-slate-400">Média fora</dt><dd>{{ side.data.away?.mean ?? '—' }}</dd>
           </dl>
-          <cl-simple-chart type="line" [labels]="trendLabels(side.trend.length)" [datasets]="[{label: side.team.short_name, data: side.trend}]"></cl-simple-chart>
+          <cl-simple-chart type="line" [labels]="side.chart.labels" [datasets]="side.chart.datasets"></cl-simple-chart>
         </div>
       }
     </div>
 
     <div class="cl-card p-4">
       <h3 class="text-sm text-slate-400 mb-3">Comparação direta (médias)</h3>
-      <cl-simple-chart
-        type="bar"
-        [labels]="['Total', 'A favor', 'Sofridos', 'Casa', 'Fora']"
-        [datasets]="[
-          {label: r.team_a.team.short_name, data: [r.team_a.total_corners.mean, r.team_a.corners_for.mean, r.team_a.corners_against.mean, r.team_a.home?.mean ?? 0, r.team_a.away?.mean ?? 0]},
-          {label: r.team_b.team.short_name, data: [r.team_b.total_corners.mean, r.team_b.corners_for.mean, r.team_b.corners_against.mean, r.team_b.home?.mean ?? 0, r.team_b.away?.mean ?? 0]}
-        ]">
-      </cl-simple-chart>
+      <cl-simple-chart type="bar" [labels]="barChart().labels" [datasets]="barChart().datasets"></cl-simple-chart>
     </div>
 
     <p class="cl-disclaimer">Comparação baseada em dados históricos. Não constitui recomendação de aposta.</p>

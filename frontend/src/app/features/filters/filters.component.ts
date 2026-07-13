@@ -10,6 +10,7 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { BacktestResult, League, Season, Team } from '../../core/models';
@@ -29,6 +30,7 @@ import { BacktestResult, League, Season, Team } from '../../core/models';
     MatProgressSpinnerModule,
     MatTableModule,
     MatChipsModule,
+    MatTooltipModule,
   ],
   templateUrl: './filters.component.html',
 })
@@ -41,6 +43,8 @@ export class FiltersComponent implements OnInit {
   selectedLeagueId?: number;
   selectedSeasonIds: number[] = [];
   selectedTeamId?: number; // opcional: restringe a uma equipe
+  // 0 = "Todos" (nenhum limite de últimos jogos) — mesmo controle segmentado
+  // usado no Dashboard e no Comparador, para padronizar a interação entre telas.
   lastNGames = 10;
   homeAway = ''; // '', 'home', 'away'
   cornersThreshold = 5;
@@ -53,6 +57,11 @@ export class FiltersComponent implements OnInit {
   result = signal<BacktestResult | null>(null);
 
   entryColumns = ['match_date', 'team', 'opponent', 'is_home', 'total_corners', 'hit', 'odd', 'profit_loss'];
+
+  readonly drawdownTooltip =
+    'Drawdown máximo: a maior sequência de perdas acumuladas (em unidades de stake) observada durante o backtest — indica o pior momento de "prejuízo" pelo qual a estratégia passou.';
+  readonly consistencyTooltip =
+    'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo.';
 
   constructor(private api: ApiService) {}
 
@@ -100,5 +109,9 @@ export class FiltersComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  selectedLeagueName(): string {
+    return this.leagues().find(l => l.id === this.selectedLeagueId)?.name ?? '';
   }
 }

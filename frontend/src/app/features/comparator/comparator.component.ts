@@ -7,10 +7,16 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { ComparisonResult, League, Team } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
+
+interface ChartData {
+  labels: (string | number)[];
+  datasets: { label: string; data: number[] }[];
+}
 
 @Component({
   selector: 'app-comparator',
@@ -24,6 +30,7 @@ import { SimpleChartComponent } from '../../shared/simple-chart.component';
     MatButtonModule,
     MatButtonToggleModule,
     MatProgressSpinnerModule,
+    MatTooltipModule,
     SimpleChartComponent,
   ],
   templateUrl: './comparator.component.html',
@@ -40,6 +47,15 @@ export class ComparatorComponent implements OnInit {
   loading = signal(false);
   error = signal<string | null>(null);
   result = signal<ComparisonResult | null>(null);
+
+  // Inputs dos gráficos calculados uma única vez por resultado (não a cada
+  // change detection) — ver comentário em shared/simple-chart.component.ts.
+  chartA = signal<ChartData>({ labels: [], datasets: [] });
+  chartB = signal<ChartData>({ labels: [], datasets: [] });
+  barChart = signal<ChartData>({ labels: [], datasets: [] });
+
+  readonly consistencyTooltip =
+    'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo. Valores baixos indicam resultados mais imprevisíveis.';
 
   constructor(private api: ApiService) {}
 
@@ -71,6 +87,39 @@ export class ComparatorComponent implements OnInit {
     this.api.compare(this.teamAId, this.teamBId, this.selectedLeagueId, this.limit).subscribe({
       next: res => {
         this.result.set(res);
+        this.chartA.set({
+          labels: res.team_a.trend.map((_, i) => i + 1),
+          datasets: [{ label: res.team_a.team.short_name, data: res.team_a.trend }],
+        });
+        this.chartB.set({
+          labels: res.team_b.trend.map((_, i) => i + 1),
+          datasets: [{ label: res.team_b.team.short_name, data: res.team_b.trend }],
+        });
+        this.barChart.set({
+          labels: ['Total', 'A favor', 'Sofridos', 'Casa', 'Fora'],
+          datasets: [
+            {
+              label: res.team_a.team.short_name,
+              data: [
+                res.team_a.total_corners.mean,
+                res.team_a.corners_for.mean,
+                res.team_a.corners_against.mean,
+                res.team_a.home?.mean ?? 0,
+                res.team_a.away?.mean ?? 0,
+              ],
+            },
+            {
+              label: res.team_b.team.short_name,
+              data: [
+                res.team_b.total_corners.mean,
+                res.team_b.corners_for.mean,
+                res.team_b.corners_against.mean,
+                res.team_b.home?.mean ?? 0,
+                res.team_b.away?.mean ?? 0,
+              ],
+            },
+          ],
+        });
         this.loading.set(false);
       },
       error: err => {
@@ -80,7 +129,7 @@ export class ComparatorComponent implements OnInit {
     });
   }
 
-  trendLabels(len: number): number[] {
-    return Array.from({ length: len }, (_, i) => i + 1);
+  selectedLeagueName(): string {
+    return this.leagues().find(l => l.id === this.selectedLeagueId)?.name ?? '';
   }
 }

@@ -1,0 +1,130 @@
+<div class="max-w-6xl mx-auto flex flex-col gap-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Integrações</h1>
+    <p class="text-sm text-slate-400 mt-1">
+      Status e consumo das APIs externas usadas pelo CornerLab (OpenAI para explicações via IA, API-Football e SportMonks para dados reais de partidas).
+      <span class="cl-help" [matTooltip]="panelTooltip">?</span>
+    </p>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+  }
+  @if (error()) {
+    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+  }
+
+  @if (!loading() && !error()) {
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (p of providers(); track p.provider) {
+        <div class="cl-card p-4 flex flex-col gap-3">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-base font-semibold text-slate-100">{{ p.display_name }}</div>
+              <div class="text-xs mt-0.5" [class]="statusClass(p)">{{ statusLabel(p) }}</div>
+            </div>
+            <button mat-stroked-button color="primary" [disabled]="!p.configured || p.testing" (click)="testConnection(p)">
+              @if (p.testing) {
+                <mat-spinner diameter="16" class="inline-block mr-1"></mat-spinner>
+              }
+              Testar agora
+            </button>
+          </div>
+
+          @if (p.testResult) {
+            <div class="text-xs" [class.text-cornerlab-primary]="p.testResult.ok" [class.text-red-400]="!p.testResult.ok">
+              {{ p.testResult.ok ? '✓' : '✗' }} {{ p.testResult.message }}
+            </div>
+          }
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <div class="text-slate-400">Chamadas</div>
+              <div class="text-slate-100 font-medium">{{ p.total_calls }}</div>
+            </div>
+            <div>
+              <div class="text-slate-400">Sucesso / Erro</div>
+              <div class="text-slate-100 font-medium">{{ p.success_calls }} / {{ p.error_calls }}</div>
+            </div>
+            @if (p.tokens_total > 0) {
+              <div>
+                <div class="text-slate-400">Tokens consumidos</div>
+                <div class="text-slate-100 font-medium">{{ p.tokens_total }}</div>
+              </div>
+            }
+            <div>
+              <div class="text-slate-400">Última chamada</div>
+              <div class="text-slate-100 font-medium">{{ p.last_call_at ? (p.last_call_at | date:'dd/MM HH:mm') : '—' }}</div>
+            </div>
+          </div>
+
+          @if (p.total_calls > 0) {
+            <cl-simple-chart type="bar" [labels]="p.chartLabels" [datasets]="p.chartDatasets"></cl-simple-chart>
+          }
+
+          @if (p.error_calls > 0 && p.last_error_message) {
+            <div class="text-xs text-red-400 border-t border-slate-800 pt-2" [title]="p.last_error_message">
+              Último erro: {{ p.last_error_message }}
+            </div>
+          }
+
+          @if (!p.configured) {
+            <div class="text-xs text-slate-400 border-t border-slate-800 pt-2">
+              Chave não configurada nas variáveis de ambiente do backend.
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="cl-card p-4">
+      <button mat-button color="primary" (click)="toggleHistory()">
+        {{ showHistory() ? 'Ocultar histórico' : 'Ver histórico recente' }}
+      </button>
+
+      @if (showHistory()) {
+        @if (historyLoading()) {
+          <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else {
+          <div class="max-h-96 overflow-auto mt-3">
+            <table mat-table [dataSource]="recentEntries()" class="w-full !bg-transparent">
+              <ng-container matColumnDef="created_at">
+                <th mat-header-cell *matHeaderCellDef>Quando</th>
+                <td mat-cell *matCellDef="let e">{{ e.created_at | date:'dd/MM HH:mm:ss' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="provider">
+                <th mat-header-cell *matHeaderCellDef>Provedor</th>
+                <td mat-cell *matCellDef="let e">{{ e.provider }}</td>
+              </ng-container>
+              <ng-container matColumnDef="endpoint">
+                <th mat-header-cell *matHeaderCellDef>Operação</th>
+                <td mat-cell *matCellDef="let e">{{ e.endpoint }}</td>
+              </ng-container>
+              <ng-container matColumnDef="success">
+                <th mat-header-cell *matHeaderCellDef>Resultado</th>
+                <td mat-cell *matCellDef="let e">
+                  <span [class.text-cornerlab-primary]="e.success" [class.text-red-400]="!e.success">
+                    {{ e.success ? 'Sucesso' : 'Erro' }}
+                  </span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="status_code">
+                <th mat-header-cell *matHeaderCellDef>Status HTTP</th>
+                <td mat-cell *matCellDef="let e">{{ e.status_code ?? '—' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="duration_ms">
+                <th mat-header-cell *matHeaderCellDef>Duração</th>
+                <td mat-cell *matCellDef="let e">{{ e.duration_ms }}ms</td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="entryColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: entryColumns;"></tr>
+            </table>
+            @if (recentEntries().length === 0) {
+              <div class="text-xs text-slate-400 py-4 text-center">Nenhuma chamada registrada ainda.</div>
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

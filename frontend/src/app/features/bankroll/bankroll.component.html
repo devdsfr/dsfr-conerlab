@@ -1,0 +1,344 @@
+<div class="max-w-5xl mx-auto flex flex-col gap-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Gestão Evolutiva de Banca</h1>
+    <p class="text-sm text-slate-400 mt-1">
+      Evolua sua banca com base em critérios objetivos, não em impulso. A banca só evolui quando você confirma manualmente que todos os critérios foram atendidos.
+    </p>
+  </div>
+
+  @if (!auth.isAuthenticated()) {
+    <div class="cl-card p-6 max-w-md">
+      <div class="flex gap-2 mb-4">
+        <button mat-button [color]="loginMode() === 'login' ? 'primary' : undefined" (click)="loginMode.set('login')">Entrar</button>
+        <button mat-button [color]="loginMode() === 'register' ? 'primary' : undefined" (click)="loginMode.set('register')">Criar conta</button>
+      </div>
+
+      @if (loginMode() === 'login') {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="loginEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha</mat-label>
+            <input matInput type="password" [(ngModel)]="loginPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>Nome</mat-label>
+            <input matInput [(ngModel)]="registerName">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="registerEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha (mín. 6 caracteres)</mat-label>
+            <input matInput type="password" [(ngModel)]="registerPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
+        </div>
+      }
+
+      @if (authLoading()) {
+        <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
+      }
+      @if (authError()) {
+        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+      }
+      <p class="text-xs text-slate-400 mt-4">
+        Este módulo acompanha a evolução da sua banca com base nas apostas que você registra na plataforma (Módulo de Apostas) — por isso é vinculado à sua conta.
+      </p>
+    </div>
+  } @else {
+    <div class="flex items-center justify-between">
+      <div class="flex gap-1">
+        <button mat-button [color]="section() === 'dashboard' ? 'primary' : undefined" (click)="goTo('dashboard')">Dashboard</button>
+        <button mat-button [color]="section() === 'phases' ? 'primary' : undefined" (click)="goTo('phases')">Fases</button>
+        <button mat-button [color]="section() === 'criteria' ? 'primary' : undefined" (click)="goTo('criteria')">Critérios</button>
+        <button mat-button [color]="section() === 'history' ? 'primary' : undefined" (click)="goTo('history')">Histórico</button>
+      </div>
+      <button mat-button (click)="logout()">Sair ({{ auth.user()?.name }})</button>
+    </div>
+
+    @if (section() === 'dashboard') {
+      @if (statusLoading()) {
+        <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+      }
+      @if (statusError()) {
+        <div class="cl-card p-4 text-red-400">{{ statusError() }}</div>
+      }
+
+      @if (status(); as s) {
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="cl-card p-4">
+            <div class="text-xs text-slate-400">Banca atual</div>
+            <div class="text-2xl font-semibold text-cornerlab-primary">{{ s.current_phase.name }} — R$ {{ s.current_phase.amount }}</div>
+            <div class="text-xs text-slate-400 mt-1">{{ s.metrics.days_in_phase }} dias nesta fase</div>
+          </div>
+          <div class="cl-card p-4">
+            <div class="text-xs text-slate-400">Próxima banca</div>
+            @if (s.next_phase) {
+              <div class="text-2xl font-semibold">{{ s.next_phase.name }} — R$ {{ s.next_phase.amount }}</div>
+            } @else {
+              <div class="text-lg text-slate-400">Última fase configurada</div>
+            }
+          </div>
+          <div class="cl-card p-4">
+            <div class="text-xs text-slate-400 flex items-center gap-1">Progresso dos critérios</div>
+            <div class="text-2xl font-semibold">{{ (s.progress * 100).toFixed(0) }}%</div>
+          </div>
+        </div>
+
+        <div class="cl-card p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-slate-400">
+              Score de Maturidade da Estratégia (SME)
+              <span class="cl-help" [matTooltip]="smeTooltip">?</span>
+            </div>
+            <div class="text-lg font-semibold">{{ s.maturity.score }}/100</div>
+          </div>
+          <div class="flex gap-0.5 mt-1">
+            @for (star of stars(s.maturity.stars); track $index) {
+              <span [class.text-cornerlab-primary]="star" [class.text-slate-700]="!star">★</span>
+            }
+          </div>
+          <div class="text-xs text-slate-400 mt-2">{{ s.maturity.status }}</div>
+        </div>
+
+        @if (s.demotion_suggested) {
+          <div class="cl-card p-4 border border-red-900">
+            <div class="text-sm text-red-400 font-medium">Sua estratégia apresentou sinais de deterioração nesta fase.</div>
+            <div class="text-xs text-slate-400 mt-1">Motivo: {{ s.demotion_reason }}</div>
+            <div class="text-xs text-slate-400 mt-1">
+              Considere retornar para a fase anterior{{ s.previous_phase ? ' (' + s.previous_phase.name + ' — R$ ' + s.previous_phase.amount + ')' : '' }} até recuperar os indicadores. Nenhuma alteração é feita automaticamente.
+            </div>
+          </div>
+        }
+
+        <div class="cl-card p-4">
+          <h3 class="text-sm text-slate-400 mb-3">Checklist de evolução</h3>
+          <div class="flex flex-col gap-2">
+            @for (item of s.checklist; track item.label) {
+              <div class="flex items-center justify-between text-sm border-b border-slate-800 pb-2">
+                <div class="flex items-center gap-2">
+                  <span [class.text-cornerlab-primary]="item.met" [class.text-red-400]="!item.met">{{ item.met ? '✓' : '✗' }}</span>
+                  <span [class.text-slate-100]="item.met" [class.text-slate-400]="!item.met">{{ item.label }}</span>
+                </div>
+                <div class="text-xs text-slate-400">{{ item.current }} / {{ item.required }}</div>
+              </div>
+            }
+          </div>
+
+          @if (s.ready_to_promote) {
+            <div class="mt-4 p-4 rounded bg-cornerlab-primary/10 border border-cornerlab-primary/30">
+              <div class="text-cornerlab-primary font-medium">Parabéns. Sua estratégia atingiu todos os critérios para evolução da banca.</div>
+              <div class="text-sm text-slate-300 mt-1">
+                {{ s.current_phase.name }} (R$ {{ s.current_phase.amount }}) → {{ s.next_phase?.name }} (R$ {{ s.next_phase?.amount }})
+              </div>
+
+              @if (!confirmingPromote()) {
+                <div class="flex gap-2 mt-3">
+                  <button mat-flat-button color="primary" (click)="confirmingPromote.set(true)">Confirmar evolução</button>
+                  <button mat-button>Permanecer na banca atual</button>
+                </div>
+              } @else {
+                <div class="flex flex-col gap-2 mt-3">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Observações (opcional)</mat-label>
+                    <input matInput [(ngModel)]="promoteNotes">
+                  </mat-form-field>
+                  <div class="flex gap-2">
+                    <button mat-flat-button color="primary" [disabled]="actionLoading()" (click)="confirmPromote()">Confirmar</button>
+                    <button mat-button (click)="confirmingPromote.set(false)">Cancelar</button>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else if (s.blocked_reasons.length) {
+            <div class="mt-4 p-4 rounded bg-slate-800/50 text-sm text-slate-300">
+              Sua estratégia ainda não demonstrou consistência suficiente para aumentar a banca.
+              <ul class="list-disc list-inside text-xs text-slate-400 mt-2">
+                @for (r of s.blocked_reasons; track r) {
+                  <li>{{ r }}</li>
+                }
+              </ul>
+            </div>
+          }
+
+          <div class="mt-4 pt-3 border-t border-slate-800">
+            @if (!confirmingDemote()) {
+              <button mat-button color="warn" [disabled]="!s.previous_phase" (click)="confirmingDemote.set(true)">
+                Rebaixar para fase anterior
+              </button>
+            } @else {
+              <div class="flex flex-col gap-2">
+                <mat-form-field appearance="outline">
+                  <mat-label>Motivo</mat-label>
+                  <input matInput [(ngModel)]="demoteReason" placeholder="ex: sequência de resultados negativos">
+                </mat-form-field>
+                <mat-form-field appearance="outline">
+                  <mat-label>Observações (opcional)</mat-label>
+                  <input matInput [(ngModel)]="demoteNotes">
+                </mat-form-field>
+                <div class="flex gap-2">
+                  <button mat-flat-button color="warn" [disabled]="actionLoading()" (click)="confirmDemote()">Confirmar rebaixamento</button>
+                  <button mat-button (click)="confirmingDemote.set(false)">Cancelar</button>
+                </div>
+              </div>
+            }
+          </div>
+
+          @if (actionError()) {
+            <div class="text-xs text-red-400 mt-2">{{ actionError() }}</div>
+          }
+        </div>
+
+        <div class="cl-card p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div><div class="text-xs text-slate-400">Amostra</div><div>{{ s.metrics.sample_size }} apostas</div></div>
+          <div><div class="text-xs text-slate-400">Win Rate</div><div>{{ s.metrics.win_rate }}%</div></div>
+          <div><div class="text-xs text-slate-400">ROI</div><div>{{ s.metrics.roi }}%</div></div>
+          <div><div class="text-xs text-slate-400">Yield</div><div>{{ s.metrics.yield }}%</div></div>
+          <div><div class="text-xs text-slate-400">Lucro líquido</div><div>{{ s.metrics.net_profit }}</div></div>
+          <div><div class="text-xs text-slate-400">Ciclos completos</div><div>{{ s.metrics.completed_cycles }}</div></div>
+          <div><div class="text-xs text-slate-400">Drawdown máximo</div><div>{{ s.metrics.max_drawdown_pct }}%</div></div>
+          <div><div class="text-xs text-slate-400">Promoções / Rebaixamentos</div><div>{{ s.state.promotions }} / {{ s.state.demotions }}</div></div>
+        </div>
+      }
+    }
+
+    @if (section() === 'phases') {
+      <div class="cl-card p-4">
+        <p class="text-sm text-slate-400 mb-3">
+          Configure a sequência de fases da sua banca. A ordem (nº) define a progressão — a evolução sempre avança para a próxima ordem disponível.
+        </p>
+
+        @if (phasesLoading()) {
+          <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (p of phasesDraft; track $index) {
+              <div class="flex items-center gap-2">
+                <mat-form-field appearance="outline" class="w-20">
+                  <mat-label>Ordem</mat-label>
+                  <input matInput type="number" [(ngModel)]="p.sequence">
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="w-48">
+                  <mat-label>Nome</mat-label>
+                  <input matInput [(ngModel)]="p.name">
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="w-40">
+                  <mat-label>Valor (R$)</mat-label>
+                  <input matInput type="number" [(ngModel)]="p.amount">
+                </mat-form-field>
+                <button mat-icon-button color="warn" (click)="removePhase($index)" matTooltip="Remover fase">✕</button>
+              </div>
+            }
+          </div>
+
+          <div class="flex gap-2 mt-3">
+            <button mat-stroked-button (click)="addPhase()">+ Adicionar fase</button>
+            <button mat-flat-button color="primary" [disabled]="phasesSaving()" (click)="savePhases()">Salvar sequência</button>
+          </div>
+        }
+        @if (phasesError()) {
+          <div class="text-xs text-red-400 mt-2">{{ phasesError() }}</div>
+        }
+      </div>
+    }
+
+    @if (section() === 'criteria') {
+      <div class="cl-card p-4">
+        <p class="text-sm text-slate-400 mb-3">
+          A banca só evolui quando TODOS os critérios abaixo forem atendidos ao mesmo tempo — nunca por tempo decorrido isoladamente.
+        </p>
+
+        @if (criteriaLoading()) {
+          <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else if (criteriaDraft; as c) {
+          <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <mat-form-field appearance="outline">
+              <mat-label>Tempo mínimo (dias)</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_days">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Quantidade mínima de apostas</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_bets">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Win Rate mínimo (%)</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_win_rate">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>ROI mínimo (%)</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_roi">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Yield mínimo (%)</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_yield">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Ciclos completos mínimos</mat-label>
+              <input matInput type="number" [(ngModel)]="c.min_completed_cycles">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Vitórias consecutivas por ciclo</mat-label>
+              <input matInput type="number" [(ngModel)]="c.cycle_win_streak">
+            </mat-form-field>
+          </div>
+          <mat-checkbox class="mt-2" [(ngModel)]="c.require_positive_profit">Exigir lucro líquido positivo</mat-checkbox>
+
+          <div class="mt-3">
+            <button mat-flat-button color="primary" [disabled]="criteriaSaving()" (click)="saveCriteria()">Salvar critérios</button>
+          </div>
+        }
+        @if (criteriaError()) {
+          <div class="text-xs text-red-400 mt-2">{{ criteriaError() }}</div>
+        }
+      </div>
+    }
+
+    @if (section() === 'history') {
+      <div class="cl-card p-4">
+        @if (historyLoading()) {
+          <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else {
+          <table mat-table [dataSource]="history()" class="w-full !bg-transparent">
+            <ng-container matColumnDef="created_at">
+              <th mat-header-cell *matHeaderCellDef>Data</th>
+              <td mat-cell *matCellDef="let e">{{ e.created_at | date:'dd/MM/yyyy HH:mm' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="direction">
+              <th mat-header-cell *matHeaderCellDef>Tipo</th>
+              <td mat-cell *matCellDef="let e">
+                <span [class.text-cornerlab-primary]="e.direction === 'promotion'" [class.text-red-400]="e.direction === 'demotion'">
+                  {{ e.direction === 'promotion' ? 'Evolução' : 'Rebaixamento' }}
+                </span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="from_amount">
+              <th mat-header-cell *matHeaderCellDef>De</th>
+              <td mat-cell *matCellDef="let e">R$ {{ e.from_amount }}</td>
+            </ng-container>
+            <ng-container matColumnDef="to_amount">
+              <th mat-header-cell *matHeaderCellDef>Para</th>
+              <td mat-cell *matCellDef="let e">R$ {{ e.to_amount }}</td>
+            </ng-container>
+            <ng-container matColumnDef="reason">
+              <th mat-header-cell *matHeaderCellDef>Motivo</th>
+              <td mat-cell *matCellDef="let e">{{ e.reason }}</td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="historyColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: historyColumns;"></tr>
+          </table>
+          @if (history().length === 0) {
+            <div class="text-xs text-slate-400 py-4 text-center">Nenhuma mudança de banca registrada ainda.</div>
+          }
+        }
+      </div>
+    }
+  }
+</div>

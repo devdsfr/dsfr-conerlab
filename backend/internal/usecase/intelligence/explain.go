@@ -28,7 +28,7 @@ var forbiddenPhrases = []string{
 }
 
 type ExplainUsecase struct {
-	llm         *llm.AnthropicClient
+	llm         *llm.OpenAIClient
 	consistency *ConsistencyUsecase
 	trend       *TrendUsecase
 	stability   *StabilityUsecase
@@ -37,7 +37,7 @@ type ExplainUsecase struct {
 }
 
 func NewExplainUsecase(
-	client *llm.AnthropicClient,
+	client *llm.OpenAIClient,
 	consistency *ConsistencyUsecase,
 	trend *TrendUsecase,
 	stability *StabilityUsecase,

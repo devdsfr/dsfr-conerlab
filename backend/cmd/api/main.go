@@ -66,8 +66,8 @@ func main() {
 	executiveUC := intelligence.NewExecutiveDashboardUsecase(leagueRepo, rankingUC, strategyHistoryRepo)
 	alertUC := intelligence.NewAlertUsecase(alertRepo, teamRepo, leagueRepo, leagueStatsRepo, matchRepo)
 
-	anthropicClient := llm.NewAnthropicClient(cfg.AnthropicAPIKey)
-	explainUC := intelligence.NewExplainUsecase(anthropicClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
+	openaiClient := llm.NewOpenAIClient(cfg.OpenAIAPIKey)
+	explainUC := intelligence.NewExplainUsecase(openaiClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
 
 	// Handlers
 	h := httpDelivery.Handlers{

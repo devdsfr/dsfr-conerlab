@@ -20,9 +20,10 @@ type Config struct {
 	APIFootballKey     string
 	SportMonksKey      string
 
-	// Usado pelo módulo de Inteligência Estatística para gerar explicações em texto.
-	// Se vazio, o endpoint de explicação retorna erro claro em vez de quebrar.
-	AnthropicAPIKey string
+	// Usado pelo módulo de Inteligência Estatística para gerar explicações em texto
+	// via OpenAI (Chat Completions API). Se vazio, o endpoint de explicação retorna
+	// erro claro em vez de quebrar.
+	OpenAIAPIKey string
 
 	// TTL padrão do cache de cálculos do módulo de Inteligência Estatística.
 	// Regra do documento de requisitos: "atualização automática diária".
@@ -43,7 +44,7 @@ func Load() Config {
 		APIFootballKey:     getEnv("API_FOOTBALL_KEY", ""),
 		SportMonksKey:      getEnv("SPORTMONKS_KEY", ""),
 
-		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
+		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
 
 		IntelligenceCacheTTL: 24 * time.Hour,
 	}

@@ -19,6 +19,8 @@ type Handlers struct {
 	Alert           *handlers.AlertHandler
 	StrategyHistory *handlers.StrategyHistoryHandler
 	Export          *handlers.ExportHandler
+	Diagnostics     *handlers.DiagnosticsHandler
+	Bankroll        *handlers.BankrollHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
@@ -70,6 +72,13 @@ func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
 		exports.GET("/filters/run", h.Export.FilterRunCSV)
 		exports.GET("/ranking", h.Export.RankingCSV)
 
+		// Painel "Integrações" — status/consumo das chaves de API externas
+		// (OpenAI, API-Football, SportMonks) e botão "Testar agora" por provedor.
+		diag := api.Group("/diagnostics")
+		diag.GET("/usage", h.Diagnostics.Usage)
+		diag.GET("/recent", h.Diagnostics.Recent)
+		diag.POST("/test/:provider", h.Diagnostics.TestConnection)
+
 		authGroup := api.Group("")
 		authGroup.Use(middleware.AuthRequired(jwtSecret))
 		{
@@ -89,6 +98,18 @@ func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
 			authGroup.DELETE("/alerts/:id", h.Alert.Delete)
 
 			authGroup.GET("/strategy-history", h.StrategyHistory.List)
+
+			// Módulo de Gestão Evolutiva de Banca — usa as apostas já registradas pelo
+			// usuário (acima) como base real dos cálculos de evolução de fase.
+			bankroll := authGroup.Group("/bankroll")
+			bankroll.GET("/status", h.Bankroll.Status)
+			bankroll.GET("/phases", h.Bankroll.ListPhases)
+			bankroll.PUT("/phases", h.Bankroll.SetPhases)
+			bankroll.GET("/criteria", h.Bankroll.GetCriteria)
+			bankroll.PUT("/criteria", h.Bankroll.SetCriteria)
+			bankroll.POST("/promote", h.Bankroll.Promote)
+			bankroll.POST("/demote", h.Bankroll.Demote)
+			bankroll.GET("/history", h.Bankroll.History)
 		}
 	}
 

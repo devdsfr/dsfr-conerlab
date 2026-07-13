@@ -9,6 +9,13 @@ import {
   ComparisonResult,
   FilterRunRequest,
   BacktestResult,
+  UsageSummaryResponse,
+  TestConnectionResult,
+  UsageEntry,
+  BankrollPhase,
+  BankrollCriteria,
+  BankrollStatus,
+  BankrollHistoryEntry,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -66,5 +73,53 @@ export class ApiService {
   // Módulo 3
   runFilter(req: FilterRunRequest): Observable<BacktestResult> {
     return this.http.post<BacktestResult>(`${this.base}/filters/run`, req);
+  }
+
+  // Painel "Integrações" — status/consumo das APIs externas
+  getUsageSummary(): Observable<UsageSummaryResponse> {
+    return this.http.get<UsageSummaryResponse>(`${this.base}/diagnostics/usage`);
+  }
+
+  testConnection(provider: string): Observable<TestConnectionResult> {
+    return this.http.post<TestConnectionResult>(`${this.base}/diagnostics/test/${provider}`, {});
+  }
+
+  getRecentUsage(provider?: string, limit = 30): Observable<{ entries: UsageEntry[] }> {
+    let url = `${this.base}/diagnostics/recent?limit=${limit}`;
+    if (provider) url += `&provider=${provider}`;
+    return this.http.get<{ entries: UsageEntry[] }>(url);
+  }
+
+  // Módulo de Gestão Evolutiva de Banca (requer usuário autenticado — ver AuthService)
+  getBankrollStatus(): Observable<BankrollStatus> {
+    return this.http.get<BankrollStatus>(`${this.base}/bankroll/status`);
+  }
+
+  getBankrollPhases(): Observable<{ phases: BankrollPhase[] }> {
+    return this.http.get<{ phases: BankrollPhase[] }>(`${this.base}/bankroll/phases`);
+  }
+
+  setBankrollPhases(phases: { sequence: number; name: string; amount: number }[]): Observable<{ phases: BankrollPhase[] }> {
+    return this.http.put<{ phases: BankrollPhase[] }>(`${this.base}/bankroll/phases`, { phases });
+  }
+
+  getBankrollCriteria(): Observable<BankrollCriteria> {
+    return this.http.get<BankrollCriteria>(`${this.base}/bankroll/criteria`);
+  }
+
+  setBankrollCriteria(criteria: BankrollCriteria): Observable<BankrollCriteria> {
+    return this.http.put<BankrollCriteria>(`${this.base}/bankroll/criteria`, criteria);
+  }
+
+  promoteBankroll(notes: string): Observable<BankrollHistoryEntry> {
+    return this.http.post<BankrollHistoryEntry>(`${this.base}/bankroll/promote`, { notes });
+  }
+
+  demoteBankroll(reason: string, notes: string): Observable<BankrollHistoryEntry> {
+    return this.http.post<BankrollHistoryEntry>(`${this.base}/bankroll/demote`, { reason, notes });
+  }
+
+  getBankrollHistory(): Observable<{ history: BankrollHistoryEntry[] }> {
+    return this.http.get<{ history: BankrollHistoryEntry[] }>(`${this.base}/bankroll/history`);
   }
 }

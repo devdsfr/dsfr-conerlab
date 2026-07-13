@@ -94,3 +94,25 @@ type LeagueStatsRepository interface {
 	// mais recentes de cada equipe (0 = todos os jogos do período).
 	TeamAggregates(ctx context.Context, leagueID int64, seasonIDs []int64, limit int) ([]TeamAggregate, error)
 }
+
+// BankrollRepository persiste a configuração e o estado do Módulo de Gestão Evolutiva
+// de Banca (fases, critérios de evolução, estado atual e histórico de mudanças).
+type BankrollRepository interface {
+	ListPhases(ctx context.Context, userID int64) ([]domain.BankrollPhase, error)
+	// ReplacePhases substitui toda a sequência de fases configurada pelo usuário e
+	// retorna a lista resultante (ordenada por sequência).
+	ReplacePhases(ctx context.Context, userID int64, phases []domain.BankrollPhase) ([]domain.BankrollPhase, error)
+
+	// GetCriteria nunca retorna erro por ausência de configuração — devolve valores
+	// padrão sensatos na primeira vez que o usuário acessa o módulo.
+	GetCriteria(ctx context.Context, userID int64) (domain.BankrollCriteria, error)
+	SaveCriteria(ctx context.Context, c domain.BankrollCriteria) error
+
+	// GetState retorna nil (sem erro) se o usuário ainda não inicializou o módulo.
+	GetState(ctx context.Context, userID int64) (*domain.BankrollState, error)
+	InitState(ctx context.Context, userID int64) (*domain.BankrollState, error)
+	SetPhase(ctx context.Context, userID int64, newSequence int) (*domain.BankrollState, error)
+
+	AddHistory(ctx context.Context, e *domain.BankrollHistoryEntry) error
+	ListHistory(ctx context.Context, userID int64) ([]domain.BankrollHistoryEntry, error)
+}

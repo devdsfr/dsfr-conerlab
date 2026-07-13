@@ -135,3 +135,142 @@ export interface BacktestResult {
   entries: BacktestEntry[];
   disclaimer: string;
 }
+
+// Painel "Integrações" — status/consumo das APIs externas (OpenAI, API-Football, SportMonks)
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+
+export interface ProviderSummary {
+  provider: string;
+  display_name: string;
+  configured: boolean;
+  total_calls: number;
+  success_calls: number;
+  error_calls: number;
+  tokens_total: number;
+  last_call_at: string | null;
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_message: string;
+  daily_calls: DailyCount[];
+}
+
+export interface UsageSummaryResponse {
+  providers: ProviderSummary[];
+}
+
+export interface TestConnectionResult {
+  provider: string;
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+}
+
+export interface UsageEntry {
+  provider: string;
+  endpoint: string;
+  success: boolean;
+  status_code: number | null;
+  tokens_total: number | null;
+  error_message: string;
+  duration_ms: number;
+  created_at: string;
+}
+
+// Autenticação (necessária para o Módulo de Gestão Evolutiva de Banca, que é por
+// usuário — reaproveita os mesmos endpoints usados pelo Módulo de Apostas/Alertas)
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+  token: string;
+}
+
+// Módulo de Gestão Evolutiva de Banca
+export interface BankrollPhase {
+  id: number;
+  user_id: number;
+  sequence: number;
+  name: string;
+  amount: number;
+}
+
+export interface BankrollCriteria {
+  user_id: number;
+  min_days: number;
+  min_bets: number;
+  min_win_rate: number;
+  min_roi: number;
+  min_yield: number;
+  require_positive_profit: boolean;
+  min_completed_cycles: number;
+  cycle_win_streak: number;
+}
+
+export interface BankrollMetrics {
+  sample_size: number;
+  win_rate: number;
+  roi: number;
+  yield: number;
+  net_profit: number;
+  completed_cycles: number;
+  days_in_phase: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  monthly_consistency: number;
+}
+
+export interface BankrollChecklistItem {
+  label: string;
+  met: boolean;
+  current: string;
+  required: string;
+}
+
+export interface BankrollMaturity {
+  score: number;
+  stars: number;
+  status: string;
+}
+
+export interface BankrollState {
+  user_id: number;
+  current_phase_sequence: number;
+  phase_started_at: string;
+  highest_phase_sequence: number;
+  promotions: number;
+  demotions: number;
+}
+
+export interface BankrollStatus {
+  current_phase: BankrollPhase;
+  next_phase: BankrollPhase | null;
+  previous_phase: BankrollPhase | null;
+  metrics: BankrollMetrics;
+  criteria: BankrollCriteria;
+  checklist: BankrollChecklistItem[];
+  ready_to_promote: boolean;
+  blocked_reasons: string[];
+  maturity: BankrollMaturity;
+  progress: number;
+  state: BankrollState;
+  demotion_suggested: boolean;
+  demotion_reason: string;
+}
+
+export interface BankrollHistoryEntry {
+  id: number;
+  user_id: number;
+  from_amount: number;
+  to_amount: number;
+  direction: 'promotion' | 'demotion';
+  reason: string;
+  notes: string;
+  created_at: string;
+}

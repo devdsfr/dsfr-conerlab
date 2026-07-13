@@ -19,6 +19,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/sportmonks"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
+	"github.com/devdsfr/cornerlab/internal/usagelog"
 	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
@@ -49,17 +50,22 @@ func main() {
 		providerName = *providerFlag
 	}
 
-	provider, err := buildProvider(providerName, cfg.APIFootballKey, cfg.SportMonksKey)
-	if err != nil {
-		log.Fatalf("erro ao configurar provedor de dados: %v", err)
-	}
-
 	ctx := context.Background()
 	pool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("erro ao conectar no postgres: %v", err)
 	}
 	defer pool.Close()
+
+	// Registra também aqui (não só na API web) o consumo das chaves de API-Football/
+	// SportMonks, para que o painel de diagnóstico "Integrações" reflita chamadas
+	// feitas por este comando de sincronização manual.
+	usageRepo := postgres.NewUsageRepo(pool)
+
+	provider, err := buildProvider(providerName, cfg.APIFootballKey, cfg.SportMonksKey, usageRepo)
+	if err != nil {
+		log.Fatalf("erro ao configurar provedor de dados: %v", err)
+	}
 
 	syncRepo := postgres.NewSyncRepo(pool)
 	syncUC := usecase.NewSyncUsecase(provider, syncRepo)
@@ -76,13 +82,13 @@ func main() {
 	fmt.Println("Sincronização concluída.")
 }
 
-func buildProvider(name, apiFootballKey, sportMonksKey string) (sportsdata.Provider, error) {
+func buildProvider(name, apiFootballKey, sportMonksKey string, recorder usagelog.Recorder) (sportsdata.Provider, error) {
 	var primary, secondary sportsdata.Provider
 	if apiFootballKey != "" {
-		primary = apifootball.New(apiFootballKey)
+		primary = apifootball.New(apiFootballKey, recorder)
 	}
 	if sportMonksKey != "" {
-		secondary = sportmonks.New(sportMonksKey)
+		secondary = sportmonks.New(sportMonksKey, recorder)
 	}
 
 	switch name {
@@ -90,12 +96,12 @@ func buildProvider(name, apiFootballKey, sportMonksKey string) (sportsdata.Provi
 		if apiFootballKey == "" {
 			return nil, fmt.Errorf("API_FOOTBALL_KEY não configurada")
 		}
-		return apifootball.New(apiFootballKey), nil
+		return apifootball.New(apiFootballKey, recorder), nil
 	case "sportmonks":
 		if sportMonksKey == "" {
 			return nil, fmt.Errorf("SPORTMONKS_KEY não configurada")
 		}
-		return sportmonks.New(sportMonksKey), nil
+		return sportmonks.New(sportMonksKey, recorder), nil
 	case "fallback", "":
 		if primary == nil && secondary == nil {
 			return nil, fmt.Errorf("nenhuma chave de API configurada (API_FOOTBALL_KEY ou SPORTMONKS_KEY)")

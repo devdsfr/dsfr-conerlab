@@ -1,7 +1,9 @@
 // Package sportmonks implementa sportsdata.Provider usando a SportMonks Football
 // API v3. Diferente da API-Football, o SportMonks permite trazer participantes,
 // placar e estatísticas em uma única chamada via "include", reduzindo o número de
-// requisições necessárias para sincronizar uma temporada inteira.
+// requisições necessárias para sincronizar uma temporada inteira. Cada chamada real é
+// registrada via internal/usagelog, para alimentar o painel de diagnóstico
+// "Integrações".
 //
 // Observação: os nomes de filtros/includes usados aqui seguem a convenção pública da
 // v3 (https://docs.sportmonks.com/v3) no momento da escrita. Como a disponibilidade
@@ -12,12 +14,14 @@ package sportmonks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata"
+	"github.com/devdsfr/cornerlab/internal/usagelog"
 )
 
 const baseURL = "https://api.sportmonks.com/v3/football"
@@ -28,20 +32,35 @@ const baseURL = "https://api.sportmonks.com/v3/football"
 // número que pode variar entre contas/planos.
 const cornersDeveloperName = "CORNERS"
 
+var ErrNotConfigured = errors.New("SPORTMONKS_KEY não configurada")
+
 type Client struct {
 	apiToken   string
 	httpClient *http.Client
+	recorder   usagelog.Recorder
 }
 
-func New(apiToken string) *Client {
-	return &Client{apiToken: apiToken, httpClient: &http.Client{Timeout: 20 * time.Second}}
+// New cria o cliente. recorder pode ser nil (nenhum uso é registrado) ou um
+// usagelog.Recorder (ex: internal/repository/postgres.UsageRepo).
+func New(apiToken string, recorder usagelog.Recorder) *Client {
+	return &Client{apiToken: apiToken, httpClient: &http.Client{Timeout: 20 * time.Second}, recorder: recorder}
 }
 
 func (c *Client) Name() string { return "sportmonks" }
 
-func (c *Client) get(ctx context.Context, path string, query map[string]string) ([]byte, error) {
+// get executa uma requisição GET autenticada e registra o resultado (sucesso/erro,
+// status HTTP, duração) via internal/usagelog. endpointLabel identifica a operação no
+// histórico de uso (ex: "leagues.search", "leagues.get", "fixtures").
+func (c *Client) get(ctx context.Context, path string, query map[string]string, endpointLabel string) ([]byte, error) {
+	start := time.Now()
+	if c.apiToken == "" {
+		c.record(endpointLabel, false, nil, ErrNotConfigured.Error(), time.Since(start))
+		return nil, ErrNotConfigured
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
 	if err != nil {
+		c.record(endpointLabel, false, nil, err.Error(), time.Since(start))
 		return nil, err
 	}
 	q := req.URL.Query()
@@ -53,24 +72,51 @@ func (c *Client) get(ctx context.Context, path string, query map[string]string) 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		wrapped := fmt.Errorf("falha ao chamar a SportMonks (%s): %w", endpointLabel, err)
+		c.record(endpointLabel, false, nil, wrapped.Error(), time.Since(start))
+		return nil, wrapped
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("sportmonks retornou status %d para %s", resp.StatusCode, path)
+		errMsg := fmt.Sprintf("sportmonks retornou status %d para %s", resp.StatusCode, path)
+		c.record(endpointLabel, false, &resp.StatusCode, errMsg, time.Since(start))
+		return nil, errors.New(errMsg)
 	}
+
 	buf := make([]byte, 0)
 	chunk := make([]byte, 4096)
 	for {
-		n, err := resp.Body.Read(chunk)
+		n, readErr := resp.Body.Read(chunk)
 		if n > 0 {
 			buf = append(buf, chunk[:n]...)
 		}
-		if err != nil {
+		if readErr != nil {
 			break
 		}
 	}
+
+	c.record(endpointLabel, true, &resp.StatusCode, "", time.Since(start))
 	return buf, nil
+}
+
+func (c *Client) record(endpoint string, success bool, statusCode *int, errMsg string, dur time.Duration) {
+	usagelog.RecordAsync(c.recorder, usagelog.Entry{
+		Provider:     usagelog.ProviderSportMonks,
+		Endpoint:     endpoint,
+		Success:      success,
+		StatusCode:   statusCode,
+		ErrorMessage: errMsg,
+		DurationMs:   int(dur.Milliseconds()),
+	})
+}
+
+// TestConnection faz uma chamada leve (1 registro) só para validar que o token
+// configurado é aceito pela SportMonks e a API responde. Usado pelo botão "Testar
+// agora" do painel de diagnóstico "Integrações".
+func (c *Client) TestConnection(ctx context.Context) error {
+	_, err := c.get(ctx, "/leagues", map[string]string{"per_page": "1"}, "test_connection")
+	return err
 }
 
 type leagueSearchResponse struct {
@@ -84,7 +130,7 @@ type leagueSearchResponse struct {
 }
 
 func (c *Client) resolveLeagueID(ctx context.Context, leagueName string) (int, error) {
-	body, err := c.get(ctx, "/leagues/search/"+leagueName, nil)
+	body, err := c.get(ctx, "/leagues/search/"+leagueName, nil, "leagues.search")
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +154,7 @@ type seasonsResponse struct {
 }
 
 func (c *Client) resolveSeasonID(ctx context.Context, leagueID, year int) (int, error) {
-	body, err := c.get(ctx, fmt.Sprintf("/leagues/%d", leagueID), map[string]string{"include": "seasons"})
+	body, err := c.get(ctx, fmt.Sprintf("/leagues/%d", leagueID), map[string]string{"include": "seasons"}, "leagues.get")
 	if err != nil {
 		return 0, err
 	}
@@ -169,7 +215,7 @@ func (c *Client) FetchFixtures(ctx context.Context, leagueName, country string, 
 	body, err := c.get(ctx, "/fixtures", map[string]string{
 		"filters": fmt.Sprintf("fixtureSeasons:%d", seasonID),
 		"include": "participants;scores;statistics.type",
-	})
+	}, "fixtures")
 	if err != nil {
 		return nil, err
 	}

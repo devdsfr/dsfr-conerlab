@@ -1,29 +1,38 @@
 // Package apifootball implementa sportsdata.Provider usando a API-Football
 // (api-sports.io / v3.football.api-sports.io). Requer uma chave de assinatura direta
 // da API-Sports (header "x-apisports-key"). Para uso via RapidAPI, ajuste os headers
-// em newRequest.
+// em newRequest. Cada chamada real é registrada via internal/usagelog, para alimentar
+// o painel de diagnóstico "Integrações".
 package apifootball
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata"
+	"github.com/devdsfr/cornerlab/internal/usagelog"
 )
 
 const baseURL = "https://v3.football.api-sports.io"
 
+var ErrNotConfigured = errors.New("API_FOOTBALL_KEY não configurada")
+
 type Client struct {
 	apiKey     string
 	httpClient *http.Client
+	recorder   usagelog.Recorder
 }
 
-func New(apiKey string) *Client {
-	return &Client{apiKey: apiKey, httpClient: &http.Client{Timeout: 20 * time.Second}}
+// New cria o cliente. recorder pode ser nil (nenhum uso é registrado) ou um
+// usagelog.Recorder (ex: internal/repository/postgres.UsageRepo).
+func New(apiKey string, recorder usagelog.Recorder) *Client {
+	return &Client{apiKey: apiKey, httpClient: &http.Client{Timeout: 20 * time.Second}, recorder: recorder}
 }
 
 func (c *Client) Name() string { return "api-football" }
@@ -42,6 +51,65 @@ func (c *Client) newRequest(ctx context.Context, path string, query map[string]s
 	return req, nil
 }
 
+// doGet executa uma requisição GET autenticada e registra o resultado (sucesso/erro,
+// status HTTP, duração) via internal/usagelog. endpointLabel identifica a operação no
+// histórico de uso (ex: "leagues", "fixtures", "fixtures.statistics", "status").
+func (c *Client) doGet(ctx context.Context, path string, query map[string]string, endpointLabel string) ([]byte, error) {
+	start := time.Now()
+	if c.apiKey == "" {
+		c.record(endpointLabel, false, nil, ErrNotConfigured.Error(), time.Since(start))
+		return nil, ErrNotConfigured
+	}
+
+	req, err := c.newRequest(ctx, path, query)
+	if err != nil {
+		c.record(endpointLabel, false, nil, err.Error(), time.Since(start))
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		wrapped := fmt.Errorf("falha ao chamar a API-Football (%s): %w", endpointLabel, err)
+		c.record(endpointLabel, false, nil, wrapped.Error(), time.Since(start))
+		return nil, wrapped
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.record(endpointLabel, false, &resp.StatusCode, err.Error(), time.Since(start))
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		errMsg := fmt.Sprintf("API-Football retornou status %d para %s", resp.StatusCode, path)
+		c.record(endpointLabel, false, &resp.StatusCode, errMsg, time.Since(start))
+		return nil, errors.New(errMsg)
+	}
+
+	c.record(endpointLabel, true, &resp.StatusCode, "", time.Since(start))
+	return body, nil
+}
+
+func (c *Client) record(endpoint string, success bool, statusCode *int, errMsg string, dur time.Duration) {
+	usagelog.RecordAsync(c.recorder, usagelog.Entry{
+		Provider:     usagelog.ProviderAPIFootball,
+		Endpoint:     endpoint,
+		Success:      success,
+		StatusCode:   statusCode,
+		ErrorMessage: errMsg,
+		DurationMs:   int(dur.Milliseconds()),
+	})
+}
+
+// TestConnection chama o endpoint /status da API-Football, que devolve informações da
+// assinatura (plano, cota diária) sem consumir a cota de requisições — ideal para o
+// botão "Testar agora" do painel de diagnóstico.
+func (c *Client) TestConnection(ctx context.Context) error {
+	_, err := c.doGet(ctx, "/status", nil, "status")
+	return err
+}
+
 type leaguesResponse struct {
 	Response []struct {
 		League struct {
@@ -52,18 +120,12 @@ type leaguesResponse struct {
 }
 
 func (c *Client) resolveLeagueID(ctx context.Context, leagueName, country string) (int, error) {
-	req, err := c.newRequest(ctx, "/leagues", map[string]string{"name": leagueName, "country": country})
+	body, err := c.doGet(ctx, "/leagues", map[string]string{"name": leagueName, "country": country}, "leagues")
 	if err != nil {
 		return 0, err
 	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
 	var parsed leaguesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return 0, err
 	}
 	if len(parsed.Response) == 0 {
@@ -108,21 +170,16 @@ func (c *Client) FetchFixtures(ctx context.Context, leagueName, country string, 
 		return nil, err
 	}
 
-	req, err := c.newRequest(ctx, "/fixtures", map[string]string{
+	body, err := c.doGet(ctx, "/fixtures", map[string]string{
 		"league": strconv.Itoa(leagueID),
 		"season": strconv.Itoa(season),
-	})
+	}, "fixtures")
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 
 	var parsed fixturesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, err
 	}
 
@@ -173,18 +230,13 @@ type statisticsResponse struct {
 // retorna um bloco de estatísticas por equipe (mandante e visitante); o primeiro
 // bloco do array é sempre o time mandante, conforme documentação da API-Football.
 func (c *Client) FetchCorners(ctx context.Context, fixtureExternalID string) (int, int, bool, error) {
-	req, err := c.newRequest(ctx, "/fixtures/statistics", map[string]string{"fixture": fixtureExternalID})
+	body, err := c.doGet(ctx, "/fixtures/statistics", map[string]string{"fixture": fixtureExternalID}, "fixtures.statistics")
 	if err != nil {
 		return 0, 0, false, err
 	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, 0, false, err
-	}
-	defer resp.Body.Close()
 
 	var parsed statisticsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return 0, 0, false, err
 	}
 	if len(parsed.Response) < 2 {

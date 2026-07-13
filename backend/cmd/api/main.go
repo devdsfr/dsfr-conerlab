@@ -10,8 +10,12 @@ import (
 	httpDelivery "github.com/devdsfr/cornerlab/internal/delivery/http"
 	"github.com/devdsfr/cornerlab/internal/delivery/http/handlers"
 	"github.com/devdsfr/cornerlab/internal/integration/llm"
+	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
+	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/sportmonks"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
 	"github.com/devdsfr/cornerlab/internal/usecase"
+	"github.com/devdsfr/cornerlab/internal/usecase/bankroll"
+	"github.com/devdsfr/cornerlab/internal/usecase/diagnostics"
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
 	"github.com/devdsfr/cornerlab/pkg/cache"
 	"github.com/devdsfr/cornerlab/pkg/config"
@@ -46,6 +50,8 @@ func main() {
 	alertRepo := postgres.NewAlertRuleRepo(pool)
 	strategyHistoryRepo := postgres.NewStrategyHistoryRepo(pool)
 	leagueStatsRepo := postgres.NewLeagueStatsRepo(pool)
+	usageRepo := postgres.NewUsageRepo(pool)
+	bankrollRepo := postgres.NewBankrollRepo(pool)
 
 	// Usecases — módulos originais (Dashboard, Comparador, Filtros, Auth, Apostas)
 	authUC := usecase.NewAuthUsecase(userRepo, cfg.JWTSecret, cfg.JWTExpiry)
@@ -54,6 +60,7 @@ func main() {
 	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, leagueRepo)
 	betUC := usecase.NewBetUsecase(betRepo)
 	strategyHistoryUC := usecase.NewStrategyHistoryUsecase(strategyHistoryRepo)
+	bankrollUC := bankroll.New(bankrollRepo, betRepo)
 
 	// Usecases — Módulo de Inteligência Estatística
 	consistencyUC := intelligence.NewConsistencyUsecase(matchRepo, teamRepo, leagueRepo)
@@ -66,8 +73,19 @@ func main() {
 	executiveUC := intelligence.NewExecutiveDashboardUsecase(leagueRepo, rankingUC, strategyHistoryRepo)
 	alertUC := intelligence.NewAlertUsecase(alertRepo, teamRepo, leagueRepo, leagueStatsRepo, matchRepo)
 
-	openaiClient := llm.NewOpenAIClient(cfg.OpenAIAPIKey)
+	// Clientes de integração externa — cada chamada real fica registrada em usageRepo
+	// (internal/usagelog), alimentando o painel de diagnóstico "Integrações".
+	openaiClient := llm.NewOpenAIClient(cfg.OpenAIAPIKey, usageRepo)
+	apiFootballClient := apifootball.New(cfg.APIFootballKey, usageRepo)
+	sportMonksClient := sportmonks.New(cfg.SportMonksKey, usageRepo)
+
 	explainUC := intelligence.NewExplainUsecase(openaiClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
+	diagnosticsUC := diagnostics.New(
+		usageRepo,
+		openaiClient, cfg.OpenAIAPIKey != "",
+		apiFootballClient, cfg.APIFootballKey != "",
+		sportMonksClient, cfg.SportMonksKey != "",
+	)
 
 	// Handlers
 	h := httpDelivery.Handlers{
@@ -84,6 +102,8 @@ func main() {
 		Alert:           handlers.NewAlertHandler(alertUC),
 		StrategyHistory: handlers.NewStrategyHistoryHandler(strategyHistoryUC),
 		Export:          handlers.NewExportHandler(dashboardUC, comparatorUC, filterUC, rankingUC),
+		Diagnostics:     handlers.NewDiagnosticsHandler(diagnosticsUC),
+		Bankroll:        handlers.NewBankrollHandler(bankrollUC),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret)

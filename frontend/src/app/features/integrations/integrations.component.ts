@@ -68,12 +68,16 @@ export class IntegrationsComponent implements OnInit {
   }
 
   private toView(p: ProviderSummary): ProviderView {
+    // Defesa extra: se algum dia a API voltar a mandar null aqui (provedor sem
+    // nenhuma chamada), não deixa a página inteira quebrar — mesmo bug já
+    // corrigido no backend para o campo "mode" do Dashboard.
+    const dailyCalls = p.daily_calls ?? [];
     return {
       ...p,
       testing: false,
       testResult: null,
-      chartLabels: p.daily_calls.map(d => d.date.slice(5)),
-      chartDatasets: [{ label: 'Chamadas/dia (7 dias)', data: p.daily_calls.map(d => d.count), color: '#38bdf8' }],
+      chartLabels: dailyCalls.map(d => d.date.slice(5)),
+      chartDatasets: [{ label: 'Chamadas/dia (7 dias)', data: dailyCalls.map(d => d.count), color: '#38bdf8' }],
     };
   }
 

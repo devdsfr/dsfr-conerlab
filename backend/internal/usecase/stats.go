@@ -49,7 +49,9 @@ func Percentile(values []int, p float64) float64 {
 func Summarize(values []int) StatSummary {
 	n := len(values)
 	if n == 0 {
-		return StatSummary{}
+		// Mode precisa ser [] (não nil) para não virar `null` no JSON — o
+		// frontend chama .join() direto no campo (ver dashboard.component.html).
+		return StatSummary{Mode: []int{}}
 	}
 
 	sorted := append([]int(nil), values...)
@@ -84,7 +86,7 @@ func Summarize(values []int) StatSummary {
 			maxFreq = freq[v]
 		}
 	}
-	var mode []int
+	mode := []int{} // nunca nil — ver comentário no caso n==0 acima
 	if maxFreq > 1 { // só existe "moda" clássica se algum valor se repete
 		for v, f := range freq {
 			if f == maxFreq {

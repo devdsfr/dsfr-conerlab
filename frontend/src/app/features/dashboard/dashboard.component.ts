@@ -87,9 +87,11 @@ export class DashboardComponent implements OnInit {
     });
     this.api.listTeams(this.selectedLeagueId).subscribe(teams => {
       this.teams.set(teams);
-      if (teams.length && !this.selectedTeamId) {
-        this.selectedTeamId = teams[0].id;
-      }
+      // Sempre reposiciona para a primeira equipe do campeonato selecionado —
+      // manter o id da equipe do campeonato anterior selecionado fazia a
+      // análise rodar com uma equipe de outra liga (amostra de 0 jogos).
+      this.selectedTeamId = teams.length ? teams[0].id : undefined;
+      this.result.set(null);
     });
   }
 

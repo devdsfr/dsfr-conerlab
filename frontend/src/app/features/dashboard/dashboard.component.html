@@ -73,7 +73,7 @@
           <dt class="text-slate-400">Menor</dt><dd>{{ r.corners_for.min }}</dd>
           <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.corners_for.std_dev }}</dd>
           <dt class="text-slate-400">Mediana</dt><dd>{{ r.corners_for.median }}</dd>
-          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_for.mode.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_for.mode?.join(', ') || '—' }}</dd>
           <dt class="text-slate-400">Total</dt><dd>{{ r.corners_for.total }}</dd>
         </dl>
       </div>
@@ -85,7 +85,7 @@
           <dt class="text-slate-400">Menor</dt><dd>{{ r.corners_against.min }}</dd>
           <dt class="text-slate-400">Desvio padrão</dt><dd>{{ r.corners_against.std_dev }}</dd>
           <dt class="text-slate-400">Mediana</dt><dd>{{ r.corners_against.median }}</dd>
-          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_against.mode.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Moda</dt><dd>{{ r.corners_against.mode?.join(', ') || '—' }}</dd>
           <dt class="text-slate-400">Total</dt><dd>{{ r.corners_against.total }}</dd>
         </dl>
       </div>

@@ -32,7 +32,10 @@ func (r *UsageRepo) Record(ctx context.Context, e usagelog.Entry) error {
 // (quando aplicável, ex: OpenAI), últimos horários de sucesso/erro e a série diária dos
 // últimos 7 dias (para o gráfico de consumo do painel "Integrações").
 func (r *UsageRepo) Stats(ctx context.Context, provider usagelog.Provider) (usagelog.ProviderStats, error) {
-	stats := usagelog.ProviderStats{Provider: provider}
+	// DailyCalls precisa começar como [] (não nil) — se o provedor não teve
+	// nenhuma chamada nos últimos 7 dias o loop abaixo nunca roda, e um slice nil
+	// vira `null` no JSON, quebrando o .map() do frontend (ver integrations.component.ts).
+	stats := usagelog.ProviderStats{Provider: provider, DailyCalls: []usagelog.DailyCount{}}
 
 	err := r.db.QueryRow(ctx, `
 		SELECT
@@ -104,7 +107,7 @@ func (r *UsageRepo) Recent(ctx context.Context, provider *usagelog.Provider, lim
 	}
 	defer rows.Close()
 
-	var entries []usagelog.Entry
+	entries := []usagelog.Entry{} // idem: nunca nil, senão vira `null` no JSON
 	for rows.Next() {
 		var e usagelog.Entry
 		var provStr string

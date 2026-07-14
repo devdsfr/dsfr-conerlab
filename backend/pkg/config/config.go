@@ -25,6 +25,13 @@ type Config struct {
 	// erro claro em vez de quebrar.
 	OpenAIAPIKey string
 
+	// Provedor usado pelo cmd/worker (Módulo de Sincronização de Dados, em background
+	// contínuo — diferente de SportsDataProvider acima, que é usado pelo cmd/sync
+	// manual). "api_football" (padrão, já tem chave real configurada) | "sofascore"
+	// (interface pronta, integração real ainda pendente — ver
+	// internal/integration/statsprovider/sofascore).
+	StatisticsProvider string
+
 	// TTL padrão do cache de cálculos do módulo de Inteligência Estatística.
 	// Regra do documento de requisitos: "atualização automática diária".
 	IntelligenceCacheTTL time.Duration
@@ -45,6 +52,8 @@ func Load() Config {
 		SportMonksKey:      getEnv("SPORTMONKS_KEY", ""),
 
 		OpenAIAPIKey: getEnv("OPENAI_API_KEY", ""),
+
+		StatisticsProvider: getEnv("STATISTICS_PROVIDER", "api_football"),
 
 		IntelligenceCacheTTL: 24 * time.Hour,
 	}

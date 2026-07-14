@@ -1,0 +1,175 @@
+// cmd/worker é o processo de background do Módulo de Sincronização de Dados
+// (Statistics Provider). Roda separado da API HTTP (cmd/api) — sobe como um segundo
+// serviço "Background Worker" no Render — e mantém o Postgres continuamente
+// sincronizado com o provedor de estatísticas configurado, sem que nenhuma requisição
+// da API precise esperar por uma chamada externa: os handlers HTTP sempre leem só do
+// Postgres (ver internal/usecase/dashboard.go e afins), então uma falha aqui nunca
+// derruba o app — na pior hipótese, os dados só param de ficar tão frescos.
+//
+// Workers desta fase (núcleo do módulo — ver critério de aceite):
+//  1. Descoberta       — a cada 30min, encontra jogos novos (AGENDADO), sem duplicar.
+//  2. Atualização       — a cada 15min, finaliza jogos cuja data já passou.
+//  3. Health Check       — a cada 1h, verifica a saúde do provedor (pedido explícito
+//     do usuário, essencial por depender de uma API sem contrato de estabilidade).
+//
+// Os Workers de recálculo de estatísticas agregadas (last5/10/20 etc.) e de
+// atualização de IA/rankings/alertas, além do Dashboard Administrativo, ficam para a
+// fase 2 deste módulo (escopo combinado com o usuário).
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/joho/godotenv"
+
+	"github.com/devdsfr/cornerlab/internal/integration/statsprovider"
+	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
+	"github.com/devdsfr/cornerlab/internal/integration/statsprovider/sofascore"
+	"github.com/devdsfr/cornerlab/internal/repository/postgres"
+	"github.com/devdsfr/cornerlab/internal/usagelog"
+	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
+	"github.com/devdsfr/cornerlab/pkg/config"
+	"github.com/devdsfr/cornerlab/pkg/database"
+	"github.com/devdsfr/cornerlab/pkg/logger"
+)
+
+const (
+	discoveryInterval   = 30 * time.Minute
+	updateInterval      = 15 * time.Minute
+	healthCheckInterval = 1 * time.Hour
+)
+
+func main() {
+	_ = godotenv.Load()
+	cfg := config.Load()
+	appLog := logger.New(cfg.Environment)
+	slog.SetDefault(appLog)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		appLog.Error("falha ao conectar no postgres", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	usageRepo := postgres.NewUsageRepo(pool)
+	statSyncRepo := postgres.NewStatSyncRepo(pool)
+	incidentRepo := postgres.NewProviderIncidentRepo(pool)
+
+	provider, err := buildProvider(cfg.StatisticsProvider, cfg.APIFootballKey, usageRepo)
+	if err != nil {
+		appLog.Error("falha ao configurar provedor de estatísticas", "error", err)
+		os.Exit(1)
+	}
+
+	discoveryUC := statsync.NewDiscoveryUsecase(provider, statSyncRepo, incidentRepo)
+	updateUC := statsync.NewUpdateUsecase(provider, statSyncRepo, incidentRepo)
+	healthUC := statsync.NewHealthCheckUsecase(provider, incidentRepo)
+
+	appLog.Info("CornerLab worker de sincronização iniciando", "provider", provider.Name(),
+		"discovery_interval", discoveryInterval.String(), "update_interval", updateInterval.String(),
+		"health_check_interval", healthCheckInterval.String())
+
+	// Health check roda uma vez antes de tudo, para já saber se o provedor está
+	// saudável antes do primeiro ciclo de descoberta/atualização.
+	runHealthCheck(ctx, healthUC)
+	runDiscovery(ctx, discoveryUC)
+	runUpdate(ctx, updateUC)
+
+	discoveryTicker := time.NewTicker(discoveryInterval)
+	updateTicker := time.NewTicker(updateInterval)
+	healthTicker := time.NewTicker(healthCheckInterval)
+	defer discoveryTicker.Stop()
+	defer updateTicker.Stop()
+	defer healthTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			appLog.Info("worker de sincronização encerrando")
+			return
+		case <-discoveryTicker.C:
+			runDiscovery(ctx, discoveryUC)
+		case <-updateTicker.C:
+			runUpdate(ctx, updateUC)
+		case <-healthTicker.C:
+			runHealthCheck(ctx, healthUC)
+		}
+	}
+}
+
+// runDiscovery, runUpdate e runHealthCheck sempre recuperam de panic — uma falha
+// inesperada em um ciclo nunca deve derrubar o processo inteiro (regra do critério de
+// aceite: "falhas do provider não podem quebrar a aplicação").
+func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) {
+	defer recoverAndLog("descoberta")
+	start := time.Now()
+	result, err := uc.Run(ctx)
+	fields := []any{
+		"duration_ms", time.Since(start).Milliseconds(),
+		"targets", result.Targets, "fixtures_found", result.FixturesFound,
+		"fixtures_upserted", result.FixturesUpserted, "errors", result.Errors,
+	}
+	if err != nil {
+		slog.Error("ciclo de descoberta falhou", append(fields, "error", err)...)
+		return
+	}
+	slog.Info("ciclo de descoberta concluído", fields...)
+}
+
+func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) {
+	defer recoverAndLog("atualização")
+	start := time.Now()
+	result, err := uc.Run(ctx)
+	fields := []any{
+		"duration_ms", time.Since(start).Milliseconds(),
+		"checked", result.Checked, "finalized", result.Finalized,
+		"still_open", result.StillOpen, "errors", result.Errors,
+	}
+	if err != nil {
+		slog.Error("ciclo de atualização falhou", append(fields, "error", err)...)
+		return
+	}
+	slog.Info("ciclo de atualização concluído", fields...)
+}
+
+func runHealthCheck(ctx context.Context, uc *statsync.HealthCheckUsecase) {
+	defer recoverAndLog("health check")
+	start := time.Now()
+	result, err := uc.Run(ctx)
+	fields := []any{"duration_ms", time.Since(start).Milliseconds(), "ok", result.OK}
+	if err != nil {
+		slog.Error("ciclo de health check falhou", append(fields, "error", err)...)
+		return
+	}
+	slog.Info("ciclo de health check concluído", fields...)
+}
+
+func recoverAndLog(cycle string) {
+	if r := recover(); r != nil {
+		slog.Error("panic recuperado em ciclo do worker — processo continua rodando", "cycle", cycle, "panic", r)
+	}
+}
+
+// buildProvider escolhe a implementação de statsprovider.StatisticsProvider conforme
+// STATISTICS_PROVIDER. "sofascore" já é aceito aqui (a interface está pronta), mas
+// hoje devolve sempre ErrNotImplemented — ver comentário de pacote em
+// internal/integration/statsprovider/sofascore/client.go sobre o motivo.
+func buildProvider(name, apiFootballKey string, recorder usagelog.Recorder) (statsprovider.StatisticsProvider, error) {
+	switch name {
+	case "sofascore":
+		return sofascore.New(), nil
+	case "api_football", "":
+		return apifootball.New(apiFootballKey, recorder), nil
+	default:
+		return apifootball.New(apiFootballKey, recorder), nil
+	}
+}

@@ -52,6 +52,10 @@ export class DashboardComponent implements OnInit {
   limit = 10;
 
   loading = signal(false);
+  // Loading dedicado para os combos "Campeonato"/"Equipe" — sem isso, o combo fica
+  // com a aparência de travado (vazio, sem feedback) durante o fetch inicial.
+  leaguesLoading = signal(true);
+  teamsLoading = signal(false);
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
   trendChart = signal<ChartData>({ labels: [], datasets: [] });
@@ -64,18 +68,27 @@ export class DashboardComponent implements OnInit {
   constructor(private api: ApiService) {}
 
   ngOnInit(): void {
-    this.api.listLeagues().subscribe(leagues => {
-      this.leagues.set(leagues);
-      if (leagues.length) {
-        this.selectedLeagueId = leagues[0].id;
-        this.onLeagueChange();
-      }
+    this.leaguesLoading.set(true);
+    this.api.listLeagues().subscribe({
+      next: leagues => {
+        this.leagues.set(leagues);
+        this.leaguesLoading.set(false);
+        if (leagues.length) {
+          this.selectedLeagueId = leagues[0].id;
+          this.onLeagueChange();
+        }
+      },
+      error: err => {
+        this.leaguesLoading.set(false);
+        this.error.set(err?.error?.error ?? 'Erro ao carregar campeonatos');
+      },
     });
   }
 
   onLeagueChange(): void {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonId = undefined;
+    this.teamsLoading.set(true);
     this.api.listSeasons(this.selectedLeagueId).subscribe(seasons => {
       this.seasons.set(seasons);
       // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
@@ -85,13 +98,17 @@ export class DashboardComponent implements OnInit {
         this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
       }
     });
-    this.api.listTeams(this.selectedLeagueId).subscribe(teams => {
-      this.teams.set(teams);
-      // Sempre reposiciona para a primeira equipe do campeonato selecionado —
-      // manter o id da equipe do campeonato anterior selecionado fazia a
-      // análise rodar com uma equipe de outra liga (amostra de 0 jogos).
-      this.selectedTeamId = teams.length ? teams[0].id : undefined;
-      this.result.set(null);
+    this.api.listTeams(this.selectedLeagueId).subscribe({
+      next: teams => {
+        this.teams.set(teams);
+        // Sempre reposiciona para a primeira equipe do campeonato selecionado —
+        // manter o id da equipe do campeonato anterior selecionado fazia a
+        // análise rodar com uma equipe de outra liga (amostra de 0 jogos).
+        this.selectedTeamId = teams.length ? teams[0].id : undefined;
+        this.result.set(null);
+        this.teamsLoading.set(false);
+      },
+      error: () => this.teamsLoading.set(false),
     });
   }
 

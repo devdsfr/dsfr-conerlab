@@ -3,17 +3,20 @@
 
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
     <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
-      <mat-label>Campeonato</mat-label>
-      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()" panelClass="cl-select-panel">
+      <mat-label>{{ leaguesLoading() ? 'Carregando campeonatos…' : 'Campeonato' }}</mat-label>
+      <mat-select [(ngModel)]="selectedLeagueId" (selectionChange)="onLeagueChange()" panelClass="cl-select-panel" [disabled]="leaguesLoading()">
         @for (l of leagues(); track l.id) {
           <mat-option [value]="l.id">{{ l.name }}</mat-option>
         }
       </mat-select>
+      @if (leaguesLoading()) {
+        <mat-spinner matSuffix diameter="18"></mat-spinner>
+      }
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="w-44">
       <mat-label>Temporada</mat-label>
-      <mat-select [(ngModel)]="selectedSeasonId" panelClass="cl-select-panel">
+      <mat-select [(ngModel)]="selectedSeasonId" panelClass="cl-select-panel" [disabled]="teamsLoading()">
         <mat-option [value]="undefined">Todas</mat-option>
         @for (s of seasons(); track s.id) {
           <mat-option [value]="s.id">{{ s.label }}</mat-option>
@@ -22,12 +25,15 @@
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="w-72" [title]="selectedTeamName()">
-      <mat-label>Equipe</mat-label>
-      <mat-select [(ngModel)]="selectedTeamId" panelClass="cl-select-panel">
+      <mat-label>{{ teamsLoading() ? 'Carregando equipes…' : 'Equipe' }}</mat-label>
+      <mat-select [(ngModel)]="selectedTeamId" panelClass="cl-select-panel" [disabled]="teamsLoading()">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
       </mat-select>
+      @if (teamsLoading()) {
+        <mat-spinner matSuffix diameter="18"></mat-spinner>
+      }
     </mat-form-field>
 
     <mat-button-toggle-group [(ngModel)]="limit">
@@ -37,7 +43,7 @@
       <mat-button-toggle [value]="20">20</mat-button-toggle>
     </mat-button-toggle-group>
 
-    <button mat-flat-button color="primary" (click)="runDashboard()" [disabled]="!selectedTeamId || loading()">
+    <button mat-flat-button color="primary" (click)="runDashboard()" [disabled]="!selectedTeamId || loading() || leaguesLoading() || teamsLoading()">
       Analisar
     </button>
   </div>

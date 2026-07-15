@@ -36,9 +36,14 @@
       <mat-button-toggle [value]="20">20</mat-button-toggle>
     </mat-button-toggle-group>
 
-    <button mat-flat-button color="primary" (click)="runCompare()" [disabled]="!teamAId || !teamBId || loading()">
-      Comparar
-    </button>
+    <div class="flex flex-col gap-1">
+      <button mat-flat-button color="primary" (click)="runCompare()" [disabled]="!teamAId || !teamBId || loading()">
+        Comparar
+      </button>
+      @if (missingSelectionMessage(); as hint) {
+        <span class="text-xs text-amber-400">{{ hint }}</span>
+      }
+    </div>
   </div>
 
   @if (loading()) {
@@ -63,7 +68,7 @@
           <h2 class="text-lg font-medium mb-2">{{ side.data.team.name }} <span class="text-xs text-slate-400">({{ side.data.team.tier }})</span></h2>
           <dl class="grid grid-cols-2 gap-y-1 text-sm mb-3">
             <dt class="text-slate-400">Média (total)</dt><dd>{{ side.data.total_corners.mean }}</dd>
-            <dt class="text-slate-400">Desvio padrão</dt><dd>{{ side.data.total_corners.std_dev }}</dd>
+            <dt class="text-slate-400">Desvio padrão <span class="cl-help" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.total_corners.std_dev }}</dd>
             <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.total_corners.consistency_index }}</dd>
             <dt class="text-slate-400">Média casa</dt><dd>{{ side.data.home?.mean ?? '—' }}</dd>
             <dt class="text-slate-400">Média fora</dt><dd>{{ side.data.away?.mean ?? '—' }}</dd>

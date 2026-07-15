@@ -19,6 +19,12 @@ export class AuthService {
   user = signal<AuthUser | null>(this.readUser());
   token = signal<string | null>(localStorage.getItem(TOKEN_KEY));
 
+  // Setado pelo authInterceptor quando uma requisição autenticada volta com
+  // 401 (token ausente/inválido/expirado). Permite que as telas mostrem uma
+  // mensagem humana ("sua sessão expirou") em vez do erro cru da API, no
+  // mesmo momento em que o usuário é deslogado automaticamente.
+  sessionExpired = signal(false);
+
   constructor(private http: HttpClient) {}
 
   isAuthenticated(): boolean {
@@ -37,11 +43,13 @@ export class AuthService {
     );
   }
 
-  logout(): void {
+  /** reason: 'expired' quando disparado automaticamente pelo interceptor após um 401. */
+  logout(reason?: 'expired'): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     this.token.set(null);
     this.user.set(null);
+    this.sessionExpired.set(reason === 'expired');
   }
 
   private persist(res: AuthResponse): void {
@@ -49,6 +57,7 @@ export class AuthService {
     localStorage.setItem(USER_KEY, JSON.stringify(res.user));
     this.token.set(res.token);
     this.user.set(res.user);
+    this.sessionExpired.set(false);
   }
 
   private readUser(): AuthUser | null {

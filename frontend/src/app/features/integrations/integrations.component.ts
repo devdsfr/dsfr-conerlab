@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -18,6 +18,12 @@ interface ProviderView extends ProviderSummary {
   chartDatasets: { label: string; data: number[]; color?: string }[];
 }
 
+// Se o carregamento inicial passar disso, mostramos um aviso de "está
+// demorando mais que o esperado" com opção de tentar de novo — em vez de
+// deixar o usuário olhando para um spinner sem qualquer contexto por tempo
+// indeterminado (ver template).
+const SLOW_LOAD_TIMEOUT_MS = 8000;
+
 @Component({
   selector: 'app-integrations',
   standalone: true,
@@ -33,8 +39,10 @@ interface ProviderView extends ProviderSummary {
   ],
   templateUrl: './integrations.component.html',
 })
-export class IntegrationsComponent implements OnInit {
+export class IntegrationsComponent implements OnInit, OnDestroy {
   loading = signal(true);
+  loadingSlow = signal(false);
+  private slowLoadTimer?: ReturnType<typeof setTimeout>;
   error = signal<string | null>(null);
   providers = signal<ProviderView[]>([]);
 
@@ -52,17 +60,29 @@ export class IntegrationsComponent implements OnInit {
     this.load();
   }
 
+  ngOnDestroy(): void {
+    clearTimeout(this.slowLoadTimer);
+  }
+
   load(): void {
     this.loading.set(true);
+    this.loadingSlow.set(false);
     this.error.set(null);
+    clearTimeout(this.slowLoadTimer);
+    this.slowLoadTimer = setTimeout(() => this.loadingSlow.set(true), SLOW_LOAD_TIMEOUT_MS);
+
     this.api.getUsageSummary().subscribe({
       next: res => {
         this.providers.set(res.providers.map(p => this.toView(p)));
         this.loading.set(false);
+        this.loadingSlow.set(false);
+        clearTimeout(this.slowLoadTimer);
       },
       error: err => {
         this.error.set(err?.error?.error ?? 'Erro ao carregar o status das integrações');
         this.loading.set(false);
+        this.loadingSlow.set(false);
+        clearTimeout(this.slowLoadTimer);
       },
     });
   }

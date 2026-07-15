@@ -56,6 +56,8 @@ export class ComparatorComponent implements OnInit {
 
   readonly consistencyTooltip =
     'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo. Valores baixos indicam resultados mais imprevisíveis.';
+  readonly stdDevTooltip =
+    'Desvio padrão: mede o quanto os valores de escanteios costumam se afastar da média. Quanto maior, mais irregulares foram os jogos dessa amostra.';
 
   constructor(private api: ApiService) {}
 
@@ -131,5 +133,15 @@ export class ComparatorComponent implements OnInit {
 
   selectedLeagueName(): string {
     return this.leagues().find(l => l.id === this.selectedLeagueId)?.name ?? '';
+  }
+
+  // Explica por que o botão "Comparar" está desabilitado — sem isso o botão só
+  // aparece esmaecido, sem indicar o que falta preencher (ver comparator.component.html).
+  missingSelectionMessage(): string | null {
+    if (this.loading()) return null;
+    if (!this.teamAId && !this.teamBId) return 'Selecione as duas equipes para comparar.';
+    if (!this.teamAId) return 'Selecione a Equipe A para comparar.';
+    if (!this.teamBId) return 'Selecione a Equipe B para comparar.';
+    return null;
   }
 }

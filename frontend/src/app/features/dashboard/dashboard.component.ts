@@ -1,6 +1,8 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
@@ -11,8 +13,12 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
-import { DashboardResult, League, Season, Team } from '../../core/models';
+import { DashboardResult, League, Season, Team, TeamMatchView } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
+
+const VALID_LIMITS = [5, 10, 15, 20];
+
+type MatchSortColumn = 'match_date' | 'opponent' | 'is_home' | 'corners_for' | 'corners_against' | 'total_corners';
 
 // Rótulo/valor de um gráfico já "congelado": só é recalculado quando um novo
 // resultado chega do backend, nunca a cada ciclo de change detection. Isso
@@ -62,20 +68,40 @@ export class DashboardComponent implements OnInit {
 
   matchColumns = ['match_date', 'opponent', 'is_home', 'corners_for', 'corners_against', 'total_corners'];
 
+  // Ordenação manual da tabela "Últimos jogos" (ver setSort/sortedMatches) —
+  // clique no cabeçalho da coluna para alternar asc/desc.
+  sortColumn = signal<MatchSortColumn>('match_date');
+  sortDir = signal<'asc' | 'desc'>('desc');
+
   readonly consistencyTooltip =
     'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo. Valores baixos indicam resultados mais imprevisíveis.';
+  readonly stdDevTooltip =
+    'Desvio padrão: mede o quanto os valores de escanteios costumam se afastar da média. Quanto maior, mais irregulares foram os jogos dessa amostra.';
+  readonly modeTooltip =
+    'Moda: o(s) valor(es) de escanteios que mais se repetiram na amostra — pode haver mais de um em caso de empate.';
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private router: Router, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
+    // Restaura a última seleção (e reexecuta a análise) a partir da URL, para o
+    // usuário não perder o resultado ao trocar de aba e voltar — ver
+    // syncQueryParams(). Também permite compartilhar/favoritar o link de uma
+    // análise específica.
+    const qp = this.route.snapshot.queryParamMap;
+    const qpLeagueId = qp.get('league_id') ? Number(qp.get('league_id')) : undefined;
+    const qpSeasonId = qp.get('season_id') ? Number(qp.get('season_id')) : undefined;
+    const qpTeamId = qp.get('team_id') ? Number(qp.get('team_id')) : undefined;
+    const qpLimit = Number(qp.get('limit'));
+    if (VALID_LIMITS.includes(qpLimit)) this.limit = qpLimit;
+
     this.leaguesLoading.set(true);
     this.api.listLeagues().subscribe({
       next: leagues => {
         this.leagues.set(leagues);
         this.leaguesLoading.set(false);
         if (leagues.length) {
-          this.selectedLeagueId = leagues[0].id;
-          this.onLeagueChange();
+          this.selectedLeagueId = qpLeagueId && leagues.some(l => l.id === qpLeagueId) ? qpLeagueId : leagues[0].id;
+          this.onLeagueChange(qpSeasonId, qpTeamId);
         }
       },
       error: err => {
@@ -85,28 +111,44 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  onLeagueChange(): void {
+  onLeagueChange(presetSeasonId?: number, presetTeamId?: number): void {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonId = undefined;
     this.teamsLoading.set(true);
-    this.api.listSeasons(this.selectedLeagueId).subscribe(seasons => {
-      this.seasons.set(seasons);
-      // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
-      // Analisar sem nenhuma seleção visível): assume a mais recente por
-      // padrão. "Todas" continua disponível como opção explícita.
-      if (seasons.length) {
-        this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
-      }
-    });
-    this.api.listTeams(this.selectedLeagueId).subscribe({
-      next: teams => {
+    forkJoin({
+      seasons: this.api.listSeasons(this.selectedLeagueId),
+      teams: this.api.listTeams(this.selectedLeagueId),
+    }).subscribe({
+      next: ({ seasons, teams }) => {
+        this.seasons.set(seasons);
+        // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
+        // Analisar sem nenhuma seleção visível): assume a mais recente por
+        // padrão. "Todas" continua disponível como opção explícita. Se veio
+        // um valor restaurado da URL (voltando de outra aba), prevalece.
+        if (presetSeasonId !== undefined && seasons.some(s => s.id === presetSeasonId)) {
+          this.selectedSeasonId = presetSeasonId;
+        } else if (seasons.length) {
+          this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
+        }
+
         this.teams.set(teams);
         // Sempre reposiciona para a primeira equipe do campeonato selecionado —
         // manter o id da equipe do campeonato anterior selecionado fazia a
         // análise rodar com uma equipe de outra liga (amostra de 0 jogos).
-        this.selectedTeamId = teams.length ? teams[0].id : undefined;
-        this.result.set(null);
+        // Exceção: restaurando da URL, mantém a equipe salva.
+        if (presetTeamId !== undefined && teams.some(t => t.id === presetTeamId)) {
+          this.selectedTeamId = presetTeamId;
+        } else {
+          this.selectedTeamId = teams.length ? teams[0].id : undefined;
+        }
         this.teamsLoading.set(false);
+
+        if (presetTeamId !== undefined && this.selectedTeamId === presetTeamId) {
+          this.runDashboard();
+        } else {
+          this.result.set(null);
+          this.syncQueryParams();
+        }
       },
       error: () => this.teamsLoading.set(false),
     });
@@ -124,11 +166,29 @@ export class DashboardComponent implements OnInit {
           datasets: [{ label: 'Escanteios', data: res.trend }],
         });
         this.loading.set(false);
+        this.syncQueryParams();
       },
       error: err => {
         this.error.set(err?.error?.error ?? 'Erro ao carregar dashboard');
         this.loading.set(false);
       },
+    });
+  }
+
+  // Reflete a seleção atual na URL (sem poluir o histórico do navegador — ver
+  // replaceUrl) para sobreviver à navegação entre abas do SPA e permitir
+  // compartilhar/favoritar o link de uma análise específica.
+  syncQueryParams(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        league_id: this.selectedLeagueId ?? null,
+        season_id: this.selectedSeasonId ?? null,
+        team_id: this.selectedTeamId ?? null,
+        limit: this.limit,
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
@@ -138,5 +198,41 @@ export class DashboardComponent implements OnInit {
 
   selectedTeamName(): string {
     return this.teams().find(t => t.id === this.selectedTeamId)?.name ?? '';
+  }
+
+  setSort(column: MatchSortColumn): void {
+    if (this.sortColumn() === column) {
+      this.sortDir.set(this.sortDir() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.sortColumn.set(column);
+      this.sortDir.set('desc');
+    }
+  }
+
+  sortArrow(column: MatchSortColumn): string {
+    if (this.sortColumn() !== column) return '';
+    return this.sortDir() === 'asc' ? '▲' : '▼';
+  }
+
+  sortedMatches(matches: TeamMatchView[]): TeamMatchView[] {
+    const col = this.sortColumn();
+    const dir = this.sortDir() === 'asc' ? 1 : -1;
+    const value = (m: TeamMatchView): number | string => {
+      switch (col) {
+        case 'match_date': return m.match_date;
+        case 'opponent': return m.opponent.name;
+        case 'is_home': return m.is_home ? 1 : 0;
+        case 'corners_for': return m.corners_for;
+        case 'corners_against': return m.corners_against;
+        case 'total_corners': return m.total_corners;
+      }
+    };
+    return [...matches].sort((a, b) => {
+      const va = value(a);
+      const vb = value(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
   }
 }

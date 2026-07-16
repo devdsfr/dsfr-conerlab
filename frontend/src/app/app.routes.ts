@@ -22,5 +22,9 @@ export const routes: Routes = [
     path: 'banca',
     loadComponent: () => import('./features/bankroll/bankroll.component').then(m => m.BankrollComponent),
   },
+  {
+    path: 'projecoes',
+    loadComponent: () => import('./features/projections/projections.component').then(m => m.ProjectionsComponent),
+  },
   { path: '**', redirectTo: 'dashboard' },
 ];

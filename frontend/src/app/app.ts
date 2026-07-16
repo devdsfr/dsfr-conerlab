@@ -5,10 +5,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { LogoMarkComponent } from './shared/logo-mark.component';
 
-// Um único array alimenta tanto o menu desktop quanto o mobile (ver app.html)
-// — evita duplicar os 5 links em dois lugares e correr o risco de um ficar
-// desatualizado (ex.: adicionar uma página nova e esquecer de repetir no
-// menu hamburguer).
 interface NavItem {
   label: string;
   route: string;
@@ -37,12 +33,10 @@ export class App {
     { label: 'Comparador', route: '/comparador', icon: 'compare_arrows' },
     { label: 'Simulador de Filtros', route: '/filtros', icon: 'tune' },
     { label: 'Gestão de Banca', route: '/banca', icon: 'account_balance_wallet' },
+    { label: 'Projeções', route: '/projecoes', icon: 'trending_up' },
     { label: 'Integrações', route: '/integracoes', icon: 'cable' },
   ];
 
-  // Navbar mobile: em telas estreitas os 5 itens não cabem em linha, então
-  // ficam escondidos atrás de um botão hamburguer (ver app.html) — sem isso a
-  // navegação quebra/vaza em viewports pequenos.
   menuOpen = signal(false);
 
   constructor(router: Router) {

@@ -1,0 +1,111 @@
+<div class="max-w-6xl mx-auto flex flex-col gap-6">
+  <h1 class="text-xl font-semibold text-slate-100">Cálculo de Projeções</h1>
+  <p class="text-sm text-slate-400 -mt-4">
+    Simula um ciclo de reinvestimento de 100% do lucro em vitórias consecutivas a uma odd média fixa. É uma calculadora matemática de "e se" — não uma promessa de resultado.
+  </p>
+
+  <div class="cl-card p-4 flex flex-wrap items-end gap-4">
+    <mat-form-field appearance="outline" class="w-52">
+      <mat-label>Banca inicial (R$)</mat-label>
+      <input matInput type="number" min="0" step="100" [(ngModel)]="banca" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-40">
+      <mat-label>Odd média</mat-label>
+      <input matInput type="number" min="1.01" step="0.01" [(ngModel)]="oddMedia" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-52">
+      <mat-label>Vitórias consecutivas <span class="cl-help" [matTooltip]="explicacaoFormula">?</span></mat-label>
+      <input matInput type="number" min="1" step="1" [(ngModel)]="vitorias" />
+    </mat-form-field>
+  </div>
+
+  @if (!entradasValidas()) {
+    <div class="cl-card p-4 text-red-400 text-sm">
+      Preencha valores válidos: banca maior que zero, odd média maior que 1,00 e um número inteiro de vitórias consecutivas (mínimo 1).
+    </div>
+  } @else {
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-3">Evolução do ciclo</h3>
+        <table class="w-full text-sm">
+          <thead class="text-slate-400 text-left">
+            <tr><th class="font-normal">Rodada</th><th class="font-normal">Valor da aposta</th></tr>
+          </thead>
+          <tbody>
+            @for (step of evolucao(); track step.label) {
+              <tr class="border-t border-slate-800">
+                <td class="py-1">{{ step.label }}</td>
+                <td>{{ step.value | currency:'BRL':'symbol':'1.2-2' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-3">Resultado</h3>
+        <dl class="grid grid-cols-2 gap-y-2 text-sm">
+          <dt class="text-slate-400">Saldo final</dt>
+          <dd class="text-cornerlab-primary font-medium">{{ saldoFinal() | currency:'BRL':'symbol':'1.2-2' }}</dd>
+          <dt class="text-slate-400">Lucro por ciclo</dt>
+          <dd class="text-cornerlab-primary font-medium">{{ lucroPorCiclo() | currency:'BRL':'symbol':'1.2-2' }}</dd>
+          <dt class="text-slate-400">Capital em risco</dt>
+          <dd>{{ capitalRisco() | currency:'BRL':'symbol':'1.2-2' }}</dd>
+          <dt class="text-slate-400">Fator do ciclo</dt>
+          <dd>{{ oddMedia() }}<sup>{{ vitorias() }}</sup> = {{ fator() | number:'1.3-3' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="cl-card p-4">
+      <h3 class="text-sm text-slate-400 mb-3">Projeções</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[640px] text-sm">
+          <thead class="text-slate-400 text-left">
+            <tr>
+              <th class="font-normal">Cenário</th>
+              <th class="font-normal">Ciclos/mês</th>
+              <th class="font-normal">Lucro mensal</th>
+              <th class="font-normal">Trimestral</th>
+              <th class="font-normal">Semestral</th>
+              <th class="font-normal">Anual</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of cenarios(); track c.nome) {
+              <tr class="border-t border-slate-800">
+                <td class="py-1">{{ c.badge }} {{ c.nome }}</td>
+                <td>{{ c.ciclos }}</td>
+                <td>{{ c.mensal | currency:'BRL':'symbol':'1.2-2' }}</td>
+                <td>{{ c.trimestral | currency:'BRL':'symbol':'1.2-2' }}</td>
+                <td>{{ c.semestral | currency:'BRL':'symbol':'1.2-2' }}</td>
+                <td>{{ c.anual | currency:'BRL':'symbol':'1.2-2' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cl-card p-4">
+      <h3 class="text-sm text-slate-400 mb-3">Análise dos cenários</h3>
+      <p class="text-sm text-slate-400 mb-3">
+        Os cálculos acima estão matematicamente corretos, mas há uma distinção importante entre o que é plausível e o que é apenas teórico.
+      </p>
+      <dl class="flex flex-col gap-2 text-sm">
+        @for (c of cenarios(); track c.nome) {
+          <div class="flex gap-2">
+            <dt class="shrink-0 font-medium">{{ c.badge }} {{ c.ciclos }} ciclos/mês</dt>
+            <dd class="text-slate-400">{{ c.avaliacao }}</dd>
+          </div>
+        }
+      </dl>
+    </div>
+  }
+
+  <p class="cl-disclaimer">
+    Projeção matemática assumindo que todo ciclo termina em {{ vitorias() }} vitórias consecutivas, sem nenhuma perda — na prática, sequências de perdas acontecem e reduzem (ou zeram) esses resultados. CornerLab organiza dados e simula cenários, mas nunca recomenda apostas.
+  </p>
+</div>

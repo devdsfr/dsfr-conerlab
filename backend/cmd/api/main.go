@@ -21,6 +21,7 @@ import (
 	"github.com/devdsfr/cornerlab/pkg/cache"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
+	"github.com/devdsfr/cornerlab/pkg/devaccess"
 	"github.com/devdsfr/cornerlab/pkg/logger"
 )
 
@@ -29,6 +30,7 @@ func main() {
 	cfg := config.Load()
 	appLog := logger.New(cfg.Environment)
 	slog.SetDefault(appLog)
+	devaccess.Configure(cfg.DevPremiumEmails)
 
 	ctx := context.Background()
 	pool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)

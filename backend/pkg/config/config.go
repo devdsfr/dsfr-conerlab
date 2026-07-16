@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -41,13 +42,18 @@ type Config struct {
 	// Sem STRIPE_SECRET_KEY configurada, os endpoints /billing/* respondem 503 com
 	// mensagem clara em vez de quebrar o restante da aplicação — o resto do app
 	// (incluindo os módulos gratuitos) continua funcionando normalmente.
-	StripeSecretKey    string
+	StripeSecretKey     string
 	StripeWebhookSecret string
-	StripePriceID      string
-	StripeTrialDays    int
+	StripePriceID       string
+	StripeTrialDays     int
 	// URL pública do frontend, usada para montar as URLs de sucesso/cancelamento
 	// do Checkout e de retorno do Billing Portal.
 	FrontendURL string
+
+	// DevPremiumEmails libera acesso Premium manualmente para e-mails específicos,
+	// sem depender do Stripe — uso interno de dev/QA (ver pkg/devaccess). Lista
+	// separada por vírgula em DEV_PREMIUM_EMAILS. Vazio por padrão.
+	DevPremiumEmails []string
 }
 
 func Load() Config {
@@ -75,6 +81,7 @@ func Load() Config {
 		StripePriceID:       getEnv("STRIPE_PRICE_ID", ""),
 		StripeTrialDays:     getEnvInt("STRIPE_TRIAL_DAYS", 7),
 		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:4200"),
+		DevPremiumEmails:    getEnvList("DEV_PREMIUM_EMAILS"),
 	}
 }
 
@@ -95,4 +102,20 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func getEnvList(key string) []string {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

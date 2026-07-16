@@ -3,6 +3,8 @@ package domain
 import (
 	"fmt"
 	"time"
+
+	"github.com/devdsfr/cornerlab/pkg/devaccess"
 )
 
 // League representa um campeonato (ex: Brasileirão Série A)
@@ -103,10 +105,14 @@ type User struct {
 }
 
 // IsPremium indica se o usuário tem acesso aos recursos pagos agora (assinatura
-// ativa ou dentro do período de trial). Esta é a única lógica de decisão de
-// acesso — usada tanto pelo middleware.RequirePremium quanto por qualquer outro
-// ponto do backend que precise checar o plano do usuário.
+// ativa ou dentro do período de trial, OU o e-mail está na liberação manual de
+// desenvolvimento — ver pkg/devaccess/DEV_PREMIUM_EMAILS). Esta é a única lógica
+// de decisão de acesso — usada tanto pelo middleware.RequirePremium quanto por
+// qualquer outro ponto do backend que precise checar o plano do usuário.
 func (u User) IsPremium() bool {
+	if devaccess.IsPremium(u.Email) {
+		return true
+	}
 	return u.SubscriptionStatus == "active" || u.SubscriptionStatus == "trialing"
 }
 

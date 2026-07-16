@@ -6,6 +6,42 @@
     </p>
   </div>
 
+  <div class="cl-card p-5 border border-cornerlab-primary/30 bg-gradient-to-br from-cornerlab-primary/10 to-transparent">
+    <div class="flex items-center gap-2 mb-3">
+      <mat-icon class="text-amber-400">star</mat-icon>
+      <span class="text-sm font-medium text-slate-100">Por que assinar o Premium</span>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="flex gap-2 items-start">
+        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">account_balance_wallet</mat-icon>
+        <div class="text-sm text-slate-300">
+          <span class="font-medium text-slate-100">Gestão de Banca completa</span> — acompanhe stake, ROI e evolução do seu capital sem depender de planilhas manuais.
+        </div>
+      </div>
+      <div class="flex gap-2 items-start">
+        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">insights</mat-icon>
+        <div class="text-sm text-slate-300">
+          <span class="font-medium text-slate-100">Projeções automáticas</span> — simule cenários e enxergue a tendência da sua estratégia antes de apostar.
+        </div>
+      </div>
+      <div class="flex gap-2 items-start">
+        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">history</mat-icon>
+        <div class="text-sm text-slate-300">
+          <span class="font-medium text-slate-100">Histórico completo</span> — o plano gratuito limita a 90 dias; assinantes analisam a temporada inteira.
+        </div>
+      </div>
+      <div class="flex gap-2 items-start">
+        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">notifications_active</mat-icon>
+        <div class="text-sm text-slate-300">
+          <span class="font-medium text-slate-100">Alertas e exportações</span> — receba avisos das suas ligas favoritas e exporte relatórios quando precisar.
+        </div>
+      </div>
+    </div>
+    <p class="text-xs text-slate-400 mt-4">
+      7 dias grátis para testar tudo. Cancele quando quiser, sem burocracia.
+    </p>
+  </div>
+
   @if (!auth.isAuthenticated()) {
     <div class="cl-card p-6 max-w-md">
       <div class="flex gap-2 mb-4">

@@ -15,10 +15,6 @@ export const routes: Routes = [
     loadComponent: () => import('./features/filters/filters.component').then(m => m.FiltersComponent),
   },
   {
-    path: 'integracoes',
-    loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
-  },
-  {
     path: 'banca',
     loadComponent: () => import('./features/bankroll/bankroll.component').then(m => m.BankrollComponent),
   },

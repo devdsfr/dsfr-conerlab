@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
 	"github.com/devdsfr/cornerlab/internal/repository"
@@ -70,6 +71,13 @@ type BacktestResult struct {
 	Yield             float64         `json:"yield"`
 	Entries           []BacktestEntry `json:"entries"`
 	Disclaimer        string          `json:"disclaimer"`
+
+	// HistoryCapped indica se o resultado foi limitado ao histórico recente (plano
+	// gratuito); HistoryCapDays informa o tamanho da janela aplicada. O frontend usa
+	// isso para mostrar um aviso "resultado limitado aos últimos N dias — assine o
+	// Premium para ver o histórico completo" sem precisar duplicar essa regra.
+	HistoryCapped  bool `json:"history_capped"`
+	HistoryCapDays int  `json:"history_cap_days,omitempty"`
 }
 
 type FilterUsecase struct {
@@ -85,7 +93,12 @@ func NewFilterUsecase(matches repository.MatchRepository, teams repository.TeamR
 // RunBacktest localiza automaticamente todos os jogos históricos que atendem aos
 // filtros informados, dentro do campeonato e das temporadas selecionadas, e calcula
 // as métricas de desempenho. Todos os cálculos são determinísticos e reproduzíveis.
-func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonIDs []int64, criteria FilterCriteria) (*BacktestResult, error) {
+//
+// maxAgeDays limita a análise às partidas dos últimos N dias (0 = sem limite,
+// histórico completo). Usado pelo FilterHandler para aplicar o cap de 90 dias do
+// plano gratuito (ver ESTRATEGIA-MONETIZACAO.md — "histórico completo" é recurso
+// da Assinatura Premium); usuários premium sempre chamam com 0.
+func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonIDs []int64, criteria FilterCriteria, maxAgeDays int) (*BacktestResult, error) {
 	if err := criteria.Validate(); err != nil {
 		return nil, err
 	}
@@ -97,6 +110,17 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	allMatches, err := u.matches.AllMatches(ctx, leagueID, seasonIDs)
 	if err != nil {
 		return nil, err
+	}
+
+	if maxAgeDays > 0 {
+		cutoff := time.Now().AddDate(0, 0, -maxAgeDays)
+		filtered := allMatches[:0:0]
+		for _, m := range allMatches {
+			if !m.MatchDate.Before(cutoff) {
+				filtered = append(filtered, m)
+			}
+		}
+		allMatches = filtered
 	}
 
 	teamsByID, err := u.teamIndex(ctx, leagueID)
@@ -189,7 +213,10 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		})
 	}
 
-	return buildBacktestResult(criteria, entries, stake), nil
+	result := buildBacktestResult(criteria, entries, stake)
+	result.HistoryCapped = maxAgeDays > 0
+	result.HistoryCapDays = maxAgeDays
+	return result, nil
 }
 
 func (u *FilterUsecase) teamIndex(ctx context.Context, leagueID int64) (map[int64]domain.Team, error) {

@@ -26,5 +26,9 @@ export const routes: Routes = [
     path: 'projecoes',
     loadComponent: () => import('./features/projections/projections.component').then(m => m.ProjectionsComponent),
   },
+  {
+    path: 'assinatura',
+    loadComponent: () => import('./features/billing/billing.component').then(m => m.BillingComponent),
+  },
   { path: '**', redirectTo: 'dashboard' },
 ];

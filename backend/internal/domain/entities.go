@@ -88,6 +88,26 @@ type User struct {
 	Email        string    `json:"email" db:"email"`
 	PasswordHash string    `json:"-" db:"password_hash"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+
+	// Campos da Assinatura Premium (ver migration 005_billing.sql). Plan/
+	// SubscriptionStatus são a fonte de verdade para o gate de acesso
+	// (middleware.RequirePremium); os IDs do Stripe conectam este usuário ao
+	// Customer/Subscription correspondente; TrialEndsAt/CurrentPeriodEnd vêm dos
+	// webhooks do Stripe e são usados só para exibição.
+	Plan                 string     `json:"plan" db:"plan"`
+	StripeCustomerID     *string    `json:"-" db:"stripe_customer_id"`
+	StripeSubscriptionID *string    `json:"-" db:"stripe_subscription_id"`
+	SubscriptionStatus   string     `json:"subscription_status" db:"subscription_status"`
+	TrialEndsAt          *time.Time `json:"trial_ends_at,omitempty" db:"trial_ends_at"`
+	CurrentPeriodEnd     *time.Time `json:"current_period_end,omitempty" db:"current_period_end"`
+}
+
+// IsPremium indica se o usuário tem acesso aos recursos pagos agora (assinatura
+// ativa ou dentro do período de trial). Esta é a única lógica de decisão de
+// acesso — usada tanto pelo middleware.RequirePremium quanto por qualquer outro
+// ponto do backend que precise checar o plano do usuário.
+func (u User) IsPremium() bool {
+	return u.SubscriptionStatus == "active" || u.SubscriptionStatus == "trialing"
 }
 
 // SavedFilter representa um filtro personalizado salvo pelo usuário (Módulo 3)

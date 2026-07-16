@@ -15,6 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/api.service';
 import { DashboardResult, League, Season, Team, TeamMatchView } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
+import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 const VALID_LIMITS = [5, 10, 15, 20];
 
@@ -44,6 +45,7 @@ interface ChartData {
     MatTableModule,
     MatTooltipModule,
     SimpleChartComponent,
+    AdSlotComponent,
   ],
   templateUrl: './dashboard.component.html',
 })

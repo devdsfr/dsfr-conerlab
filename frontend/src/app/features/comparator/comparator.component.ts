@@ -12,6 +12,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/api.service';
 import { ComparisonResult, League, Team } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
+import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 interface ChartData {
   labels: (string | number)[];
@@ -32,6 +33,7 @@ interface ChartData {
     MatProgressSpinnerModule,
     MatTooltipModule,
     SimpleChartComponent,
+    AdSlotComponent,
   ],
   templateUrl: './comparator.component.html',
 })

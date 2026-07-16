@@ -134,6 +134,10 @@ export interface BacktestResult {
   yield: number;
   entries: BacktestEntry[];
   disclaimer: string;
+  // Plano gratuito limita o backtest aos últimos N dias (ver
+  // ESTRATEGIA-MONETIZACAO.md e FilterHandler.FreeHistoryCapDays no backend).
+  history_capped: boolean;
+  history_cap_days?: number;
 }
 
 // Painel "Integrações" — status/consumo das APIs externas (OpenAI, API-Football, SportMonks)
@@ -273,4 +277,17 @@ export interface BankrollHistoryEntry {
   reason: string;
   notes: string;
   created_at: string;
+}
+
+// Assinatura Premium (Stripe) — ver ESTRATEGIA-MONETIZACAO.md
+export interface BillingStatus {
+  plan: string;
+  subscription_status: string;
+  is_premium: boolean;
+  trial_ends_at?: string;
+  current_period_end?: string;
+  // configured=false quando o backend ainda não tem STRIPE_SECRET_KEY/STRIPE_PRICE_ID
+  // configuradas — o frontend usa isso para mostrar "em breve" em vez do botão de
+  // assinar (ver pkg/config/config.go e ESTRATEGIA-MONETIZACAO.md).
+  configured: boolean;
 }

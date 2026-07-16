@@ -59,6 +59,11 @@
         Este módulo acompanha a evolução da sua banca com base nas apostas que você registra na plataforma (Módulo de Apostas) — por isso é vinculado à sua conta.
       </p>
     </div>
+  } @else if (paywalled()) {
+    <app-paywall
+      title="Gestão Evolutiva de Banca é um recurso Premium"
+      description="Assine o CornerLab Premium para acompanhar a evolução da sua banca com fases, critérios objetivos de promoção/rebaixamento e histórico completo — com 7 dias grátis."
+    ></app-paywall>
   } @else {
     <div class="flex items-center justify-between">
       <div class="flex gap-1">

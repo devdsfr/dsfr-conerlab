@@ -35,6 +35,7 @@ export class App {
     { label: 'Gestão de Banca', route: '/banca', icon: 'account_balance_wallet' },
     { label: 'Projeções', route: '/projecoes', icon: 'trending_up' },
     { label: 'Integrações', route: '/integracoes', icon: 'cable' },
+    { label: 'Assinatura', route: '/assinatura', icon: 'workspace_premium' },
   ];
 
   menuOpen = signal(false);

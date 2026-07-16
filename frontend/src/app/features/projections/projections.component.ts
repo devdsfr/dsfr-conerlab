@@ -1,9 +1,15 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatButtonModule } from '@angular/material/button';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+
+import { AuthService } from '../../core/auth.service';
+import { BillingService } from '../../core/billing.service';
+import { PaywallComponent } from '../../shared/paywall.component';
 
 interface CycleStep {
   label: string;
@@ -67,13 +73,73 @@ const SCENARIOS: ScenarioConfig[] = [
 @Component({
   selector: 'app-projections',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatFormFieldModule, MatInputModule, MatTooltipModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatButtonModule,
+    MatProgressSpinnerModule,
+    MatTooltipModule,
+    PaywallComponent,
+  ],
   templateUrl: './projections.component.html',
 })
-export class ProjectionsComponent {
+export class ProjectionsComponent implements OnInit {
+  // Cálculo de Projeções é recurso premium (ver ESTRATEGIA-MONETIZACAO.md). Como
+  // é 100% calculado no cliente (sem chamada de API própria), o gate depende do
+  // BillingService — sem ele, um usuário sem assinatura veria a calculadora
+  // normalmente, já que não há nenhuma requisição HTTP nesta tela para bloquear.
+  loginMode = signal<'login' | 'register'>('login');
+  authLoading = signal(false);
+  authError = signal<string | null>(null);
+  loginEmail = '';
+  loginPassword = '';
+  registerName = '';
+  registerEmail = '';
+  registerPassword = '';
+
   banca = signal(10000);
   oddMedia = signal(1.5);
   vitorias = signal(3);
+
+  constructor(public auth: AuthService, public billing: BillingService) {}
+
+  ngOnInit(): void {
+    if (this.auth.isAuthenticated()) {
+      this.billing.refresh();
+    }
+  }
+
+  submitLogin(): void {
+    this.authLoading.set(true);
+    this.authError.set(null);
+    this.auth.login(this.loginEmail, this.loginPassword).subscribe({
+      next: () => {
+        this.authLoading.set(false);
+        this.billing.refresh();
+      },
+      error: err => {
+        this.authLoading.set(false);
+        this.authError.set(err?.error?.error ?? 'E-mail ou senha inválidos');
+      },
+    });
+  }
+
+  submitRegister(): void {
+    this.authLoading.set(true);
+    this.authError.set(null);
+    this.auth.register(this.registerName, this.registerEmail, this.registerPassword).subscribe({
+      next: () => {
+        this.authLoading.set(false);
+        this.billing.refresh();
+      },
+      error: err => {
+        this.authLoading.set(false);
+        this.authError.set(err?.error?.error ?? 'Não foi possível criar a conta');
+      },
+    });
+  }
 
   readonly explicacaoFormula =
     'A cada vitória, o valor apostado (banca + lucro acumulado do ciclo) é totalmente reinvestido na próxima. Depois da última vitória do ciclo, o lucro é realizado e o próximo ciclo sempre recomeça do zero, com a banca inicial — nunca com o saldo acumulado.';

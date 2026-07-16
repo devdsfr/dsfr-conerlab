@@ -14,6 +14,7 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BankrollCriteria, BankrollHistoryEntry, BankrollPhase, BankrollStatus } from '../../core/models';
+import { PaywallComponent } from '../../shared/paywall.component';
 
 type Section = 'dashboard' | 'phases' | 'criteria' | 'history';
 
@@ -38,11 +39,18 @@ interface PhaseDraft {
     MatTableModule,
     MatTooltipModule,
     MatButtonToggleModule,
+    PaywallComponent,
   ],
   templateUrl: './bankroll.component.html',
 })
 export class BankrollComponent implements OnInit {
   section = signal<Section>('dashboard');
+
+  // Gestão de Banca evolutiva é recurso premium (ver ESTRATEGIA-MONETIZACAO.md) —
+  // o backend responde 402 (middleware.RequirePremium) quando o usuário está
+  // logado mas sem assinatura ativa/trial. Detectamos esse status aqui em vez de
+  // mostrar o erro cru "recurso exclusivo..." dentro do card de dashboard.
+  paywalled = signal(false);
 
   // Autenticação mínima (o módulo é por usuário — usa as apostas já registradas)
   loginMode = signal<'login' | 'register'>('login');
@@ -137,13 +145,18 @@ export class BankrollComponent implements OnInit {
   loadStatus(): void {
     this.statusLoading.set(true);
     this.statusError.set(null);
+    this.paywalled.set(false);
     this.api.getBankrollStatus().subscribe({
       next: s => {
         this.status.set(s);
         this.statusLoading.set(false);
       },
       error: err => {
-        this.statusError.set(err?.error?.error ?? 'Erro ao carregar o status da banca');
+        if (err?.status === 402) {
+          this.paywalled.set(true);
+        } else {
+          this.statusError.set(err?.error?.error ?? 'Erro ao carregar o status da banca');
+        }
         this.statusLoading.set(false);
       },
     });

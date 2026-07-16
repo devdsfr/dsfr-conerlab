@@ -1,6 +1,7 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
@@ -14,6 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { BacktestResult, League, Season, Team } from '../../core/models';
+import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 @Component({
   selector: 'app-filters',
@@ -21,6 +23,7 @@ import { BacktestResult, League, Season, Team } from '../../core/models';
   imports: [
     CommonModule,
     FormsModule,
+    RouterLink,
     MatCardModule,
     MatFormFieldModule,
     MatSelectModule,
@@ -31,6 +34,7 @@ import { BacktestResult, League, Season, Team } from '../../core/models';
     MatTableModule,
     MatChipsModule,
     MatTooltipModule,
+    AdSlotComponent,
   ],
   templateUrl: './filters.component.html',
 })

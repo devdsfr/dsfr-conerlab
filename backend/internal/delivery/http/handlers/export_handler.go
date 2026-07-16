@@ -202,7 +202,9 @@ func (h *ExportHandler) FilterRunCSV(c *gin.Context) {
 		criteria.Stake = stake
 	}
 
-	result, err := h.filters.RunBacktest(c.Request.Context(), leagueID, seasonIDs, criteria)
+	// Exportação já é 100% premium (ver router.go), então sempre com histórico
+	// completo (maxAgeDays=0).
+	result, err := h.filters.RunBacktest(c.Request.Context(), leagueID, seasonIDs, criteria, 0)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

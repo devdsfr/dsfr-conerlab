@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -35,6 +36,18 @@ type Config struct {
 	// TTL padrão do cache de cálculos do módulo de Inteligência Estatística.
 	// Regra do documento de requisitos: "atualização automática diária".
 	IntelligenceCacheTTL time.Duration
+
+	// Assinatura Premium (Stripe Checkout hospedado + Billing Portal + webhooks).
+	// Sem STRIPE_SECRET_KEY configurada, os endpoints /billing/* respondem 503 com
+	// mensagem clara em vez de quebrar o restante da aplicação — o resto do app
+	// (incluindo os módulos gratuitos) continua funcionando normalmente.
+	StripeSecretKey    string
+	StripeWebhookSecret string
+	StripePriceID      string
+	StripeTrialDays    int
+	// URL pública do frontend, usada para montar as URLs de sucesso/cancelamento
+	// do Checkout e de retorno do Billing Portal.
+	FrontendURL string
 }
 
 func Load() Config {
@@ -56,6 +69,12 @@ func Load() Config {
 		StatisticsProvider: getEnv("STATISTICS_PROVIDER", "api_football"),
 
 		IntelligenceCacheTTL: 24 * time.Hour,
+
+		StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
+		StripePriceID:       getEnv("STRIPE_PRICE_ID", ""),
+		StripeTrialDays:     getEnvInt("STRIPE_TRIAL_DAYS", 7),
+		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:4200"),
 	}
 }
 
@@ -64,4 +83,16 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }

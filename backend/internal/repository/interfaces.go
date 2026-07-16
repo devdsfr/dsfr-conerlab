@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
 )
@@ -44,6 +45,23 @@ type UserRepository interface {
 	Create(ctx context.Context, u *domain.User) error
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	GetByID(ctx context.Context, id int64) (*domain.User, error)
+
+	// GetByStripeCustomerID localiza o usuário dono de um Customer do Stripe — usado
+	// pelos webhooks de assinatura (customer.subscription.updated/deleted), que só
+	// trazem o ID do customer, nunca o ID interno do usuário.
+	GetByStripeCustomerID(ctx context.Context, customerID string) (*domain.User, error)
+
+	// SetStripeCustomerID grava o vínculo usuário <-> Customer do Stripe. Chamado uma
+	// única vez, na primeira criação de Checkout Session do usuário (ou reaproveitado
+	// se o usuário já tiver um customer_id de uma sessão anterior).
+	SetStripeCustomerID(ctx context.Context, userID int64, customerID string) error
+
+	// UpdateSubscriptionByCustomerID aplica o estado mais recente da assinatura
+	// (vindo de um evento de webhook do Stripe) ao usuário dono do customerID
+	// informado. plan é derivado do status: 'premium' quando ativo/trialing, 'free'
+	// caso contrário — mantido aqui (e não calculado toda hora no domínio) para que
+	// o histórico de plano fique estável mesmo se a lógica de IsPremium mudar depois.
+	UpdateSubscriptionByCustomerID(ctx context.Context, customerID, subscriptionID, status, plan string, trialEndsAt, currentPeriodEnd *time.Time) error
 }
 
 type FilterRepository interface {

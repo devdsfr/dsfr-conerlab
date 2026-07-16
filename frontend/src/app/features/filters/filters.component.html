@@ -2,6 +2,9 @@
   <h1 class="text-xl font-semibold text-slate-100">Simulador de Filtros</h1>
   <p class="text-sm text-slate-400 -mt-4">Monte critérios e rode o backtest sobre o histórico de jogos. A plataforma nunca recomenda apostas — apenas mede o desempenho histórico do filtro.</p>
 
+  <!-- Anúncio contextual (plano gratuito) — ver ESTRATEGIA-MONETIZACAO.md -->
+  <app-ad-slot slot="3333333333"></app-ad-slot>
+
   <div class="cl-card p-4 flex flex-col gap-4">
     <div class="flex flex-wrap items-end gap-4">
       <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
@@ -99,6 +102,16 @@
   }
 
   @if (result(); as r) {
+    @if (r.history_capped) {
+      <div class="cl-card p-3 border border-cyan-900/50 bg-cyan-950/20 flex items-center justify-between gap-3 text-sm">
+        <span class="text-cyan-300">
+          Resultado limitado aos últimos {{ r.history_cap_days }} dias (plano gratuito).
+        </span>
+        <a routerLink="/assinatura" class="text-cornerlab-accent font-medium hover:underline whitespace-nowrap">
+          Assinar Premium para ver o histórico completo
+        </a>
+      </div>
+    }
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Partidas encontradas</div>

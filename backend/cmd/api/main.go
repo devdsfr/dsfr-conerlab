@@ -15,6 +15,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
 	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/internal/usecase/bankroll"
+	"github.com/devdsfr/cornerlab/internal/usecase/billing"
 	"github.com/devdsfr/cornerlab/internal/usecase/diagnostics"
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
 	"github.com/devdsfr/cornerlab/pkg/cache"
@@ -61,6 +62,7 @@ func main() {
 	betUC := usecase.NewBetUsecase(betRepo)
 	strategyHistoryUC := usecase.NewStrategyHistoryUsecase(strategyHistoryRepo)
 	bankrollUC := bankroll.New(bankrollRepo, betRepo)
+	billingUC := billing.New(userRepo, cfg.StripeSecretKey, cfg.StripeWebhookSecret, cfg.StripePriceID, cfg.StripeTrialDays, cfg.FrontendURL)
 
 	// Usecases — Módulo de Inteligência Estatística
 	consistencyUC := intelligence.NewConsistencyUsecase(matchRepo, teamRepo, leagueRepo)
@@ -93,7 +95,7 @@ func main() {
 		Catalog:    handlers.NewCatalogHandler(leagueRepo, teamRepo),
 		Dashboard:  handlers.NewDashboardHandler(dashboardUC),
 		Comparator: handlers.NewComparatorHandler(comparatorUC),
-		Filter:     handlers.NewFilterHandler(filterUC, filterRepo, strategyHistoryUC, cfg.JWTSecret),
+		Filter:     handlers.NewFilterHandler(filterUC, filterRepo, strategyHistoryUC, userRepo, cfg.JWTSecret),
 		Bet:        handlers.NewBetHandler(betUC),
 		Intelligence: handlers.NewIntelligenceHandler(
 			consistencyUC, trendUC, stabilityUC, scoreUC, compatibilityUC, opponentUC,
@@ -104,9 +106,10 @@ func main() {
 		Export:          handlers.NewExportHandler(dashboardUC, comparatorUC, filterUC, rankingUC),
 		Diagnostics:     handlers.NewDiagnosticsHandler(diagnosticsUC),
 		Bankroll:        handlers.NewBankrollHandler(bankrollUC),
+		Billing:         handlers.NewBillingHandler(billingUC),
 	}
 
-	router := httpDelivery.NewRouter(h, cfg.JWTSecret)
+	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)
 
 	appLog.Info("CornerLab API iniciando", "port", cfg.Port, "env", cfg.Environment)
 	if err := router.Run(":" + cfg.Port); err != nil {

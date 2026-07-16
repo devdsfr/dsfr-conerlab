@@ -5,6 +5,7 @@ import (
 
 	"github.com/devdsfr/cornerlab/internal/delivery/http/handlers"
 	"github.com/devdsfr/cornerlab/internal/delivery/http/middleware"
+	"github.com/devdsfr/cornerlab/internal/repository"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,9 +22,10 @@ type Handlers struct {
 	Export          *handlers.ExportHandler
 	Diagnostics     *handlers.DiagnosticsHandler
 	Bankroll        *handlers.BankrollHandler
+	Billing         *handlers.BillingHandler
 }
 
-func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
+func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), gin.Logger(), corsMiddleware())
 
@@ -66,18 +68,18 @@ func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
 		intel.GET("/executive-dashboard", h.Intelligence.ExecutiveDashboard)
 		intel.POST("/explain", h.Intelligence.Explain)
 
-		exports := api.Group("/exports")
-		exports.GET("/dashboard", h.Export.DashboardCSV)
-		exports.GET("/comparator", h.Export.ComparatorCSV)
-		exports.GET("/filters/run", h.Export.FilterRunCSV)
-		exports.GET("/ranking", h.Export.RankingCSV)
-
 		// Painel "Integrações" — status/consumo das chaves de API externas
 		// (OpenAI, API-Football, SportMonks) e botão "Testar agora" por provedor.
 		diag := api.Group("/diagnostics")
 		diag.GET("/usage", h.Diagnostics.Usage)
 		diag.GET("/recent", h.Diagnostics.Recent)
 		diag.POST("/test/:provider", h.Diagnostics.TestConnection)
+
+		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
+		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT
+		// da aplicação (a autenticidade é garantida pela assinatura HMAC do Stripe).
+		billingGroup := api.Group("/billing")
+		billingGroup.POST("/webhook", h.Billing.Webhook)
 
 		authGroup := api.Group("")
 		authGroup.Use(middleware.AuthRequired(jwtSecret))
@@ -92,24 +94,41 @@ func NewRouter(h Handlers, jwtSecret string) *gin.Engine {
 			authGroup.GET("/bets/dashboard", h.Bet.Dashboard)
 			authGroup.DELETE("/bets/:id", h.Bet.Delete)
 
-			authGroup.POST("/alerts", h.Alert.Create)
-			authGroup.GET("/alerts", h.Alert.List)
-			authGroup.POST("/alerts/:id/evaluate", h.Alert.Evaluate)
-			authGroup.DELETE("/alerts/:id", h.Alert.Delete)
-
 			authGroup.GET("/strategy-history", h.StrategyHistory.List)
 
-			// Módulo de Gestão Evolutiva de Banca — usa as apostas já registradas pelo
-			// usuário (acima) como base real dos cálculos de evolução de fase.
-			bankroll := authGroup.Group("/bankroll")
-			bankroll.GET("/status", h.Bankroll.Status)
-			bankroll.GET("/phases", h.Bankroll.ListPhases)
-			bankroll.PUT("/phases", h.Bankroll.SetPhases)
-			bankroll.GET("/criteria", h.Bankroll.GetCriteria)
-			bankroll.PUT("/criteria", h.Bankroll.SetCriteria)
-			bankroll.POST("/promote", h.Bankroll.Promote)
-			bankroll.POST("/demote", h.Bankroll.Demote)
-			bankroll.GET("/history", h.Bankroll.History)
+			authGroup.GET("/billing/status", h.Billing.Status)
+			authGroup.POST("/billing/checkout", h.Billing.Checkout)
+			authGroup.POST("/billing/portal", h.Billing.Portal)
+
+			premiumGroup := authGroup.Group("")
+			premiumGroup.Use(middleware.RequirePremium(users))
+			{
+				// Alertas personalizados — recurso premium (ver ESTRATEGIA-MONETIZACAO.md).
+				premiumGroup.POST("/alerts", h.Alert.Create)
+				premiumGroup.GET("/alerts", h.Alert.List)
+				premiumGroup.POST("/alerts/:id/evaluate", h.Alert.Evaluate)
+				premiumGroup.DELETE("/alerts/:id", h.Alert.Delete)
+
+				// Módulo de Gestão Evolutiva de Banca — usa as apostas já registradas pelo
+				// usuário (acima) como base real dos cálculos de evolução de fase.
+				bankroll := premiumGroup.Group("/bankroll")
+				bankroll.GET("/status", h.Bankroll.Status)
+				bankroll.GET("/phases", h.Bankroll.ListPhases)
+				bankroll.PUT("/phases", h.Bankroll.SetPhases)
+				bankroll.GET("/criteria", h.Bankroll.GetCriteria)
+				bankroll.PUT("/criteria", h.Bankroll.SetCriteria)
+				bankroll.POST("/promote", h.Bankroll.Promote)
+				bankroll.POST("/demote", h.Bankroll.Demote)
+				bankroll.GET("/history", h.Bankroll.History)
+
+				// Exportação de dados (CSV/XLSX) — antes 100% pública sem autenticação;
+				// agora exige login + assinatura premium.
+				exports := premiumGroup.Group("/exports")
+				exports.GET("/dashboard", h.Export.DashboardCSV)
+				exports.GET("/comparator", h.Export.ComparatorCSV)
+				exports.GET("/filters/run", h.Export.FilterRunCSV)
+				exports.GET("/ranking", h.Export.RankingCSV)
+			}
 		}
 	}
 

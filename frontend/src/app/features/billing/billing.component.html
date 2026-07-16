@@ -1,0 +1,116 @@
+<div class="max-w-3xl mx-auto flex flex-col gap-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Assinatura Premium</h1>
+    <p class="text-sm text-slate-400 mt-1">
+      Desbloqueie a Gestão Evolutiva de Banca, o Cálculo de Projeções, histórico completo e mais — por R$ 29,90/mês, com 7 dias grátis.
+    </p>
+  </div>
+
+  @if (!auth.isAuthenticated()) {
+    <div class="cl-card p-6 max-w-md">
+      <div class="flex gap-2 mb-4">
+        <button mat-button [color]="loginMode() === 'login' ? 'primary' : undefined" (click)="loginMode.set('login')">Entrar</button>
+        <button mat-button [color]="loginMode() === 'register' ? 'primary' : undefined" (click)="loginMode.set('register')">Criar conta</button>
+      </div>
+
+      @if (loginMode() === 'login') {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="loginEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha</mat-label>
+            <input matInput type="password" [(ngModel)]="loginPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>Nome</mat-label>
+            <input matInput [(ngModel)]="registerName">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="registerEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha (mín. 6 caracteres)</mat-label>
+            <input matInput type="password" [(ngModel)]="registerPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
+        </div>
+      }
+
+      @if (authLoading()) {
+        <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
+      }
+      @if (authError()) {
+        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+      }
+    </div>
+  } @else {
+    @if (justCheckedOut() && !billing.isPremium()) {
+      <div class="cl-card p-4 border border-cyan-900/50 bg-cyan-950/20 flex items-center gap-3">
+        <mat-spinner diameter="18"></mat-spinner>
+        <div class="text-sm text-cyan-300">Confirmando seu pagamento com o Stripe — isso pode levar alguns segundos...</div>
+      </div>
+    }
+
+    @if (billing.loading()) {
+      <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+    } @else if (billing.status(); as status) {
+      @if (!status.configured) {
+        <div class="cl-card p-6 max-w-md">
+          <div class="text-sm text-slate-300">A Assinatura Premium ainda está em configuração — volte em breve.</div>
+        </div>
+      } @else if (status.is_premium) {
+        <div class="cl-card p-6 max-w-md flex flex-col gap-3">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-cyan-400">workspace_premium</mat-icon>
+            <span class="text-slate-100 font-medium">
+              Você é assinante Premium
+              @if (status.subscription_status === 'trialing') { <span class="text-amber-400">(período de teste)</span> }
+            </span>
+          </div>
+          @if (status.trial_ends_at) {
+            <div class="text-xs text-slate-400">Trial termina em {{ status.trial_ends_at | date:'dd/MM/yyyy' }}.</div>
+          }
+          @if (status.current_period_end) {
+            <div class="text-xs text-slate-400">Próxima cobrança em {{ status.current_period_end | date:'dd/MM/yyyy' }}.</div>
+          }
+          <button mat-flat-button color="primary" [disabled]="portalLoading()" (click)="gerenciarAssinatura()">
+            Gerenciar assinatura
+          </button>
+        </div>
+      } @else {
+        <div class="cl-card p-6 max-w-md flex flex-col gap-4">
+          <div>
+            <div class="text-2xl font-semibold text-slate-100">R$ 29,90<span class="text-sm text-slate-400 font-normal">/mês</span></div>
+            <div class="text-xs text-slate-400 mt-1">7 dias grátis, cancele quando quiser.</div>
+          </div>
+          <ul class="flex flex-col gap-2 text-sm text-slate-300">
+            @for (f of features; track f) {
+              <li class="flex items-start gap-2">
+                <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">check</mat-icon>
+                <span>{{ f }}</span>
+              </li>
+            }
+          </ul>
+          <button mat-flat-button color="primary" [disabled]="checkoutLoading()" (click)="assinar()">
+            @if (checkoutLoading()) { <mat-spinner diameter="18"></mat-spinner> } @else { Assinar Premium — começar trial de 7 dias }
+          </button>
+        </div>
+      }
+    }
+
+    @if (actionError()) {
+      <div class="text-xs text-red-400">{{ actionError() }}</div>
+    }
+  }
+
+  <p class="cl-disclaimer">
+    Pagamentos processados pelo Stripe. O CornerLab nunca recomenda apostas — a assinatura desbloqueia recursos de organização e análise de dados da própria plataforma.
+  </p>
+</div>

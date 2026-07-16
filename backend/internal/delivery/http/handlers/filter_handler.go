@@ -16,15 +16,21 @@ import (
 	"github.com/devdsfr/cornerlab/pkg/jwtutil"
 )
 
+// FreeHistoryCapDays é a janela de histórico disponível no plano gratuito para o
+// Simulador de Filtros (ver ESTRATEGIA-MONETIZACAO.md — "histórico completo" é
+// recurso da Assinatura Premium). Usuários premium/trial não sofrem esse limite.
+const FreeHistoryCapDays = 90
+
 type FilterHandler struct {
 	filters    *usecase.FilterUsecase
 	filterRepo repository.FilterRepository
 	history    *usecase.StrategyHistoryUsecase
+	users      repository.UserRepository
 	jwtSecret  string
 }
 
-func NewFilterHandler(filters *usecase.FilterUsecase, filterRepo repository.FilterRepository, history *usecase.StrategyHistoryUsecase, jwtSecret string) *FilterHandler {
-	return &FilterHandler{filters: filters, filterRepo: filterRepo, history: history, jwtSecret: jwtSecret}
+func NewFilterHandler(filters *usecase.FilterUsecase, filterRepo repository.FilterRepository, history *usecase.StrategyHistoryUsecase, users repository.UserRepository, jwtSecret string) *FilterHandler {
+	return &FilterHandler{filters: filters, filterRepo: filterRepo, history: history, users: users, jwtSecret: jwtSecret}
 }
 
 // Run godoc
@@ -52,7 +58,18 @@ func (h *FilterHandler) Run(c *gin.Context) {
 		Stake:            req.Stake,
 	}
 
-	result, err := h.filters.RunBacktest(c.Request.Context(), req.LeagueID, req.SeasonIDs, criteria)
+	// Cap de histórico do plano gratuito: sem token, ou com token de usuário sem
+	// assinatura ativa/trial, o backtest só considera os últimos FreeHistoryCapDays
+	// dias. Usuários premium chamam RunBacktest com maxAgeDays=0 (sem limite).
+	maxAgeDays := FreeHistoryCapDays
+	userID, hasUser := h.optionalUserID(c)
+	if hasUser {
+		if user, err := h.users.GetByID(c.Request.Context(), userID); err == nil && user.IsPremium() {
+			maxAgeDays = 0
+		}
+	}
+
+	result, err := h.filters.RunBacktest(c.Request.Context(), req.LeagueID, req.SeasonIDs, criteria, maxAgeDays)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -62,7 +79,7 @@ func (h *FilterHandler) Run(c *gin.Context) {
 	// regra geral do MVP) é opcional: se o usuário estiver autenticado, a execução é
 	// registrada para consulta posterior em /api/v1/strategy-history. Sem token, o
 	// backtest funciona normalmente, apenas sem o registro histórico.
-	if userID, ok := h.optionalUserID(c); ok {
+	if hasUser {
 		_ = h.history.RecordRun(c.Request.Context(), userID, nil, req.LeagueID, req.SeasonIDs, criteria, result)
 	}
 

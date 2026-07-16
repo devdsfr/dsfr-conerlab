@@ -16,6 +16,7 @@ import {
   BankrollCriteria,
   BankrollStatus,
   BankrollHistoryEntry,
+  BillingStatus,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -121,5 +122,18 @@ export class ApiService {
 
   getBankrollHistory(): Observable<{ history: BankrollHistoryEntry[] }> {
     return this.http.get<{ history: BankrollHistoryEntry[] }>(`${this.base}/bankroll/history`);
+  }
+
+  // Assinatura Premium (Stripe) — ver ESTRATEGIA-MONETIZACAO.md
+  getBillingStatus(): Observable<BillingStatus> {
+    return this.http.get<BillingStatus>(`${this.base}/billing/status`);
+  }
+
+  createCheckoutSession(): Observable<{ url: string }> {
+    return this.http.post<{ url: string }>(`${this.base}/billing/checkout`, {});
+  }
+
+  createPortalSession(): Observable<{ url: string }> {
+    return this.http.post<{ url: string }>(`${this.base}/billing/portal`, {});
   }
 }

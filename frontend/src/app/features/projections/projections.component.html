@@ -4,6 +4,59 @@
     Simula um ciclo de reinvestimento de 100% do lucro em vitórias consecutivas a uma odd média fixa. É uma calculadora matemática de "e se" — não uma promessa de resultado.
   </p>
 
+  @if (!auth.isAuthenticated()) {
+    <div class="cl-card p-6 max-w-md">
+      <div class="flex gap-2 mb-4">
+        <button mat-button [color]="loginMode() === 'login' ? 'primary' : undefined" (click)="loginMode.set('login')">Entrar</button>
+        <button mat-button [color]="loginMode() === 'register' ? 'primary' : undefined" (click)="loginMode.set('register')">Criar conta</button>
+      </div>
+
+      @if (loginMode() === 'login') {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="loginEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha</mat-label>
+            <input matInput type="password" [(ngModel)]="loginPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-3">
+          <mat-form-field appearance="outline">
+            <mat-label>Nome</mat-label>
+            <input matInput [(ngModel)]="registerName">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>E-mail</mat-label>
+            <input matInput type="email" [(ngModel)]="registerEmail">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Senha (mín. 6 caracteres)</mat-label>
+            <input matInput type="password" [(ngModel)]="registerPassword">
+          </mat-form-field>
+          <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
+        </div>
+      }
+
+      @if (authLoading()) {
+        <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
+      }
+      @if (authError()) {
+        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+      }
+    </div>
+  } @else if (billing.loading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+  } @else if (!billing.isPremium()) {
+    <app-paywall
+      title="Cálculo de Projeções é um recurso Premium"
+      description="Assine o CornerLab Premium para simular cenários de reinvestimento composto com sua própria banca, odd média e número de vitórias — com 7 dias grátis."
+    ></app-paywall>
+  } @else {
+
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
     <mat-form-field appearance="outline" class="w-52">
       <mat-label>Banca inicial (R$)</mat-label>
@@ -108,4 +161,5 @@
   <p class="cl-disclaimer">
     Projeção matemática assumindo que todo ciclo termina em {{ vitorias() }} vitórias consecutivas, sem nenhuma perda — na prática, sequências de perdas acontecem e reduzem (ou zeram) esses resultados. CornerLab organiza dados e simula cenários, mas nunca recomenda apostas.
   </p>
+  }
 </div>

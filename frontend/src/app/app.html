@@ -1,14 +1,23 @@
-<mat-toolbar class="!bg-cornerlab-surface !text-slate-100 border-b border-slate-800">
-  <span class="font-semibold tracking-tight text-lg">CornerLab</span>
+<mat-toolbar class="sticky top-0 z-50 !bg-cornerlab-surface !text-slate-100 border-b border-slate-800">
+  <a routerLink="/dashboard" class="flex items-center gap-2 no-underline">
+    <app-logo-mark [size]="30" />
+    <span class="font-semibold tracking-tight text-lg text-slate-100">Corner<span class="text-cornerlab-primary">Lab</span></span>
+  </a>
   <span class="ml-2 text-xs text-slate-400 hidden lg:inline">inteligência estatística para escanteios</span>
   <span class="flex-1"></span>
 
   <nav class="hidden md:flex gap-1">
-    <a mat-button routerLink="/dashboard" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200">Dashboard</a>
-    <a mat-button routerLink="/comparador" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200">Comparador</a>
-    <a mat-button routerLink="/filtros" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200">Simulador de Filtros</a>
-    <a mat-button routerLink="/banca" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200">Gestão de Banca</a>
-    <a mat-button routerLink="/integracoes" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200">Integrações</a>
+    @for (item of navItems; track item.route) {
+      <a
+        mat-button
+        [routerLink]="item.route"
+        routerLinkActive="cl-nav-active"
+        class="cl-nav-link !text-slate-200 !flex !items-center !gap-1.5"
+      >
+        <mat-icon class="!text-base !w-5 !h-5 !leading-5">{{ item.icon }}</mat-icon>
+        {{ item.label }}
+      </a>
+    }
   </nav>
 
   <button
@@ -22,15 +31,24 @@
   </button>
 </mat-toolbar>
 
-@if (menuOpen()) {
-  <nav class="md:hidden flex flex-col bg-cornerlab-surface border-b border-slate-800 px-2 py-2">
-    <a mat-button routerLink="/dashboard" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200 !justify-start">Dashboard</a>
-    <a mat-button routerLink="/comparador" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200 !justify-start">Comparador</a>
-    <a mat-button routerLink="/filtros" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200 !justify-start">Simulador de Filtros</a>
-    <a mat-button routerLink="/banca" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200 !justify-start">Gestão de Banca</a>
-    <a mat-button routerLink="/integracoes" routerLinkActive="!text-cornerlab-primary" class="!text-slate-200 !justify-start">Integrações</a>
-  </nav>
-}
+<nav
+  class="cl-mobile-menu md:hidden flex flex-col bg-cornerlab-surface border-b border-slate-800 overflow-hidden"
+  [class.cl-mobile-menu-open]="menuOpen()"
+>
+  @for (item of navItems; track item.route; let last = $last) {
+    <a
+      mat-button
+      [routerLink]="item.route"
+      routerLinkActive="cl-nav-active"
+      class="cl-nav-link !text-slate-200 !justify-start !items-center !gap-3 !mx-2 !my-0.5"
+      [class.border-b]="!last"
+      [class.border-slate-800]="!last"
+    >
+      <mat-icon class="!text-base !w-5 !h-5 !leading-5">{{ item.icon }}</mat-icon>
+      {{ item.label }}
+    </a>
+  }
+</nav>
 
 <main class="min-h-screen bg-cornerlab-bg px-4 py-6 sm:px-8">
   <router-outlet></router-outlet>

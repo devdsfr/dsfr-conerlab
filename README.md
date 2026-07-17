@@ -119,6 +119,11 @@ npm start   # http://localhost:4200, aponta para o backend em localhost:8080
 | `SPORTS_DATA_PROVIDER` | Não (padrão `fallback`) | `api_football`, `sportmonks` ou `fallback` (tenta API-Football e depois SportMonks). Usado por `cmd/sync`. |
 | `API_FOOTBALL_KEY` | Não | Chave da [API-Football](https://www.api-football.com/). |
 | `SPORTMONKS_KEY` | Não | Chave da [SportMonks](https://www.sportmonks.com/). |
+| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` | Não (obrigatórias para a Assinatura Premium) | Habilitam a Assinatura Premium (Stripe Checkout + Billing Portal). Sem elas, `GET /api/v1/billing/status` retorna `configured:false` e o frontend mostra "em configuração" no lugar do botão de assinar; os endpoints `/billing/*` respondem `503`. `STRIPE_PRICE_ID` é o Price recorrente (ex.: R$ 29,90/mês). |
+| `STRIPE_WEBHOOK_SECRET` | Não (obrigatória para ativar acesso após o pagamento) | Signing Secret do endpoint de webhook (`<sua-api>/api/v1/billing/webhook`, eventos `checkout.session.completed`, `customer.subscription.updated/deleted`). Sem ela o status do assinante nunca é atualizado após o Checkout. |
+| `STRIPE_TRIAL_DAYS` | Não (padrão `7`) | Dias de teste grátis aplicados na assinatura. |
+| `FRONTEND_URL` | Não (padrão `http://localhost:4200`) | URL pública do frontend, usada nas URLs de sucesso/cancelamento do Checkout e retorno do Billing Portal. Em produção: `https://dsfrcornerlab.com.br`. |
+| `DEV_PREMIUM_EMAILS` | Não | Libera Premium manualmente para e-mails específicos (lista separada por vírgula), sem passar pelo Stripe. Uso interno/QA. |
 
 Sem as chaves de dados esportivos configuradas, o sistema continua funcionando
 normalmente com os dados de exemplo gerados por `cmd/seed`.

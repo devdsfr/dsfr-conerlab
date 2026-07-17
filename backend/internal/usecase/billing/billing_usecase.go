@@ -97,8 +97,8 @@ func (u *Usecase) CreateCheckoutSession(ctx context.Context, userID int64) (stri
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{Price: stripe.String(u.priceID), Quantity: stripe.Int64(1)},
 		},
-		SuccessURL:        stripe.String(u.frontendURL + "/billing/sucesso?session_id={CHECKOUT_SESSION_ID}"),
-		CancelURL:         stripe.String(u.frontendURL + "/billing"),
+		SuccessURL:        stripe.String(u.frontendURL + "/assinatura?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:         stripe.String(u.frontendURL + "/assinatura"),
 		ClientReferenceID: stripe.String(strconv.FormatInt(user.ID, 10)),
 		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
 			TrialPeriodDays: stripe.Int64(int64(u.trialDays)),
@@ -134,7 +134,7 @@ func (u *Usecase) CreatePortalSession(ctx context.Context, userID int64) (string
 
 	params := &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(*user.StripeCustomerID),
-		ReturnURL: stripe.String(u.frontendURL + "/billing"),
+		ReturnURL: stripe.String(u.frontendURL + "/assinatura"),
 	}
 	sess, err := portalsession.New(params)
 	if err != nil {

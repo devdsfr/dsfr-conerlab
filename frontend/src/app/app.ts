@@ -3,7 +3,9 @@ import { NavigationStart, Router, RouterLink, RouterLinkActive, RouterOutlet } f
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { LogoMarkComponent } from './shared/logo-mark.component';
+import { AuthService } from './core/auth.service';
 
 interface NavItem {
   label: string;
@@ -20,6 +22,7 @@ interface NavItem {
     MatToolbarModule,
     MatButtonModule,
     MatIconModule,
+    MatTooltipModule,
     LogoMarkComponent,
   ],
   templateUrl: './app.html',
@@ -39,7 +42,7 @@ export class App {
 
   menuOpen = signal(false);
 
-  constructor(router: Router) {
+  constructor(private router: Router, public auth: AuthService) {
     router.events.subscribe(e => {
       if (e instanceof NavigationStart) this.menuOpen.set(false);
     });
@@ -47,5 +50,11 @@ export class App {
 
   toggleMenu(): void {
     this.menuOpen.set(!this.menuOpen());
+  }
+
+  logout(): void {
+    this.auth.logout();
+    this.menuOpen.set(false);
+    this.router.navigate(['/dashboard']);
   }
 }

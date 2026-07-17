@@ -62,6 +62,31 @@ type UserRepository interface {
 	// caso contrário — mantido aqui (e não calculado toda hora no domínio) para que
 	// o histórico de plano fique estável mesmo se a lógica de IsPremium mudar depois.
 	UpdateSubscriptionByCustomerID(ctx context.Context, customerID, subscriptionID, status, plan string, trialEndsAt, currentPeriodEnd *time.Time) error
+
+	// UpdatePassword grava um novo hash de senha (bcrypt) — usado tanto pelo fluxo de
+	// "esqueci minha senha" (AuthUsecase.ResetPassword) quanto por uma futura troca de
+	// senha autenticada, se vier a existir.
+	UpdatePassword(ctx context.Context, userID int64, passwordHash string) error
+}
+
+// PasswordResetRepository persiste as solicitações de "esqueci minha senha" (ver
+// domain.PasswordResetToken e migration 006_password_reset.sql).
+type PasswordResetRepository interface {
+	Create(ctx context.Context, t *domain.PasswordResetToken) error
+
+	// GetValidByToken retorna o token apenas se ele existir, não tiver expirado e
+	// ainda não tiver sido usado — qualquer outra condição é tratada pelo chamador
+	// como "token inválido", sem distinguir o motivo (evita vazar informação sobre
+	// se o token existiu algum dia).
+	GetValidByToken(ctx context.Context, token string) (*domain.PasswordResetToken, error)
+
+	MarkUsed(ctx context.Context, id int64) error
+
+	// InvalidateAllForUser marca como usados todos os tokens pendentes de um usuário
+	// — chamado ao gerar um novo token, para que apenas o link mais recente enviado
+	// por e-mail funcione (evita links antigos "esquecidos" na caixa de entrada
+	// continuarem válidos indefinidamente).
+	InvalidateAllForUser(ctx context.Context, userID int64) error
 }
 
 type FilterRepository interface {

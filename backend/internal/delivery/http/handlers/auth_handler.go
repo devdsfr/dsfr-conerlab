@@ -6,6 +6,7 @@ import (
 
 	"github.com/devdsfr/cornerlab/internal/delivery/http/dto"
 	"github.com/devdsfr/cornerlab/internal/usecase"
+	"github.com/devdsfr/cornerlab/pkg/email"
 	"github.com/gin-gonic/gin"
 )
 
@@ -63,4 +64,55 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"user": user, "token": token})
+}
+
+// ForgotPassword godoc
+// @Summary Solicitar redefinição de senha
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.ForgotPasswordRequest true "E-mail da conta"
+// @Success 200 {object} map[string]any
+// @Router /api/v1/auth/forgot-password [post]
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req dto.ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.auth.ForgotPassword(c.Request.Context(), req.Email); err != nil {
+		if errors.Is(err, email.ErrNotConfigured) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "recuperação de senha por e-mail ainda não está configurada"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Mensagem genérica sempre — não revela se o e-mail existe na base.
+	c.JSON(http.StatusOK, gin.H{"message": "se o e-mail estiver cadastrado, enviamos um link de redefinição"})
+}
+
+// ResetPassword godoc
+// @Summary Redefinir senha usando o token recebido por e-mail
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.ResetPasswordRequest true "Token e nova senha"
+// @Success 200 {object} map[string]any
+// @Router /api/v1/auth/reset-password [post]
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req dto.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.auth.ResetPassword(c.Request.Context(), req.Token, req.NewPassword); err != nil {
+		if errors.Is(err, usecase.ErrInvalidResetToken) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "senha redefinida com sucesso"})
 }

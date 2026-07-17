@@ -116,6 +116,18 @@ func (u User) IsPremium() bool {
 	return u.SubscriptionStatus == "active" || u.SubscriptionStatus == "trialing"
 }
 
+// PasswordResetToken representa uma solicitação de "esqueci minha senha" pendente.
+// Token de uso único, com expiração curta — ver migration 006_password_reset.sql e
+// AuthUsecase.ForgotPassword/ResetPassword.
+type PasswordResetToken struct {
+	ID        int64      `json:"id" db:"id"`
+	UserID    int64      `json:"user_id" db:"user_id"`
+	Token     string     `json:"-" db:"token"`
+	ExpiresAt time.Time  `json:"expires_at" db:"expires_at"`
+	UsedAt    *time.Time `json:"used_at,omitempty" db:"used_at"`
+	CreatedAt time.Time  `json:"created_at" db:"created_at"`
+}
+
 // SavedFilter representa um filtro personalizado salvo pelo usuário (Módulo 3)
 type SavedFilter struct {
 	ID          int64     `json:"id" db:"id"`

@@ -22,6 +22,7 @@ import (
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
 	"github.com/devdsfr/cornerlab/pkg/devaccess"
+	"github.com/devdsfr/cornerlab/pkg/email"
 	"github.com/devdsfr/cornerlab/pkg/logger"
 )
 
@@ -55,9 +56,11 @@ func main() {
 	leagueStatsRepo := postgres.NewLeagueStatsRepo(pool)
 	usageRepo := postgres.NewUsageRepo(pool)
 	bankrollRepo := postgres.NewBankrollRepo(pool)
+	passwordResetRepo := postgres.NewPasswordResetRepo(pool)
 
 	// Usecases — módulos originais (Dashboard, Comparador, Filtros, Auth, Apostas)
-	authUC := usecase.NewAuthUsecase(userRepo, cfg.JWTSecret, cfg.JWTExpiry)
+	emailSender := email.NewResendClient(cfg.ResendAPIKey, cfg.EmailFrom)
+	authUC := usecase.NewAuthUsecase(userRepo, passwordResetRepo, emailSender, cfg.JWTSecret, cfg.JWTExpiry, cfg.FrontendURL)
 	dashboardUC := usecase.NewDashboardUsecase(matchRepo, teamRepo)
 	comparatorUC := usecase.NewComparatorUsecase(matchRepo, teamRepo)
 	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, leagueRepo)

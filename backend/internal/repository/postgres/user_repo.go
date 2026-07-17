@@ -65,6 +65,11 @@ func (r *UserRepo) SetStripeCustomerID(ctx context.Context, userID int64, custom
 	return err
 }
 
+func (r *UserRepo) UpdatePassword(ctx context.Context, userID int64, passwordHash string) error {
+	_, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2`, passwordHash, userID)
+	return err
+}
+
 func (r *UserRepo) UpdateSubscriptionByCustomerID(ctx context.Context, customerID, subscriptionID, status, plan string, trialEndsAt, currentPeriodEnd *time.Time) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE users SET

@@ -26,5 +26,9 @@ export const routes: Routes = [
     path: 'assinatura',
     loadComponent: () => import('./features/billing/billing.component').then(m => m.BillingComponent),
   },
+  {
+    path: 'redefinir-senha',
+    loadComponent: () => import('./features/reset-password/reset-password.component').then(m => m.ResetPasswordComponent),
+  },
   { path: '**', redirectTo: 'dashboard' },
 ];

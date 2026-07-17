@@ -54,6 +54,15 @@ type Config struct {
 	// sem depender do Stripe — uso interno de dev/QA (ver pkg/devaccess). Lista
 	// separada por vírgula em DEV_PREMIUM_EMAILS. Vazio por padrão.
 	DevPremiumEmails []string
+
+	// Envio de e-mail (Resend — ver pkg/email) usado pelo fluxo "esqueci minha
+	// senha". Sem RESEND_API_KEY configurada, POST /auth/forgot-password responde
+	// 503 com mensagem clara em vez de quebrar o restante da aplicação.
+	ResendAPIKey string
+	// EmailFrom deve estar no formato "Nome <email@dominio>" aceito pela Resend.
+	// Por padrão usa o remetente de testes da própria Resend, que só entrega para o
+	// e-mail da conta Resend enquanto nenhum domínio próprio for verificado.
+	EmailFrom string
 }
 
 func Load() Config {
@@ -82,6 +91,9 @@ func Load() Config {
 		StripeTrialDays:     getEnvInt("STRIPE_TRIAL_DAYS", 7),
 		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:4200"),
 		DevPremiumEmails:    getEnvList("DEV_PREMIUM_EMAILS"),
+
+		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
+		EmailFrom:    getEnv("EMAIL_FROM", "CornerLab <onboarding@resend.dev>"),
 	}
 }
 

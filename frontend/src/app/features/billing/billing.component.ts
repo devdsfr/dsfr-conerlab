@@ -39,7 +39,7 @@ export class BillingComponent implements OnInit {
   justCheckedOut = signal(false);
 
   // Autenticação mínima (mesmo padrão do módulo de Gestão de Banca)
-  loginMode = signal<'login' | 'register'>('login');
+  loginMode = signal<'login' | 'register' | 'forgot'>('login');
   authLoading = signal(false);
   authError = signal<string | null>(null);
   loginEmail = '';
@@ -47,6 +47,12 @@ export class BillingComponent implements OnInit {
   registerName = '';
   registerEmail = '';
   registerPassword = '';
+
+  // "Esqueci minha senha"
+  forgotEmail = '';
+  forgotLoading = signal(false);
+  forgotSuccess = signal(false);
+  forgotError = signal<string | null>(null);
 
   constructor(
     private api: ApiService,
@@ -98,6 +104,21 @@ export class BillingComponent implements OnInit {
       error: err => {
         this.authLoading.set(false);
         this.authError.set(err?.error?.error ?? 'Não foi possível criar a conta');
+      },
+    });
+  }
+
+  submitForgotPassword(): void {
+    this.forgotLoading.set(true);
+    this.forgotError.set(null);
+    this.auth.forgotPassword(this.forgotEmail).subscribe({
+      next: () => {
+        this.forgotLoading.set(false);
+        this.forgotSuccess.set(true);
+      },
+      error: err => {
+        this.forgotLoading.set(false);
+        this.forgotError.set(err?.error?.error ?? 'Não foi possível enviar o e-mail de redefinição');
       },
     });
   }

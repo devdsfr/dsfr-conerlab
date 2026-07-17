@@ -43,6 +43,18 @@ export class AuthService {
     );
   }
 
+  /** Solicita o e-mail de redefinição de senha ("esqueci minha senha"). A API
+   * sempre responde com sucesso (mensagem genérica) mesmo se o e-mail não existir
+   * na base, para não revelar quais e-mails têm conta. */
+  forgotPassword(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.base}/auth/forgot-password`, { email });
+  }
+
+  /** Troca a senha usando o token recebido por e-mail (ver ResetPasswordComponent). */
+  resetPassword(token: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.base}/auth/reset-password`, { token, new_password: newPassword });
+  }
+
   /** reason: 'expired' quando disparado automaticamente pelo interceptor após um 401. */
   logout(reason?: 'expired'): void {
     localStorage.removeItem(TOKEN_KEY);

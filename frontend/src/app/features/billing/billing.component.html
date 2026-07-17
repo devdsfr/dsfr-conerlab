@@ -44,10 +44,12 @@
 
   @if (!auth.isAuthenticated()) {
     <div class="cl-card p-6 max-w-md">
-      <div class="flex gap-2 mb-4">
-        <button mat-button [color]="loginMode() === 'login' ? 'primary' : undefined" (click)="loginMode.set('login')">Entrar</button>
-        <button mat-button [color]="loginMode() === 'register' ? 'primary' : undefined" (click)="loginMode.set('register')">Criar conta</button>
-      </div>
+      @if (loginMode() !== 'forgot') {
+        <div class="flex gap-2 mb-4">
+          <button mat-button [color]="loginMode() === 'login' ? 'primary' : undefined" (click)="loginMode.set('login')">Entrar</button>
+          <button mat-button [color]="loginMode() === 'register' ? 'primary' : undefined" (click)="loginMode.set('register')">Criar conta</button>
+        </div>
+      }
 
       @if (loginMode() === 'login') {
         <div class="flex flex-col gap-3">
@@ -60,8 +62,9 @@
             <input matInput type="password" [(ngModel)]="loginPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
+          <button mat-button type="button" class="!text-xs !min-w-0 self-start !px-1" (click)="loginMode.set('forgot')">Esqueci minha senha</button>
         </div>
-      } @else {
+      } @else if (loginMode() === 'register') {
         <div class="flex flex-col gap-3">
           <mat-form-field appearance="outline">
             <mat-label>Nome</mat-label>
@@ -76,6 +79,26 @@
             <input matInput type="password" [(ngModel)]="registerPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-3">
+          <div class="text-sm font-medium text-slate-100">Redefinir senha</div>
+          @if (!forgotSuccess()) {
+            <p class="text-xs text-slate-400 -mt-1">Informe o e-mail da sua conta — enviaremos um link para você escolher uma nova senha.</p>
+            <mat-form-field appearance="outline">
+              <mat-label>E-mail</mat-label>
+              <input matInput type="email" [(ngModel)]="forgotEmail">
+            </mat-form-field>
+            <button mat-flat-button color="primary" [disabled]="forgotLoading()" (click)="submitForgotPassword()">
+              @if (forgotLoading()) { <mat-spinner diameter="18"></mat-spinner> } @else { Enviar link de redefinição }
+            </button>
+            @if (forgotError()) {
+              <div class="text-xs text-red-400">{{ forgotError() }}</div>
+            }
+          } @else {
+            <div class="text-sm text-cyan-300">Se o e-mail estiver cadastrado, enviamos um link de redefinição — confira sua caixa de entrada (e o spam).</div>
+          }
+          <button mat-button type="button" class="!text-xs !min-w-0 self-start !px-1" (click)="loginMode.set('login')">Voltar para o login</button>
         </div>
       }
 

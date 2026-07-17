@@ -1,12 +1,9 @@
 import { AfterViewInit, Component, input } from '@angular/core';
 
-// ID do publisher AdSense — placeholder até a conta AdSense do CornerLab ser
-// criada/aprovada (ver ESTRATEGIA-MONETIZACAO.md, seção "AdSense contextual").
-// Enquanto for este placeholder, AdSlotComponent não renderiza nenhum <ins> de
-// anúncio (evita solicitar anúncios reais com um client ID inválido) — assim
-// que a conta for aprovada, troque este valor pelo ca-pub-XXXXXXXXXXXXXXXX real
-// (e o mesmo valor no <script> de src/index.html).
-export const ADSENSE_CLIENT_ID = 'ca-pub-0000000000000000';
+// ID do publisher AdSense da conta CornerLab (ver ESTRATEGIA-MONETIZACAO.md,
+// seção "AdSense contextual"). Mesmo valor deve estar no <script> de
+// src/index.html.
+export const ADSENSE_CLIENT_ID: string = 'ca-pub-4200680263621683';
 
 const ADSENSE_CONFIGURED = ADSENSE_CLIENT_ID !== 'ca-pub-0000000000000000';
 

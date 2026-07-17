@@ -14,15 +14,10 @@
 
   <!--
     Google AdSense (anúncios contextuais — ver ESTRATEGIA-MONETIZACAO.md, "AdSense
-    contextual"). ca-pub-0000000000000000 é um ID placeholder: a conta AdSense do
-    CornerLab ainda não existe/não foi aprovada. O carregamento do script em si é
-    inofensivo (só baixa a biblioteca); nenhum anúncio real é solicitado porque
-    AdSlotComponent (src/app/shared/ad-slot.component.ts) só renderiza o <ins> de
-    anúncio quando ADSENSE_CLIENT_ID for um ID de verdade.
-    Ao aprovar a conta: troque o client= abaixo E a constante ADSENSE_CLIENT_ID em
-    ad-slot.component.ts pelo mesmo ca-pub-XXXXXXXXXXXXXXXX real.
+    contextual"). Publisher ID real da conta CornerLab. Mesmo valor deve estar em
+    ADSENSE_CLIENT_ID em src/app/shared/ad-slot.component.ts.
   -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-0000000000000000" crossorigin="anonymous"></script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4200680263621683" crossorigin="anonymous"></script>
 </head>
 <body>
   <app-root></app-root>

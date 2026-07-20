@@ -529,3 +529,54 @@ func (u *Usecase) Demote(ctx context.Context, userID int64, reason, notes string
 func (u *Usecase) History(ctx context.Context, userID int64) ([]domain.BankrollHistoryEntry, error) {
 	return u.repo.ListHistory(ctx, userID)
 }
+
+// ConfirmRound registra manualmente que uma rodada (fase) foi executada na vida
+// real, com o resultado (lucro/prejuízo) obtido. O saldo acumulado é sempre
+// calculado a partir do saldo real anterior (última rodada confirmada, ou a banca
+// da primeira fase configurada, se ainda não há nenhuma rodada) — nunca do valor
+// fixo pré-definido da próxima fase — para refletir a banca de verdade e servir de
+// prova histórica de que a estratégia está funcionando.
+func (u *Usecase) ConfirmRound(ctx context.Context, userID int64, phaseSequence int, result float64, notes string) (*domain.BankrollRound, error) {
+	phases, err := u.Phases(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	phase, ok := findPhase(phases, phaseSequence)
+	if !ok {
+		return nil, fmt.Errorf("fase (sequência %d) não encontrada na configuração de fases", phaseSequence)
+	}
+
+	rounds, err := u.repo.ListRounds(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	startBalance := lowestPhaseAmount(phases)
+	if len(rounds) > 0 {
+		startBalance = rounds[len(rounds)-1].BalanceAfter
+	}
+
+	entry := &domain.BankrollRound{
+		UserID: userID, PhaseSequence: phase.Sequence, PhaseName: phase.Name,
+		Result: round2(result), BalanceAfter: round2(startBalance + result), Notes: notes,
+	}
+	if err := u.repo.AddRound(ctx, entry); err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+// Rounds retorna o registro completo de rodadas confirmadas, em ordem cronológica
+// — a prova histórica de consolidação da estratégia a longo prazo.
+func (u *Usecase) Rounds(ctx context.Context, userID int64) ([]domain.BankrollRound, error) {
+	return u.repo.ListRounds(ctx, userID)
+}
+
+func lowestPhaseAmount(phases []domain.BankrollPhase) float64 {
+	best := phases[0]
+	for _, p := range phases {
+		if p.Sequence < best.Sequence {
+			best = p
+		}
+	}
+	return best.Amount
+}

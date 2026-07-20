@@ -16,6 +16,7 @@ import {
   BankrollCriteria,
   BankrollStatus,
   BankrollHistoryEntry,
+  BankrollRound,
   BillingStatus,
 } from './models';
 
@@ -122,6 +123,14 @@ export class ApiService {
 
   getBankrollHistory(): Observable<{ history: BankrollHistoryEntry[] }> {
     return this.http.get<{ history: BankrollHistoryEntry[] }>(`${this.base}/bankroll/history`);
+  }
+
+  confirmBankrollRound(phaseSequence: number, result: number, notes: string): Observable<BankrollRound> {
+    return this.http.post<BankrollRound>(`${this.base}/bankroll/rounds`, { phase_sequence: phaseSequence, result, notes });
+  }
+
+  getBankrollRounds(): Observable<{ rounds: BankrollRound[] }> {
+    return this.http.get<{ rounds: BankrollRound[] }>(`${this.base}/bankroll/rounds`);
   }
 
   // Assinatura Premium (Stripe) — ver ESTRATEGIA-MONETIZACAO.md

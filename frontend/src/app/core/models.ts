@@ -279,6 +279,19 @@ export interface BankrollHistoryEntry {
   created_at: string;
 }
 
+// Registro de rodadas confirmadas manualmente (saldo real acumulado) — ver
+// BankrollComponent, aba "Rodadas".
+export interface BankrollRound {
+  id: number;
+  user_id: number;
+  phase_sequence: number;
+  phase_name: string;
+  result: number;
+  balance_after: number;
+  notes: string;
+  confirmed_at: string;
+}
+
 // Assinatura Premium (Stripe) — ver ESTRATEGIA-MONETIZACAO.md
 export interface BillingStatus {
   plan: string;

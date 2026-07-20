@@ -158,4 +158,9 @@ type BankrollRepository interface {
 
 	AddHistory(ctx context.Context, e *domain.BankrollHistoryEntry) error
 	ListHistory(ctx context.Context, userID int64) ([]domain.BankrollHistoryEntry, error)
+
+	// AddRound e ListRounds persistem o registro de rodadas confirmadas
+	// manualmente (ver domain.BankrollRound) — a base do saldo real acumulado.
+	AddRound(ctx context.Context, r *domain.BankrollRound) error
+	ListRounds(ctx context.Context, userID int64) ([]domain.BankrollRound, error)
 }

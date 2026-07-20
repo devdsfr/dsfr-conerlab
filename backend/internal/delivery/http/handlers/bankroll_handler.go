@@ -179,3 +179,42 @@ func (h *BankrollHandler) History(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"history": entries})
 }
+
+type confirmRoundRequest struct {
+	PhaseSequence int     `json:"phase_sequence" binding:"required"`
+	Result        float64 `json:"result"`
+	Notes         string  `json:"notes"`
+}
+
+// ConfirmRound godoc
+// @Summary Confirmar manualmente o resultado real de uma rodada e atualizar o saldo acumulado
+// @Tags bankroll
+// @Router /api/v1/bankroll/rounds [post]
+func (h *BankrollHandler) ConfirmRound(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	var req confirmRoundRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	entry, err := h.bankroll.ConfirmRound(c.Request.Context(), userID, req.PhaseSequence, req.Result, req.Notes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, entry)
+}
+
+// ListRounds godoc
+// @Summary Listar as rodadas confirmadas (registro real de saldo acumulado)
+// @Tags bankroll
+// @Router /api/v1/bankroll/rounds [get]
+func (h *BankrollHandler) ListRounds(c *gin.Context) {
+	userID := middleware.UserIDFromContext(c)
+	rounds, err := h.bankroll.Rounds(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rounds": rounds})
+}

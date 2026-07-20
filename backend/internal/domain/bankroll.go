@@ -55,3 +55,20 @@ type BankrollHistoryEntry struct {
 	Notes      string    `json:"notes" db:"notes"`
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
+
+// BankrollRound registra a confirmação manual de que uma rodada (fase) foi
+// executada na vida real, com o resultado (lucro/prejuízo) obtido. BalanceAfter é
+// sempre calculado a partir do saldo real anterior (última rodada confirmada, ou
+// a banca da primeira fase se ainda não há nenhuma) — nunca do valor fixo
+// pré-configurado da próxima fase — para refletir a banca de verdade e servir de
+// prova histórica de que a estratégia está funcionando.
+type BankrollRound struct {
+	ID            int64     `json:"id" db:"id"`
+	UserID        int64     `json:"user_id" db:"user_id"`
+	PhaseSequence int       `json:"phase_sequence" db:"phase_sequence"`
+	PhaseName     string    `json:"phase_name" db:"phase_name"`
+	Result        float64   `json:"result" db:"result"`
+	BalanceAfter  float64   `json:"balance_after" db:"balance_after"`
+	Notes         string    `json:"notes" db:"notes"`
+	ConfirmedAt   time.Time `json:"confirmed_at" db:"confirmed_at"`
+}

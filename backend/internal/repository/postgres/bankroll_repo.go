@@ -169,3 +169,32 @@ func (r *BankrollRepo) ListHistory(ctx context.Context, userID int64) ([]domain.
 	}
 	return entries, rows.Err()
 }
+
+func (r *BankrollRepo) AddRound(ctx context.Context, e *domain.BankrollRound) error {
+	return r.db.QueryRow(ctx, `
+		INSERT INTO bankroll_rounds (user_id, phase_sequence, phase_name, result, balance_after, notes)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, confirmed_at`,
+		e.UserID, e.PhaseSequence, e.PhaseName, e.Result, e.BalanceAfter, e.Notes).
+		Scan(&e.ID, &e.ConfirmedAt)
+}
+
+func (r *BankrollRepo) ListRounds(ctx context.Context, userID int64) ([]domain.BankrollRound, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, user_id, phase_sequence, phase_name, result, balance_after, notes, confirmed_at
+		FROM bankroll_rounds WHERE user_id=$1 ORDER BY confirmed_at ASC, id ASC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rounds []domain.BankrollRound
+	for rows.Next() {
+		var e domain.BankrollRound
+		if err := rows.Scan(&e.ID, &e.UserID, &e.PhaseSequence, &e.PhaseName, &e.Result, &e.BalanceAfter, &e.Notes, &e.ConfirmedAt); err != nil {
+			return nil, err
+		}
+		rounds = append(rounds, e)
+	}
+	return rounds, rows.Err()
+}

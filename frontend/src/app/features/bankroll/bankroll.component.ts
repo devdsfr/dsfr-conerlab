@@ -13,10 +13,10 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { BankrollCriteria, BankrollHistoryEntry, BankrollPhase, BankrollStatus } from '../../core/models';
+import { BankrollCriteria, BankrollHistoryEntry, BankrollPhase, BankrollRound, BankrollStatus } from '../../core/models';
 import { PaywallComponent } from '../../shared/paywall.component';
 
-type Section = 'dashboard' | 'phases' | 'criteria' | 'history';
+type Section = 'dashboard' | 'phases' | 'rounds' | 'criteria' | 'history';
 
 interface PhaseDraft {
   sequence: number;
@@ -86,6 +86,17 @@ export class BankrollComponent implements OnInit {
   criteriaLoading = signal(false);
   criteriaSaving = signal(false);
   criteriaError = signal<string | null>(null);
+
+  // Rodadas (saldo real acumulado — ver domain.BankrollRound)
+  rounds = signal<BankrollRound[]>([]);
+  roundsLoading = signal(false);
+  roundsLoaded = false;
+  confirmingRoundSeq: number | null = null;
+  roundResult: number | null = null;
+  roundNotes = '';
+  roundSaving = signal(false);
+  roundError = signal<string | null>(null);
+  roundColumns = ['confirmed_at', 'phase_name', 'result', 'balance_after', 'notes'];
 
   // Histórico
   history = signal<BankrollHistoryEntry[]>([]);
@@ -202,6 +213,10 @@ export class BankrollComponent implements OnInit {
   goTo(section: Section): void {
     this.section.set(section);
     if (section === 'phases' && this.phasesDraft.length === 0) this.loadPhases();
+    if (section === 'rounds') {
+      if (this.phasesDraft.length === 0) this.loadPhases();
+      if (!this.roundsLoaded) this.loadRounds();
+    }
     if (section === 'criteria' && !this.criteriaDraft) this.loadCriteria();
     if (section === 'history' && this.history().length === 0) this.loadHistory();
   }
@@ -244,6 +259,71 @@ export class BankrollComponent implements OnInit {
       error: err => {
         this.phasesError.set(err?.error?.error ?? 'Erro ao salvar as fases');
         this.phasesSaving.set(false);
+      },
+    });
+  }
+
+  // --- Rodadas (saldo real acumulado) ---
+
+  loadRounds(): void {
+    this.roundsLoading.set(true);
+    this.api.getBankrollRounds().subscribe({
+      next: res => {
+        this.rounds.set(res.rounds);
+        this.roundsLoaded = true;
+        this.roundsLoading.set(false);
+      },
+      error: () => this.roundsLoading.set(false),
+    });
+  }
+
+  /** Fases ordenadas pela sequência configurada — base da lista de rodadas. */
+  orderedPhases(): PhaseDraft[] {
+    return [...this.phasesDraft].sort((a, b) => a.sequence - b.sequence);
+  }
+
+  /** Saldo real: o saldo da última rodada confirmada, ou a banca da primeira fase
+   * configurada se nenhuma rodada foi confirmada ainda. É o "somador" pedido —
+   * sempre reflete o resultado real, não o valor fixo da próxima fase. */
+  currentBalance(): number | null {
+    const rs = this.rounds();
+    if (rs.length) return rs[rs.length - 1].balance_after;
+    const first = this.orderedPhases()[0];
+    return first ? first.amount : null;
+  }
+
+  confirmedRoundFor(sequence: number): BankrollRound | undefined {
+    return this.rounds().find(r => r.phase_sequence === sequence);
+  }
+
+  startConfirmRound(sequence: number): void {
+    this.confirmingRoundSeq = sequence;
+    this.roundResult = null;
+    this.roundNotes = '';
+    this.roundError.set(null);
+  }
+
+  cancelConfirmRound(): void {
+    this.confirmingRoundSeq = null;
+  }
+
+  submitConfirmRound(): void {
+    if (this.confirmingRoundSeq == null || this.roundResult == null) {
+      this.roundError.set('Informe o resultado real da rodada (pode ser negativo).');
+      return;
+    }
+    this.roundSaving.set(true);
+    this.roundError.set(null);
+    this.api.confirmBankrollRound(this.confirmingRoundSeq, this.roundResult, this.roundNotes).subscribe({
+      next: () => {
+        this.roundSaving.set(false);
+        this.confirmingRoundSeq = null;
+        this.loadRounds();
+        this.loadStatus();
+      },
+      error: err => {
+        this.roundSaving.set(false);
+        this.roundError.set(err?.error?.error ?? 'Não foi possível confirmar a rodada');
       },
     });
   }

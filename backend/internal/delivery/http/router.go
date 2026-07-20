@@ -122,6 +122,8 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 				bankroll.POST("/promote", h.Bankroll.Promote)
 				bankroll.POST("/demote", h.Bankroll.Demote)
 				bankroll.GET("/history", h.Bankroll.History)
+				bankroll.POST("/rounds", h.Bankroll.ConfirmRound)
+				bankroll.GET("/rounds", h.Bankroll.ListRounds)
 
 				// Exportação de dados (CSV/XLSX) — antes 100% pública sem autenticação;
 				// agora exige login + assinatura premium.

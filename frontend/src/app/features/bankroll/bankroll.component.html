@@ -69,6 +69,7 @@
       <div class="flex gap-1">
         <button mat-button [color]="section() === 'dashboard' ? 'primary' : undefined" (click)="goTo('dashboard')">Dashboard</button>
         <button mat-button [color]="section() === 'phases' ? 'primary' : undefined" (click)="goTo('phases')">Fases</button>
+        <button mat-button [color]="section() === 'rounds' ? 'primary' : undefined" (click)="goTo('rounds')">Rodadas</button>
         <button mat-button [color]="section() === 'criteria' ? 'primary' : undefined" (click)="goTo('criteria')">Critérios</button>
         <button mat-button [color]="section() === 'history' ? 'primary' : undefined" (click)="goTo('history')">Histórico</button>
       </div>
@@ -257,6 +258,117 @@
         }
         @if (phasesError()) {
           <div class="text-xs text-red-400 mt-2">{{ phasesError() }}</div>
+        }
+      </div>
+    }
+
+    @if (section() === 'rounds') {
+      <div class="cl-card p-4">
+        <div class="text-xs text-slate-400">Saldo real consolidado</div>
+        <div class="text-3xl font-semibold text-cornerlab-primary">
+          @if (currentBalance() !== null) { R$ {{ currentBalance() }} } @else { — }
+        </div>
+        <p class="text-xs text-slate-400 mt-2">
+          Calculado a partir do resultado real que você confirmar em cada rodada — não do valor fixo pré-cadastrado nas Fases. É o valor a aplicar na próxima rodada.
+        </p>
+      </div>
+
+      <div class="cl-card p-4">
+        <p class="text-sm text-slate-400 mb-3">
+          Marque cada rodada como OK quando executá-la de verdade, informando o resultado (lucro ou prejuízo) obtido. Isso alimenta o saldo consolidado acima e fica salvo no seu histórico como prova da evolução da estratégia.
+        </p>
+
+        @if (phasesLoading() || roundsLoading()) {
+          <div class="flex justify-center py-6"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else {
+          <div class="flex flex-col gap-2">
+            @for (p of orderedPhases(); track p.sequence) {
+              <div class="border border-slate-800 rounded p-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    @if (confirmedRoundFor(p.sequence); as r) {
+                      <span class="text-cornerlab-primary">✓</span>
+                    } @else {
+                      <span class="text-slate-600">○</span>
+                    }
+                    <span class="text-sm text-slate-100">{{ p.name }}</span>
+                    <span class="text-xs text-slate-400">(banca planejada: R$ {{ p.amount }})</span>
+                  </div>
+
+                  @if (confirmedRoundFor(p.sequence); as r) {
+                    <div class="text-xs text-right">
+                      <div [class.text-cornerlab-primary]="r.result >= 0" [class.text-red-400]="r.result < 0">
+                        {{ r.result >= 0 ? '+' : '' }}{{ r.result }}
+                      </div>
+                      <div class="text-slate-400">saldo: R$ {{ r.balance_after }}</div>
+                    </div>
+                  } @else if (confirmingRoundSeq !== p.sequence) {
+                    <button mat-stroked-button color="primary" (click)="startConfirmRound(p.sequence)">Marcar rodada como OK</button>
+                  }
+                </div>
+
+                @if (confirmingRoundSeq === p.sequence) {
+                  <div class="flex flex-col gap-2 mt-3 pt-3 border-t border-slate-800">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Resultado real desta rodada (R$, use negativo se foi prejuízo)</mat-label>
+                      <input matInput type="number" [(ngModel)]="roundResult">
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Observações (opcional)</mat-label>
+                      <input matInput [(ngModel)]="roundNotes">
+                    </mat-form-field>
+                    <div class="flex gap-2">
+                      <button mat-flat-button color="primary" [disabled]="roundSaving()" (click)="submitConfirmRound()">Confirmar</button>
+                      <button mat-button (click)="cancelConfirmRound()">Cancelar</button>
+                    </div>
+                    @if (roundError()) {
+                      <div class="text-xs text-red-400">{{ roundError() }}</div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          @if (orderedPhases().length === 0) {
+            <div class="text-xs text-slate-400 py-4 text-center">Configure suas fases na aba "Fases" primeiro.</div>
+          }
+        }
+      </div>
+
+      <div class="cl-card p-4">
+        <h3 class="text-sm text-slate-400 mb-3">Registro de rodadas confirmadas</h3>
+        <div class="overflow-x-auto">
+          <table mat-table [dataSource]="rounds()" class="w-full min-w-[600px] !bg-transparent">
+            <ng-container matColumnDef="confirmed_at">
+              <th mat-header-cell *matHeaderCellDef>Data</th>
+              <td mat-cell *matCellDef="let r">{{ r.confirmed_at | date:'dd/MM/yyyy HH:mm' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="phase_name">
+              <th mat-header-cell *matHeaderCellDef>Rodada</th>
+              <td mat-cell *matCellDef="let r">{{ r.phase_name }}</td>
+            </ng-container>
+            <ng-container matColumnDef="result">
+              <th mat-header-cell *matHeaderCellDef>Resultado</th>
+              <td mat-cell *matCellDef="let r">
+                <span [class.text-cornerlab-primary]="r.result >= 0" [class.text-red-400]="r.result < 0">
+                  {{ r.result >= 0 ? '+' : '' }}{{ r.result }}
+                </span>
+              </td>
+            </ng-container>
+            <ng-container matColumnDef="balance_after">
+              <th mat-header-cell *matHeaderCellDef>Saldo acumulado</th>
+              <td mat-cell *matCellDef="let r">R$ {{ r.balance_after }}</td>
+            </ng-container>
+            <ng-container matColumnDef="notes">
+              <th mat-header-cell *matHeaderCellDef>Observações</th>
+              <td mat-cell *matCellDef="let r">{{ r.notes }}</td>
+            </ng-container>
+            <tr mat-header-row *matHeaderRowDef="roundColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: roundColumns;"></tr>
+          </table>
+        </div>
+        @if (rounds().length === 0 && !roundsLoading()) {
+          <div class="text-xs text-slate-400 py-4 text-center">Nenhuma rodada confirmada ainda.</div>
         }
       </div>
     }

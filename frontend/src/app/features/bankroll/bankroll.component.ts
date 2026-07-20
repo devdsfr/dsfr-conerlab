@@ -269,7 +269,7 @@ export class BankrollComponent implements OnInit {
     this.roundsLoading.set(true);
     this.api.getBankrollRounds().subscribe({
       next: res => {
-        this.rounds.set(res.rounds);
+        this.rounds.set(res.rounds ?? []);
         this.roundsLoaded = true;
         this.roundsLoading.set(false);
       },
@@ -368,7 +368,7 @@ export class BankrollComponent implements OnInit {
     this.historyLoading.set(true);
     this.api.getBankrollHistory().subscribe({
       next: res => {
-        this.history.set(res.history);
+        this.history.set(res.history ?? []);
         this.historyLoading.set(false);
       },
       error: () => this.historyLoading.set(false),

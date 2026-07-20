@@ -159,7 +159,10 @@ func (r *BankrollRepo) ListHistory(ctx context.Context, userID int64) ([]domain.
 	}
 	defer rows.Close()
 
-	var entries []domain.BankrollHistoryEntry
+	// Inicializado como slice vazio (não nil) para o JSON serializar "[]" em vez de
+	// "null" quando o usuário ainda não tem nenhuma mudança de banca registrada —
+	// evita quebrar o frontend, que sempre espera uma lista.
+	entries := []domain.BankrollHistoryEntry{}
 	for rows.Next() {
 		var e domain.BankrollHistoryEntry
 		if err := rows.Scan(&e.ID, &e.UserID, &e.FromAmount, &e.ToAmount, &e.Direction, &e.Reason, &e.Notes, &e.CreatedAt); err != nil {
@@ -188,7 +191,10 @@ func (r *BankrollRepo) ListRounds(ctx context.Context, userID int64) ([]domain.B
 	}
 	defer rows.Close()
 
-	var rounds []domain.BankrollRound
+	// Idem: slice vazio (não nil) para nunca serializar "null" quando não há
+	// nenhuma rodada confirmada — é exatamente o caso do primeiro acesso do
+	// usuário à aba "Rodadas".
+	rounds := []domain.BankrollRound{}
 	for rows.Next() {
 		var e domain.BankrollRound
 		if err := rows.Scan(&e.ID, &e.UserID, &e.PhaseSequence, &e.PhaseName, &e.Result, &e.BalanceAfter, &e.Notes, &e.ConfirmedAt); err != nil {

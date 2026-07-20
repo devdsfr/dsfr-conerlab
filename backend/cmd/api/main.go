@@ -92,6 +92,7 @@ func main() {
 	// no painel Integrações (ver SyncHandler).
 	statSyncRepo := postgres.NewStatSyncRepo(pool)
 	providerIncidentRepo := postgres.NewProviderIncidentRepo(pool)
+	syncRunRepo := postgres.NewSyncRunRepo(pool)
 	discoverySyncUC := statsync.NewDiscoveryUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
 	updateSyncUC := statsync.NewUpdateUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
 
@@ -121,7 +122,7 @@ func main() {
 		Diagnostics:     handlers.NewDiagnosticsHandler(diagnosticsUC),
 		Bankroll:        handlers.NewBankrollHandler(bankrollUC),
 		Billing:         handlers.NewBillingHandler(billingUC),
-		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC),
+		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC, syncRunRepo),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

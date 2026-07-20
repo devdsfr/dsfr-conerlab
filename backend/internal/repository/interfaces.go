@@ -169,3 +169,12 @@ type BankrollRepository interface {
 	AddRound(ctx context.Context, r *domain.BankrollRound) error
 	ListRounds(ctx context.Context, userID int64) ([]domain.BankrollRound, error)
 }
+
+// SyncRunRepository persiste o histórico de execuções do ciclo de sincronização
+// (ver domain.SyncRun) — usado pelo painel Integrações para mostrar "Última
+// sincronização" sem depender de estado local do navegador.
+type SyncRunRepository interface {
+	AddRun(ctx context.Context, r *domain.SyncRun) error
+	// LastRun retorna nil (sem erro) se nenhuma sincronização foi registrada ainda.
+	LastRun(ctx context.Context) (*domain.SyncRun, error)
+}

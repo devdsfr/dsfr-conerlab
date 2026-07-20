@@ -296,6 +296,25 @@ export interface SyncRunResult {
   };
 }
 
+// Última execução de sincronização registrada em sync_runs (manual ou via Render
+// Cron Job) — usado para mostrar "Última sincronização: DD/MM HH:mm" no painel
+// Integrações, independente de estado local do navegador.
+export interface SyncRun {
+  id: number;
+  triggered_by: string;
+  targets: number;
+  fixtures_found: number;
+  fixtures_upserted: number;
+  matches_checked: number;
+  matches_finalized: number;
+  errors: number;
+  created_at: string;
+}
+
+export interface SyncStatusResponse {
+  last_run: SyncRun | null;
+}
+
 // Registro de rodadas confirmadas manualmente (saldo real acumulado) — ver
 // BankrollComponent, aba "Rodadas".
 export interface BankrollRound {

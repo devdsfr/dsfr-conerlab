@@ -30,6 +30,15 @@
           <mat-icon class="!text-[16px] !w-[16px] !h-[16px] !leading-[16px]">refresh</mat-icon>
         </button>
       </div>
+      <div class="text-xs text-slate-400 mt-1">
+        @if (lastSyncLoading()) {
+          Verificando última sincronização…
+        } @else if (lastSyncRun(); as run) {
+          Última sincronização: <span class="text-slate-200">{{ formatLastSync(run) }}</span>
+        } @else {
+          Ainda sem nenhuma sincronização registrada.
+        }
+      </div>
     </div>
     <button mat-flat-button color="primary" [disabled]="syncLoading()" (click)="runSync()">
       @if (syncLoading()) { <mat-spinner diameter="16" class="inline-block mr-1"></mat-spinner> }

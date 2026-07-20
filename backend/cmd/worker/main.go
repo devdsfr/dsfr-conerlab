@@ -33,6 +33,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/devdsfr/cornerlab/internal/domain"
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider"
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider/sofascore"
@@ -69,6 +70,7 @@ func main() {
 	usageRepo := postgres.NewUsageRepo(pool)
 	statSyncRepo := postgres.NewStatSyncRepo(pool)
 	incidentRepo := postgres.NewProviderIncidentRepo(pool)
+	syncRunRepo := postgres.NewSyncRunRepo(pool)
 
 	provider, err := buildProvider(cfg.StatisticsProvider, cfg.APIFootballKey, usageRepo)
 	if err != nil {
@@ -87,8 +89,9 @@ func main() {
 	// Health check roda uma vez antes de tudo, para já saber se o provedor está
 	// saudável antes do primeiro ciclo de descoberta/atualização.
 	runHealthCheck(ctx, healthUC)
-	runDiscovery(ctx, discoveryUC)
-	runUpdate(ctx, updateUC)
+	discoveryResult := runDiscovery(ctx, discoveryUC)
+	updateResult := runUpdate(ctx, updateUC)
+	recordRun(ctx, syncRunRepo, discoveryResult, updateResult)
 
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
@@ -124,11 +127,13 @@ func main() {
 
 // runDiscovery, runUpdate e runHealthCheck sempre recuperam de panic — uma falha
 // inesperada em um ciclo nunca deve derrubar o processo inteiro (regra do critério de
-// aceite: "falhas do provider não podem quebrar a aplicação").
-func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) {
+// aceite: "falhas do provider não podem quebrar a aplicação"). Os resultados voltam
+// (zero-value em caso de panic/erro) para alimentar recordRun.
+func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) (result statsync.DiscoveryResult) {
 	defer recoverAndLog("descoberta")
 	start := time.Now()
-	result, err := uc.Run(ctx)
+	var err error
+	result, err = uc.Run(ctx)
 	fields := []any{
 		"duration_ms", time.Since(start).Milliseconds(),
 		"targets", result.Targets, "fixtures_found", result.FixturesFound,
@@ -139,12 +144,14 @@ func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) {
 		return
 	}
 	slog.Info("ciclo de descoberta concluído", fields...)
+	return
 }
 
-func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) {
+func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) (result statsync.UpdateResult) {
 	defer recoverAndLog("atualização")
 	start := time.Now()
-	result, err := uc.Run(ctx)
+	var err error
+	result, err = uc.Run(ctx)
 	fields := []any{
 		"duration_ms", time.Since(start).Milliseconds(),
 		"checked", result.Checked, "finalized", result.Finalized,
@@ -155,6 +162,25 @@ func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) {
 		return
 	}
 	slog.Info("ciclo de atualização concluído", fields...)
+	return
+}
+
+// recordRun grava o histórico desta execução (ver domain.SyncRun) para o painel
+// Integrações mostrar "Última sincronização: ...". Nunca derruba o worker por causa
+// de uma falha ao salvar — a sincronização em si já rodou.
+func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.DiscoveryResult, u statsync.UpdateResult) {
+	entry := &domain.SyncRun{
+		TriggeredBy:      "cron",
+		Targets:          d.Targets,
+		FixturesFound:    d.FixturesFound,
+		FixturesUpserted: d.FixturesUpserted,
+		MatchesChecked:   u.Checked,
+		MatchesFinalized: u.Finalized,
+		Errors:           d.Errors + u.Errors,
+	}
+	if err := repo.AddRun(ctx, entry); err != nil {
+		slog.Error("falha ao registrar histórico de sincronização", "error", err)
+	}
 }
 
 func runHealthCheck(ctx context.Context, uc *statsync.HealthCheckUsecase) {

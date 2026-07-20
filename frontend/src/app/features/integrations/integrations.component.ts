@@ -10,7 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { ProviderSummary, SyncRunResult, UsageEntry } from '../../core/models';
+import { ProviderSummary, SyncRun, SyncRunResult, UsageEntry } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 
 interface ProviderView extends ProviderSummary {
@@ -70,11 +70,39 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   apiFootballStatus = signal<'checking' | 'up' | 'down' | null>(null);
   apiFootballMessage = signal<string | null>(null);
 
+  // Última sincronização registrada no banco (manual ou via Render Cron Job) — vem do
+  // backend (tabela sync_runs), não de estado local do navegador, para o usuário poder
+  // conferir "já foi sincronizado hoje?" mesmo depois de recarregar a página.
+  lastSyncRun = signal<SyncRun | null>(null);
+  lastSyncLoading = signal(false);
+
   constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit(): void {
     this.load();
     this.checkApiFootball();
+    this.loadSyncStatus();
+  }
+
+  loadSyncStatus(): void {
+    this.lastSyncLoading.set(true);
+    this.api.getSyncStatus().subscribe({
+      next: res => {
+        this.lastSyncRun.set(res.last_run);
+        this.lastSyncLoading.set(false);
+      },
+      error: () => this.lastSyncLoading.set(false),
+    });
+  }
+
+  formatLastSync(run: SyncRun): string {
+    const d = new Date(run.created_at);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const origem = run.triggered_by === 'cron' ? 'automática' : 'manual';
+    return `${dd}/${mm} ${hh}:${min} (${origem})`;
   }
 
   checkApiFootball(): void {
@@ -178,6 +206,7 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
         this.syncLoading.set(false);
         this.syncResult.set(res);
         this.load();
+        this.loadSyncStatus();
       },
       error: err => {
         this.syncLoading.set(false);

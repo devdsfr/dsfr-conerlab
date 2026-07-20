@@ -78,6 +78,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		diag.GET("/recent", h.Diagnostics.Recent)
 		diag.POST("/test/:provider", h.Diagnostics.TestConnection)
 
+		// Última sincronização registrada — leitura pública (sem custo, sem side
+		// effect), diferente de POST /sync/run (autenticado, ver authGroup abaixo).
+		api.GET("/sync/status", h.Sync.Status)
+
 		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
 		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT
 		// da aplicação (a autenticidade é garantida pela assinatura HMAC do Stripe).

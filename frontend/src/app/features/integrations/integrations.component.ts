@@ -127,7 +127,7 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
       ...p,
       testing: false,
       testResult: null,
-      chartLabels: dailyCalls.map(d => d.date.slice(5)),
+      chartLabels: dailyCalls.map(d => (d.date ? d.date.slice(5) : '')),
       chartDatasets: [{ label: 'Chamadas/dia (7 dias)', data: dailyCalls.map(d => d.count), color: '#38bdf8' }],
     };
   }

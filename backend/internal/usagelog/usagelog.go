@@ -35,9 +35,14 @@ type Entry struct {
 }
 
 // DailyCount é a contagem de chamadas em um dia (usado para o gráfico de consumo).
+// Precisa das tags json em minúsculo — sem elas, cada item serializava como
+// {"Date":..., "Count":...} (maiúsculo), enquanto o frontend espera {"date":...,
+// "count":...}, quebrando o painel Integrações assim que havia alguma chamada
+// registrada (chartLabels: dailyCalls.map(d => d.date.slice(5)) lia d.date
+// undefined).
 type DailyCount struct {
-	Date  string
-	Count int
+	Date  string `json:"date"`
+	Count int    `json:"count"`
 }
 
 // ProviderStats agrega o histórico de uso de um provedor específico.

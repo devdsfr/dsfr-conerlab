@@ -30,5 +30,9 @@ export const routes: Routes = [
     path: 'redefinir-senha',
     loadComponent: () => import('./features/reset-password/reset-password.component').then(m => m.ResetPasswordComponent),
   },
+  {
+    path: 'integracoes',
+    loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
+  },
   { path: '**', redirectTo: 'dashboard' },
 ];

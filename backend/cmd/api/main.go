@@ -18,6 +18,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/usecase/billing"
 	"github.com/devdsfr/cornerlab/internal/usecase/diagnostics"
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
+	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 	"github.com/devdsfr/cornerlab/pkg/cache"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
@@ -86,6 +87,14 @@ func main() {
 	apiFootballClient := apifootball.New(cfg.APIFootballKey, usageRepo)
 	sportMonksClient := sportmonks.New(cfg.SportMonksKey, usageRepo)
 
+	// Módulo de Sincronização de Dados — os mesmos usecases que o Render Cron Job
+	// (cmd/worker) roda periodicamente, aqui expostos via botão "Sincronizar agora"
+	// no painel Integrações (ver SyncHandler).
+	statSyncRepo := postgres.NewStatSyncRepo(pool)
+	providerIncidentRepo := postgres.NewProviderIncidentRepo(pool)
+	discoverySyncUC := statsync.NewDiscoveryUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
+	updateSyncUC := statsync.NewUpdateUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
+
 	explainUC := intelligence.NewExplainUsecase(openaiClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
 	diagnosticsUC := diagnostics.New(
 		usageRepo,
@@ -112,6 +121,7 @@ func main() {
 		Diagnostics:     handlers.NewDiagnosticsHandler(diagnosticsUC),
 		Bankroll:        handlers.NewBankrollHandler(bankrollUC),
 		Billing:         handlers.NewBillingHandler(billingUC),
+		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

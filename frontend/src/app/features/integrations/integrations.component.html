@@ -7,6 +7,30 @@
     </p>
   </div>
 
+  <div class="cl-card p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div class="flex-1">
+      <div class="text-sm text-slate-100 font-medium">Sincronização de dados</div>
+      <div class="text-xs text-slate-400 mt-0.5">
+        Busca jogos novos e finaliza partidas encerradas junto à API-Football agora, sem esperar o próximo ciclo agendado.
+      </div>
+    </div>
+    <button mat-flat-button color="primary" [disabled]="syncLoading()" (click)="runSync()">
+      @if (syncLoading()) { <mat-spinner diameter="16" class="inline-block mr-1"></mat-spinner> }
+      Sincronizar agora
+    </button>
+  </div>
+
+  @if (syncError()) {
+    <div class="cl-card p-3 text-xs text-red-400">{{ syncError() }}</div>
+  }
+  @if (syncResult(); as sr) {
+    <div class="cl-card p-3 text-xs text-cornerlab-primary">
+      Descoberta: {{ sr.discovery.FixturesFound }} jogos encontrados, {{ sr.discovery.FixturesUpserted }} novos gravados.
+      Atualização: {{ sr.update.Checked }} verificados, {{ sr.update.Finalized }} finalizados
+      @if (sr.update.StillOpen > 0) { ({{ sr.update.StillOpen }} ainda sem resultado publicado pelo provedor) }.
+    </div>
+  }
+
   @if (loading()) {
     <div class="flex items-center gap-2 text-sm text-slate-400">
       <mat-spinner diameter="18"></mat-spinner>

@@ -17,6 +17,7 @@ import {
   BankrollStatus,
   BankrollHistoryEntry,
   BankrollRound,
+  SyncRunResult,
   BillingStatus,
 } from './models';
 
@@ -84,6 +85,11 @@ export class ApiService {
 
   testConnection(provider: string): Observable<TestConnectionResult> {
     return this.http.post<TestConnectionResult>(`${this.base}/diagnostics/test/${provider}`, {});
+  }
+
+  /** Botão "Sincronizar agora" — exige login (ver router.go, grupo authGroup). */
+  syncRun(): Observable<SyncRunResult> {
+    return this.http.post<SyncRunResult>(`${this.base}/sync/run`, {});
   }
 
   getRecentUsage(provider?: string, limit = 30): Observable<{ entries: UsageEntry[] }> {

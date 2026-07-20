@@ -279,6 +279,23 @@ export interface BankrollHistoryEntry {
   created_at: string;
 }
 
+// Resultado do botão "Sincronizar agora" (painel Integrações) — dispara o mesmo
+// ciclo de descoberta + atualização que o Render Cron Job roda periodicamente.
+export interface SyncRunResult {
+  discovery: {
+    Targets: number;
+    FixturesFound: number;
+    FixturesUpserted: number;
+    Errors: number;
+  };
+  update: {
+    Checked: number;
+    Finalized: number;
+    StillOpen: number;
+    Errors: number;
+  };
+}
+
 // Registro de rodadas confirmadas manualmente (saldo real acumulado) — ver
 // BankrollComponent, aba "Rodadas".
 export interface BankrollRound {

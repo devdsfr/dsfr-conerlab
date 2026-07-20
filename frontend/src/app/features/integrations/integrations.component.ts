@@ -8,7 +8,8 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
-import { ProviderSummary, UsageEntry } from '../../core/models';
+import { AuthService } from '../../core/auth.service';
+import { ProviderSummary, SyncRunResult, UsageEntry } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 
 interface ProviderView extends ProviderSummary {
@@ -54,7 +55,14 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   readonly panelTooltip =
     'Este painel mostra apenas o consumo técnico das integrações externas (nº de chamadas, tokens, latência, sucesso/erro) — não expõe as chaves de API nem dados financeiros do usuário.';
 
-  constructor(private api: ApiService) {}
+  // Botão "Sincronizar agora" — dispara o mesmo ciclo de descoberta + atualização de
+  // partidas que o Render Cron Job roda periodicamente, para quando o usuário notar
+  // dados desatualizados e não quiser esperar o próximo ciclo agendado.
+  syncLoading = signal(false);
+  syncResult = signal<SyncRunResult | null>(null);
+  syncError = signal<string | null>(null);
+
+  constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit(): void {
     this.load();
@@ -132,6 +140,27 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
         error: () => this.historyLoading.set(false),
       });
     }
+  }
+
+  runSync(): void {
+    if (!this.auth.isAuthenticated()) {
+      this.syncError.set('Faça login (aba Assinatura) para sincronizar manualmente.');
+      return;
+    }
+    this.syncLoading.set(true);
+    this.syncError.set(null);
+    this.syncResult.set(null);
+    this.api.syncRun().subscribe({
+      next: res => {
+        this.syncLoading.set(false);
+        this.syncResult.set(res);
+        this.load();
+      },
+      error: err => {
+        this.syncLoading.set(false);
+        this.syncError.set(err?.error?.error ?? 'Não foi possível sincronizar agora');
+      },
+    });
   }
 
   statusLabel(p: ProviderView): string {

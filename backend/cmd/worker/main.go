@@ -1,10 +1,16 @@
 // cmd/worker é o processo de background do Módulo de Sincronização de Dados
-// (Statistics Provider). Roda separado da API HTTP (cmd/api) — sobe como um segundo
-// serviço "Background Worker" no Render — e mantém o Postgres continuamente
-// sincronizado com o provedor de estatísticas configurado, sem que nenhuma requisição
-// da API precise esperar por uma chamada externa: os handlers HTTP sempre leem só do
-// Postgres (ver internal/usecase/dashboard.go e afins), então uma falha aqui nunca
-// derruba o app — na pior hipótese, os dados só param de ficar tão frescos.
+// (Statistics Provider). Roda separado da API HTTP (cmd/api) e mantém o Postgres
+// continuamente sincronizado com o provedor de estatísticas configurado, sem que
+// nenhuma requisição da API precise esperar por uma chamada externa: os handlers
+// HTTP sempre leem só do Postgres (ver internal/usecase/dashboard.go e afins), então
+// uma falha aqui nunca derruba o app — na pior hipótese, os dados só param de ficar
+// tão frescos.
+//
+// Em produção roda como um Render Cron Job (barato, ~US$1/mês) com a variável
+// SYNC_RUN_ONCE=true: cada disparo do cron sobe este binário, roda um ciclo completo
+// e sai. Sem essa variável, o binário vira um loop infinito com tickers — pensado
+// para rodar como Render Background Worker (a partir de US$7/mês) se um dia o
+// produto precisar de dados quase em tempo real em vez de periódicos.
 //
 // Workers desta fase (núcleo do módulo — ver critério de aceite):
 //  1. Descoberta       — a cada 30min, encontra jogos novos (AGENDADO), sem duplicar.
@@ -83,6 +89,16 @@ func main() {
 	runHealthCheck(ctx, healthUC)
 	runDiscovery(ctx, discoveryUC)
 	runUpdate(ctx, updateUC)
+
+	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
+	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
+	// processo 24h). Sem essa variável, comportamento original: loop infinito com
+	// tickers, pensado para rodar como Render Background Worker (mais caro, dados
+	// quase em tempo real) caso o produto precise disso no futuro.
+	if os.Getenv("SYNC_RUN_ONCE") == "true" {
+		appLog.Info("worker de sincronização: execução única concluída (SYNC_RUN_ONCE=true)")
+		return
+	}
 
 	discoveryTicker := time.NewTicker(discoveryInterval)
 	updateTicker := time.NewTicker(updateInterval)

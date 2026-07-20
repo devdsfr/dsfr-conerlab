@@ -23,6 +23,7 @@ type Handlers struct {
 	Diagnostics     *handlers.DiagnosticsHandler
 	Bankroll        *handlers.BankrollHandler
 	Billing         *handlers.BillingHandler
+	Sync            *handlers.SyncHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
@@ -97,6 +98,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 			authGroup.DELETE("/bets/:id", h.Bet.Delete)
 
 			authGroup.GET("/strategy-history", h.StrategyHistory.List)
+
+			// Botão "Sincronizar agora" do painel Integrações — exige login (diferente do
+			// resto do painel, que é público) porque dispara chamadas reais à API externa.
+			authGroup.POST("/sync/run", h.Sync.Run)
 
 			authGroup.GET("/billing/status", h.Billing.Status)
 			authGroup.POST("/billing/checkout", h.Billing.Checkout)

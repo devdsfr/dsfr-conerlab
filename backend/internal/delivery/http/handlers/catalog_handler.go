@@ -60,6 +60,7 @@ func (h *CatalogHandler) ListSeasons(c *gin.Context) {
 // @Tags catalog
 // @Produce json
 // @Param league_id query int false "League ID"
+// @Param season_id query int false "Season ID — restringe a equipes que jogaram nessa liga+temporada"
 // @Param q query string false "Busca por nome"
 // @Success 200 {array} domain.Team
 // @Router /api/v1/teams [get]
@@ -83,7 +84,16 @@ func (h *CatalogHandler) ListTeams(c *gin.Context) {
 		}
 		leagueID = &id
 	}
-	teams, err := h.teams.List(c.Request.Context(), leagueID)
+	var seasonID *int64
+	if sq := c.Query("season_id"); sq != "" {
+		id, err := strconv.ParseInt(sq, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "season_id inválido"})
+			return
+		}
+		seasonID = &id
+	}
+	teams, err := h.teams.List(c.Request.Context(), leagueID, seasonID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

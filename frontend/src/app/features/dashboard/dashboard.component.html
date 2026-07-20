@@ -19,7 +19,7 @@
 
     <mat-form-field appearance="outline" class="w-44">
       <mat-label>Temporada</mat-label>
-      <mat-select [(ngModel)]="selectedSeasonId" (selectionChange)="syncQueryParams()" panelClass="cl-select-panel" [disabled]="teamsLoading()">
+      <mat-select [(ngModel)]="selectedSeasonId" (selectionChange)="onSeasonChange()" panelClass="cl-select-panel" [disabled]="teamsLoading()">
         <mat-option [value]="undefined">Todas</mat-option>
         @for (s of seasons(); track s.id) {
           <mat-option [value]="s.id">{{ s.label }}</mat-option>

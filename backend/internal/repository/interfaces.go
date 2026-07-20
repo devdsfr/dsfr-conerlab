@@ -14,7 +14,12 @@ type LeagueRepository interface {
 }
 
 type TeamRepository interface {
-	List(ctx context.Context, leagueID *int64) ([]domain.Team, error)
+	// List retorna as equipes de uma liga. Quando seasonID é informado, filtra para
+	// equipes que de fato jogaram naquela liga+temporada (via matches) — evita
+	// listar equipes de temporadas passadas (ex: rebaixadas) como se ainda
+	// estivessem na liga atual. Sem seasonID, cai no vínculo histórico geral
+	// (league_teams), usado quando o filtro é "todas as temporadas".
+	List(ctx context.Context, leagueID *int64, seasonID *int64) ([]domain.Team, error)
 	GetByID(ctx context.Context, id int64) (*domain.Team, error)
 	Search(ctx context.Context, query string) ([]domain.Team, error)
 }

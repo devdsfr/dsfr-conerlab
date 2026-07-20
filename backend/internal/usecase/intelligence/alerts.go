@@ -109,7 +109,7 @@ func (u *AlertUsecase) Evaluate(ctx context.Context, ruleID int64) (*AlertEvalua
 		}
 		candidateTeams = []domain.Team{*t}
 	} else {
-		candidateTeams, err = u.teams.List(ctx, &def.LeagueID)
+		candidateTeams, err = u.teams.List(ctx, &def.LeagueID, nil)
 		if err != nil {
 			return nil, err
 		}

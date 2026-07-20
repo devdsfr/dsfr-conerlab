@@ -15,10 +15,22 @@ func NewTeamRepo(db *pgxpool.Pool) *TeamRepo {
 	return &TeamRepo{db: db}
 }
 
-func (r *TeamRepo) List(ctx context.Context, leagueID *int64) ([]domain.Team, error) {
+func (r *TeamRepo) List(ctx context.Context, leagueID *int64, seasonID *int64) ([]domain.Team, error) {
 	query := `SELECT id, name, short_name, country, tier, created_at FROM teams ORDER BY name`
 	args := []any{}
-	if leagueID != nil {
+	switch {
+	case leagueID != nil && seasonID != nil:
+		// Restringe a equipes que de fato têm partida registrada nessa liga+temporada
+		// — league_teams sozinho é um vínculo histórico "alguma vez jogou aqui" e
+		// listava equipes de temporadas passadas (ex: rebaixadas) na temporada atual.
+		query = `
+			SELECT DISTINCT t.id, t.name, t.short_name, t.country, t.tier, t.created_at
+			FROM teams t
+			JOIN matches m ON (m.home_team_id = t.id OR m.away_team_id = t.id)
+			WHERE m.league_id = $1 AND m.season_id = $2
+			ORDER BY t.name`
+		args = append(args, *leagueID, *seasonID)
+	case leagueID != nil:
 		query = `
 			SELECT t.id, t.name, t.short_name, t.country, t.tier, t.created_at
 			FROM teams t

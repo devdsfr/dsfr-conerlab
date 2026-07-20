@@ -6,6 +6,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatIconModule } from '@angular/material/icon';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
@@ -36,6 +37,7 @@ const SLOW_LOAD_TIMEOUT_MS = 8000;
     MatTableModule,
     MatChipsModule,
     MatTooltipModule,
+    MatIconModule,
     SimpleChartComponent,
   ],
   templateUrl: './integrations.component.html',
@@ -62,10 +64,31 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   syncResult = signal<SyncRunResult | null>(null);
   syncError = signal<string | null>(null);
 
+  // Status rápido "API-Football está de pé?" — independente do painel completo de
+  // consumo (que pode demorar mais, ver load()), pra decidir antes de clicar em
+  // "Sincronizar agora".
+  apiFootballStatus = signal<'checking' | 'up' | 'down' | null>(null);
+  apiFootballMessage = signal<string | null>(null);
+
   constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit(): void {
     this.load();
+    this.checkApiFootball();
+  }
+
+  checkApiFootball(): void {
+    this.apiFootballStatus.set('checking');
+    this.api.testConnection('api_football').subscribe({
+      next: res => {
+        this.apiFootballStatus.set(res.ok ? 'up' : 'down');
+        this.apiFootballMessage.set(res.message);
+      },
+      error: err => {
+        this.apiFootballStatus.set('down');
+        this.apiFootballMessage.set(err?.error?.error ?? 'Falha ao verificar a API-Football');
+      },
+    });
   }
 
   ngOnDestroy(): void {

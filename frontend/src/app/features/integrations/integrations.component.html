@@ -13,6 +13,23 @@
       <div class="text-xs text-slate-400 mt-0.5">
         Busca jogos novos e finaliza partidas encerradas junto à API-Football agora, sem esperar o próximo ciclo agendado.
       </div>
+      <div class="text-xs mt-1.5 flex items-center gap-1.5">
+        @switch (apiFootballStatus()) {
+          @case ('checking') {
+            <mat-spinner diameter="12"></mat-spinner>
+            <span class="text-slate-400">Verificando API-Football…</span>
+          }
+          @case ('up') {
+            <span class="text-cornerlab-primary">● API-Football de pé</span>
+          }
+          @case ('down') {
+            <span class="text-red-400" [title]="apiFootballMessage() ?? ''">● API-Football indisponível{{ apiFootballMessage() ? ' — ' + apiFootballMessage() : '' }}</span>
+          }
+        }
+        <button mat-icon-button (click)="checkApiFootball()" matTooltip="Verificar de novo" class="!w-6 !h-6 !leading-6">
+          <mat-icon class="!text-[16px] !w-[16px] !h-[16px] !leading-[16px]">refresh</mat-icon>
+        </button>
+      </div>
     </div>
     <button mat-flat-button color="primary" [disabled]="syncLoading()" (click)="runSync()">
       @if (syncLoading()) { <mat-spinner diameter="16" class="inline-block mr-1"></mat-spinner> }

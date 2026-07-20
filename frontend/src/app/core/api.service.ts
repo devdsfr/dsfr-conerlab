@@ -51,9 +51,14 @@ export class ApiService {
     return this.http.get<Season[]>(`${this.base}/leagues/${leagueId}/seasons`);
   }
 
-  listTeams(leagueId?: number, query?: string): Observable<Team[]> {
+  /** seasonId restringe a equipes que de fato jogaram naquela liga+temporada — evita
+   * listar equipes de temporadas passadas (ex: rebaixadas) como se ainda
+   * estivessem na liga atual. Omitir seasonId mantém o comportamento "todas as
+   * temporadas" (vínculo histórico da liga). */
+  listTeams(leagueId?: number, query?: string, seasonId?: number): Observable<Team[]> {
     let url = `${this.base}/teams?`;
     if (leagueId) url += `league_id=${leagueId}&`;
+    if (seasonId) url += `season_id=${seasonId}&`;
     if (query) url += `q=${encodeURIComponent(query)}&`;
     return this.http.get<Team[]>(url);
   }

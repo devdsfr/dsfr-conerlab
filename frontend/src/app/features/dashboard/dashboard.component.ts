@@ -2,7 +2,6 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
@@ -117,11 +116,12 @@ export class DashboardComponent implements OnInit {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonId = undefined;
     this.teamsLoading.set(true);
-    forkJoin({
-      seasons: this.api.listSeasons(this.selectedLeagueId),
-      teams: this.api.listTeams(this.selectedLeagueId),
-    }).subscribe({
-      next: ({ seasons, teams }) => {
+    // Temporada é resolvida ANTES de buscar as equipes (não mais em paralelo):
+    // a lista de equipes depende de qual temporada fica selecionada por padrão,
+    // senão equipes de temporadas passadas (ex: rebaixadas) aparecem como se
+    // ainda estivessem na liga atual — ver loadTeams().
+    this.api.listSeasons(this.selectedLeagueId).subscribe({
+      next: seasons => {
         this.seasons.set(seasons);
         // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
         // Analisar sem nenhuma seleção visível): assume a mais recente por
@@ -132,20 +132,29 @@ export class DashboardComponent implements OnInit {
         } else if (seasons.length) {
           this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
         }
+        this.loadTeams(presetTeamId);
+      },
+      error: () => this.teamsLoading.set(false),
+    });
+  }
 
+  /** Recarrega a lista de equipes para a liga+temporada atualmente selecionadas.
+   * preferredTeamId é mantido se ainda existir na nova lista; senão, cai para a
+   * primeira equipe — evita a análise rodar com uma equipe de outra liga/temporada
+   * (amostra de 0 jogos). */
+  private loadTeams(preferredTeamId?: number): void {
+    this.teamsLoading.set(true);
+    this.api.listTeams(this.selectedLeagueId, undefined, this.selectedSeasonId).subscribe({
+      next: teams => {
         this.teams.set(teams);
-        // Sempre reposiciona para a primeira equipe do campeonato selecionado —
-        // manter o id da equipe do campeonato anterior selecionado fazia a
-        // análise rodar com uma equipe de outra liga (amostra de 0 jogos).
-        // Exceção: restaurando da URL, mantém a equipe salva.
-        if (presetTeamId !== undefined && teams.some(t => t.id === presetTeamId)) {
-          this.selectedTeamId = presetTeamId;
+        if (preferredTeamId !== undefined && teams.some(t => t.id === preferredTeamId)) {
+          this.selectedTeamId = preferredTeamId;
         } else {
           this.selectedTeamId = teams.length ? teams[0].id : undefined;
         }
         this.teamsLoading.set(false);
 
-        if (presetTeamId !== undefined && this.selectedTeamId === presetTeamId) {
+        if (preferredTeamId !== undefined && this.selectedTeamId === preferredTeamId) {
           this.runDashboard();
         } else {
           this.result.set(null);
@@ -154,6 +163,12 @@ export class DashboardComponent implements OnInit {
       },
       error: () => this.teamsLoading.set(false),
     });
+  }
+
+  /** Chamado ao trocar a Temporada sem trocar o Campeonato — a lista de equipes
+   * precisa ser recarregada para a nova temporada (ver loadTeams()). */
+  onSeasonChange(): void {
+    this.loadTeams(this.selectedTeamId);
   }
 
   runDashboard(): void {

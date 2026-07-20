@@ -220,7 +220,7 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 }
 
 func (u *FilterUsecase) teamIndex(ctx context.Context, leagueID int64) (map[int64]domain.Team, error) {
-	teams, err := u.teams.List(ctx, &leagueID)
+	teams, err := u.teams.List(ctx, &leagueID, nil)
 	if err != nil {
 		return nil, err
 	}

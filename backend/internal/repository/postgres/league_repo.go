@@ -15,8 +15,17 @@ func NewLeagueRepo(db *pgxpool.Pool) *LeagueRepo {
 	return &LeagueRepo{db: db}
 }
 
+// List retorna APENAS ligas com dados reais do provedor (external_id preenchido).
+// GUARDRAIL CRÍTICO: ligas sem external_id são placeholders/sintéticas, criadas
+// para preencher o produto antes de existir dado real da API-Football. Elas contêm
+// partidas 100% inventadas (escanteios aleatórios, inclusive datadas no futuro, até
+// 2027) e JAMAIS podem aparecer para o usuário. Este filtro na fonte garante que,
+// mesmo que dado fictício exista no banco, nenhuma liga sem dado real verificado
+// entre no dropdown de campeonatos. Só é considerada real uma liga sincronizada de
+// verdade com o provedor (ver StatSyncRepo.ListSyncTargets, que também exige
+// external_id IS NOT NULL).
 func (r *LeagueRepo) List(ctx context.Context) ([]domain.League, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, name, country, tier, created_at FROM leagues ORDER BY name`)
+	rows, err := r.db.Query(ctx, `SELECT id, name, country, tier, created_at FROM leagues WHERE external_id IS NOT NULL ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}

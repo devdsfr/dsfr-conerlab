@@ -19,8 +19,14 @@ func NewMatchRepo(db *pgxpool.Pool) *MatchRepo {
 	return &MatchRepo{db: db}
 }
 
-// TeamMatches busca os últimos jogos de uma equipe (mandante ou visitante) e monta
-// a visão "por equipe" já com escanteios a favor/sofridos e o adversário resolvido.
+// TeamMatches busca os últimos jogos JÁ DISPUTADOS de uma equipe (mandante ou
+// visitante) e monta a visão "por equipe" já com escanteios a favor/sofridos e o
+// adversário resolvido. Filtra status = 'FINALIZADO': partidas ainda 'AGENDADO'
+// (descobertas pelo worker de sincronização mas ainda não jogadas) têm
+// home_corners/away_corners zerados por padrão, e entrar aqui puxaria todas as
+// estatísticas do dashboard (média, desvio padrão, frequências etc.) para zero —
+// bug real relatado pelo usuário (Corinthians/Série A/2026 mostrando só jogos
+// futuros com tudo 0).
 func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) ([]domain.TeamMatchView, error) {
 	query := `
 		SELECT
@@ -31,6 +37,7 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 			CASE WHEN m.home_team_id = $1 THEN m.away_corners ELSE m.home_corners END AS corners_against
 		FROM matches m
 		WHERE (m.home_team_id = $1 OR m.away_team_id = $1)
+		  AND m.status = 'FINALIZADO'
 	`
 	args := []any{f.TeamID}
 	argN := 2
@@ -125,15 +132,18 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 	return views, nil
 }
 
-// AllMatches retorna todas as partidas de um campeonato (opcionalmente restrito a
-// um conjunto de temporadas) para uso no motor de filtros/backtesting.
+// AllMatches retorna as partidas JÁ DISPUTADAS (status = 'FINALIZADO') de um
+// campeonato (opcionalmente restrito a um conjunto de temporadas) para uso no
+// motor de filtros/backtesting. Mesma razão do filtro em TeamMatches: partidas
+// 'AGENDADO' ainda não têm escanteios reais, e entrariam no backtest com 0/0
+// distorcendo qualquer resultado.
 func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []int64) ([]domain.Match, error) {
 	query := `
 		SELECT id, league_id, season_id, round, match_date, home_team_id, away_team_id,
 		       home_corners, away_corners, home_goals, away_goals,
 		       corner_odds::text, created_at
 		FROM matches
-		WHERE league_id = $1
+		WHERE league_id = $1 AND status = 'FINALIZADO'
 	`
 	args := []any{leagueID}
 	if len(seasonIDs) > 0 {

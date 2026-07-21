@@ -320,6 +320,19 @@ func (c *Client) SyncFixtureStatistics(ctx context.Context, fixtureExternalID st
 	result.HomeRedCards = statValue(home, "Red Cards")
 	result.AwayRedCards = statValue(away, "Red Cards")
 
+	// Prioridade Média: chutes de dentro/fora da área, chutes bloqueados, faltas e
+	// impedimentos — mesma resposta, sem chamada extra à API.
+	result.HomeShotsInsidebox = statValue(home, "Shots insidebox")
+	result.AwayShotsInsidebox = statValue(away, "Shots insidebox")
+	result.HomeShotsOutsidebox = statValue(home, "Shots outsidebox")
+	result.AwayShotsOutsidebox = statValue(away, "Shots outsidebox")
+	result.HomeBlockedShots = statValue(home, "Blocked Shots")
+	result.AwayBlockedShots = statValue(away, "Blocked Shots")
+	result.HomeFouls = statValue(home, "Fouls")
+	result.AwayFouls = statValue(away, "Fouls")
+	result.HomeOffsides = statValue(home, "Offsides")
+	result.AwayOffsides = statValue(away, "Offsides")
+
 	return result, nil
 }
 

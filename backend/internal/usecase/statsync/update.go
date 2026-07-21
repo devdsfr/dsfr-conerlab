@@ -81,6 +81,11 @@ func (u *UpdateUsecase) Run(ctx context.Context) (UpdateResult, error) {
 			HomeShotsOnTarget: stats.HomeShotsOnTarget, AwayShotsOnTarget: stats.AwayShotsOnTarget,
 			HomeYellowCards: stats.HomeYellowCards, AwayYellowCards: stats.AwayYellowCards,
 			HomeRedCards: stats.HomeRedCards, AwayRedCards: stats.AwayRedCards,
+			HomeShotsInsidebox: stats.HomeShotsInsidebox, AwayShotsInsidebox: stats.AwayShotsInsidebox,
+			HomeShotsOutsidebox: stats.HomeShotsOutsidebox, AwayShotsOutsidebox: stats.AwayShotsOutsidebox,
+			HomeBlockedShots: stats.HomeBlockedShots, AwayBlockedShots: stats.AwayBlockedShots,
+			HomeFouls: stats.HomeFouls, AwayFouls: stats.AwayFouls,
+			HomeOffsides: stats.HomeOffsides, AwayOffsides: stats.AwayOffsides,
 			Referee: stats.Referee, Venue: stats.Venue,
 		}
 		if err := u.repo.FinalizeFixture(ctx, d.ExternalID, update); err != nil {

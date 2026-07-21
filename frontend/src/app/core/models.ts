@@ -41,6 +41,11 @@ export interface FrequencyResult {
   pct: number;
 }
 
+// Estatísticas complementares por partida (posse, chutes, cartões etc.) — já
+// reorientadas pela perspectiva da equipe consultada (For = a própria equipe,
+// Against = o adversário), mesmo padrão de corners_for/corners_against. Undefined/
+// null quando o provedor não publicou aquele campo para a partida (comum em ligas
+// menores) — ver domain.TeamMatchView no backend.
 export interface TeamMatchView {
   match_id: number;
   match_date: string;
@@ -50,6 +55,27 @@ export interface TeamMatchView {
   corners_against: number;
   total_corners: number;
   opponent_tier: string;
+
+  possession_for?: number | null;
+  possession_against?: number | null;
+  shots_for?: number | null;
+  shots_against?: number | null;
+  shots_on_target_for?: number | null;
+  shots_on_target_against?: number | null;
+  shots_insidebox_for?: number | null;
+  shots_insidebox_against?: number | null;
+  shots_outsidebox_for?: number | null;
+  shots_outsidebox_against?: number | null;
+  blocked_shots_for?: number | null;
+  blocked_shots_against?: number | null;
+  fouls_for?: number | null;
+  fouls_against?: number | null;
+  offsides_for?: number | null;
+  offsides_against?: number | null;
+  yellow_cards_for?: number | null;
+  yellow_cards_against?: number | null;
+  red_cards_for?: number | null;
+  red_cards_against?: number | null;
 }
 
 export interface SplitStats {

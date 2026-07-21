@@ -167,7 +167,7 @@
     <div class="cl-card p-4">
       <h3 class="text-sm text-slate-400 mb-3">Últimos jogos</h3>
       <div class="overflow-x-auto">
-      <table mat-table [dataSource]="sortedMatches(r.recent_matches)" class="w-full min-w-[560px] !bg-transparent">
+      <table mat-table [dataSource]="sortedMatches(r.recent_matches)" multiTemplateDataRows class="w-full min-w-[560px] !bg-transparent">
         <ng-container matColumnDef="match_date">
           <th mat-header-cell *matHeaderCellDef>
             <button type="button" class="cl-sort-th" (click)="setSort('match_date')">Data <span class="cl-sort-arrow">{{ sortArrow('match_date') }}</span></button>
@@ -206,9 +206,72 @@
             <span [class.text-cornerlab-primary]="m.corners_for > m.corners_against" [class.text-red-400]="m.corners_for < m.corners_against">{{ m.total_corners }}</span>
           </td>
         </ng-container>
+
+        <!-- Estatísticas complementares (posse, chutes, cartões etc.) — linha expansível
+             pra não poluir a tabela principal. Ver dashboard.component.ts. -->
+        <ng-container matColumnDef="expand">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let m">
+            <button mat-icon-button type="button" (click)="toggleMatchDetails(m.match_id)" matTooltip="Mais estatísticas desta partida">
+              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] !leading-[18px]">{{ isMatchExpanded(m.match_id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="matchDetail">
+          <td mat-cell *matCellDef="let m" [attr.colspan]="matchColumns.length" class="!p-0 border-0">
+            @if (isMatchExpanded(m.match_id)) {
+              <div class="bg-slate-900/60 px-4 py-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <div class="text-slate-500">Posse de bola</div>
+                  <div class="text-slate-200">{{ m.possession_for ?? '—' }}% <span class="text-slate-500">/ {{ m.possession_against ?? '—' }}%</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Chutes (total)</div>
+                  <div class="text-slate-200">{{ m.shots_for ?? '—' }} <span class="text-slate-500">/ {{ m.shots_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Chutes no alvo</div>
+                  <div class="text-slate-200">{{ m.shots_on_target_for ?? '—' }} <span class="text-slate-500">/ {{ m.shots_on_target_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Chutes na área</div>
+                  <div class="text-slate-200">{{ m.shots_insidebox_for ?? '—' }} <span class="text-slate-500">/ {{ m.shots_insidebox_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Chutes fora da área</div>
+                  <div class="text-slate-200">{{ m.shots_outsidebox_for ?? '—' }} <span class="text-slate-500">/ {{ m.shots_outsidebox_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Chutes bloqueados</div>
+                  <div class="text-slate-200">{{ m.blocked_shots_for ?? '—' }} <span class="text-slate-500">/ {{ m.blocked_shots_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Faltas cometidas</div>
+                  <div class="text-slate-200">{{ m.fouls_for ?? '—' }} <span class="text-slate-500">/ {{ m.fouls_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Impedimentos</div>
+                  <div class="text-slate-200">{{ m.offsides_for ?? '—' }} <span class="text-slate-500">/ {{ m.offsides_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Cartões amarelos</div>
+                  <div class="text-slate-200">{{ m.yellow_cards_for ?? '—' }} <span class="text-slate-500">/ {{ m.yellow_cards_against ?? '—' }}</span></div>
+                </div>
+                <div>
+                  <div class="text-slate-500">Cartões vermelhos</div>
+                  <div class="text-slate-200">{{ m.red_cards_for ?? '—' }} <span class="text-slate-500">/ {{ m.red_cards_against ?? '—' }}</span></div>
+                </div>
+              </div>
+            }
+          </td>
+        </ng-container>
+
         <tr mat-header-row *matHeaderRowDef="matchColumns"></tr>
         <tr mat-row *matRowDef="let row; columns: matchColumns;"></tr>
+        <tr mat-row *matRowDef="let row; columns: ['matchDetail']" class="!h-auto"></tr>
       </table>
+      <p class="text-[11px] text-slate-500 mt-1">Valores no formato "seu time / adversário". Campos sem dado publicado pelo provedor aparecem como —.</p>
       </div>
     </div>
 

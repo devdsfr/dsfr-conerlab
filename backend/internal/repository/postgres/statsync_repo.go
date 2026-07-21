@@ -144,7 +144,13 @@ type FixtureStatsUpdate struct {
 	HomeShotsOnTarget, AwayShotsOnTarget *int
 	HomeYellowCards, AwayYellowCards     *int
 	HomeRedCards, AwayRedCards           *int
-	Referee, Venue                       string
+	// Prioridade Média (ver migration 010).
+	HomeShotsInsidebox, AwayShotsInsidebox   *int
+	HomeShotsOutsidebox, AwayShotsOutsidebox *int
+	HomeBlockedShots, AwayBlockedShots       *int
+	HomeFouls, AwayFouls                     *int
+	HomeOffsides, AwayOffsides               *int
+	Referee, Venue                           string
 }
 
 func (r *StatSyncRepo) FinalizeFixture(ctx context.Context, externalID string, u FixtureStatsUpdate) error {
@@ -165,15 +171,28 @@ func (r *StatSyncRepo) FinalizeFixture(ctx context.Context, externalID string, u
 			away_yellow_cards    = $13,
 			home_red_cards       = $14,
 			away_red_cards       = $15,
-			referee              = NULLIF($16, ''),
-			venue                = NULLIF($17, ''),
+			home_shots_insidebox  = $16,
+			away_shots_insidebox  = $17,
+			home_shots_outsidebox = $18,
+			away_shots_outsidebox = $19,
+			home_blocked_shots    = $20,
+			away_blocked_shots    = $21,
+			home_fouls            = $22,
+			away_fouls            = $23,
+			home_offsides         = $24,
+			away_offsides         = $25,
+			referee              = NULLIF($26, ''),
+			venue                = NULLIF($27, ''),
 			stats_synced_at      = now(),
 			updated_at           = now()
 		WHERE external_id = $1`,
 		externalID, u.HomeGoals, u.AwayGoals, u.HomeCorners, u.AwayCorners,
 		u.HomePossession, u.AwayPossession, u.HomeShots, u.AwayShots,
 		u.HomeShotsOnTarget, u.AwayShotsOnTarget, u.HomeYellowCards, u.AwayYellowCards,
-		u.HomeRedCards, u.AwayRedCards, u.Referee, u.Venue)
+		u.HomeRedCards, u.AwayRedCards,
+		u.HomeShotsInsidebox, u.AwayShotsInsidebox, u.HomeShotsOutsidebox, u.AwayShotsOutsidebox,
+		u.HomeBlockedShots, u.AwayBlockedShots, u.HomeFouls, u.AwayFouls, u.HomeOffsides, u.AwayOffsides,
+		u.Referee, u.Venue)
 	return err
 }
 

@@ -93,6 +93,19 @@ type FixtureStatistics struct {
 	HomeRedCards      *int
 	AwayRedCards      *int
 
+	// Estatísticas complementares (Prioridade Média) — mesmo endpoint, sem custo
+	// extra de chamada, só mais campos extraídos da mesma resposta.
+	HomeShotsInsidebox  *int
+	AwayShotsInsidebox  *int
+	HomeShotsOutsidebox *int
+	AwayShotsOutsidebox *int
+	HomeBlockedShots    *int
+	AwayBlockedShots    *int
+	HomeFouls           *int
+	AwayFouls           *int
+	HomeOffsides        *int
+	AwayOffsides        *int
+
 	Referee string
 	Venue   string
 }

@@ -28,13 +28,37 @@ func NewMatchRepo(db *pgxpool.Pool) *MatchRepo {
 // bug real relatado pelo usuário (Corinthians/Série A/2026 mostrando só jogos
 // futuros com tudo 0).
 func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) ([]domain.TeamMatchView, error) {
+	// As colunas extras (posse, chutes, cartões etc.) seguem o mesmo padrão CASE WHEN
+	// dos escanteios — reorientadas pela perspectiva da equipe consultada ($1), não
+	// pela equipe mandante/visitante. Todas nullable: nem todo fixture tem 100% das
+	// estatísticas publicadas pelo provedor (ver domain.TeamMatchView).
 	query := `
 		SELECT
 			m.id, m.match_date,
 			CASE WHEN m.home_team_id = $1 THEN m.away_team_id ELSE m.home_team_id END AS opponent_id,
 			(m.home_team_id = $1) AS is_home,
 			CASE WHEN m.home_team_id = $1 THEN m.home_corners ELSE m.away_corners END AS corners_for,
-			CASE WHEN m.home_team_id = $1 THEN m.away_corners ELSE m.home_corners END AS corners_against
+			CASE WHEN m.home_team_id = $1 THEN m.away_corners ELSE m.home_corners END AS corners_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_possession ELSE m.away_possession END AS possession_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_possession ELSE m.home_possession END AS possession_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_shots ELSE m.away_shots END AS shots_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_shots ELSE m.home_shots END AS shots_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_shots_on_target ELSE m.away_shots_on_target END AS shots_on_target_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_shots_on_target ELSE m.home_shots_on_target END AS shots_on_target_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_shots_insidebox ELSE m.away_shots_insidebox END AS shots_insidebox_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_shots_insidebox ELSE m.home_shots_insidebox END AS shots_insidebox_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_shots_outsidebox ELSE m.away_shots_outsidebox END AS shots_outsidebox_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_shots_outsidebox ELSE m.home_shots_outsidebox END AS shots_outsidebox_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_blocked_shots ELSE m.away_blocked_shots END AS blocked_shots_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_blocked_shots ELSE m.home_blocked_shots END AS blocked_shots_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_fouls ELSE m.away_fouls END AS fouls_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_fouls ELSE m.home_fouls END AS fouls_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_offsides ELSE m.away_offsides END AS offsides_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_offsides ELSE m.home_offsides END AS offsides_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_yellow_cards ELSE m.away_yellow_cards END AS yellow_cards_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_yellow_cards ELSE m.home_yellow_cards END AS yellow_cards_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_red_cards ELSE m.away_red_cards END AS red_cards_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_red_cards ELSE m.home_red_cards END AS red_cards_against
 		FROM matches m
 		WHERE (m.home_team_id = $1 OR m.away_team_id = $1)
 		  AND m.status = 'FINALIZADO'
@@ -79,13 +103,36 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 		isHome         bool
 		cornersFor     int
 		cornersAgainst int
+
+		possessionFor, possessionAgainst           *int
+		shotsFor, shotsAgainst                     *int
+		shotsOnTargetFor, shotsOnTargetAgainst     *int
+		shotsInsideboxFor, shotsInsideboxAgainst   *int
+		shotsOutsideboxFor, shotsOutsideboxAgainst *int
+		blockedShotsFor, blockedShotsAgainst       *int
+		foulsFor, foulsAgainst                     *int
+		offsidesFor, offsidesAgainst               *int
+		yellowCardsFor, yellowCardsAgainst         *int
+		redCardsFor, redCardsAgainst               *int
 	}
 	var raws []rawRow
 	opponentIDs := map[int64]bool{}
 
 	for rows.Next() {
 		var rr rawRow
-		if err := rows.Scan(&rr.matchID, &rr.matchDate, &rr.opponentID, &rr.isHome, &rr.cornersFor, &rr.cornersAgainst); err != nil {
+		if err := rows.Scan(
+			&rr.matchID, &rr.matchDate, &rr.opponentID, &rr.isHome, &rr.cornersFor, &rr.cornersAgainst,
+			&rr.possessionFor, &rr.possessionAgainst,
+			&rr.shotsFor, &rr.shotsAgainst,
+			&rr.shotsOnTargetFor, &rr.shotsOnTargetAgainst,
+			&rr.shotsInsideboxFor, &rr.shotsInsideboxAgainst,
+			&rr.shotsOutsideboxFor, &rr.shotsOutsideboxAgainst,
+			&rr.blockedShotsFor, &rr.blockedShotsAgainst,
+			&rr.foulsFor, &rr.foulsAgainst,
+			&rr.offsidesFor, &rr.offsidesAgainst,
+			&rr.yellowCardsFor, &rr.yellowCardsAgainst,
+			&rr.redCardsFor, &rr.redCardsAgainst,
+		); err != nil {
 			return nil, err
 		}
 		raws = append(raws, rr)
@@ -127,6 +174,27 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 			CornersAgainst: rr.cornersAgainst,
 			TotalCorners:   rr.cornersFor + rr.cornersAgainst,
 			OpponentTier:   opp.Tier,
+
+			PossessionFor:          rr.possessionFor,
+			PossessionAgainst:      rr.possessionAgainst,
+			ShotsFor:               rr.shotsFor,
+			ShotsAgainst:           rr.shotsAgainst,
+			ShotsOnTargetFor:       rr.shotsOnTargetFor,
+			ShotsOnTargetAgainst:   rr.shotsOnTargetAgainst,
+			ShotsInsideboxFor:      rr.shotsInsideboxFor,
+			ShotsInsideboxAgainst:  rr.shotsInsideboxAgainst,
+			ShotsOutsideboxFor:     rr.shotsOutsideboxFor,
+			ShotsOutsideboxAgainst: rr.shotsOutsideboxAgainst,
+			BlockedShotsFor:        rr.blockedShotsFor,
+			BlockedShotsAgainst:    rr.blockedShotsAgainst,
+			FoulsFor:               rr.foulsFor,
+			FoulsAgainst:           rr.foulsAgainst,
+			OffsidesFor:            rr.offsidesFor,
+			OffsidesAgainst:        rr.offsidesAgainst,
+			YellowCardsFor:         rr.yellowCardsFor,
+			YellowCardsAgainst:     rr.yellowCardsAgainst,
+			RedCardsFor:            rr.redCardsFor,
+			RedCardsAgainst:        rr.redCardsAgainst,
 		})
 	}
 	return views, nil

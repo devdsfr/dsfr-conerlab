@@ -47,6 +47,34 @@ type Match struct {
 	AwayCorners int       `json:"away_corners" db:"away_corners"`
 	HomeGoals   int       `json:"home_goals" db:"home_goals"`
 	AwayGoals   int       `json:"away_goals" db:"away_goals"`
+
+	// Estatísticas complementares vindas do mesmo /fixtures/statistics da
+	// API-Football — nullable porque nem toda partida (ligas menores, sobretudo) tem
+	// 100% dos campos publicados pelo provedor. Prioridade Alta (posse, chutes, chutes
+	// no alvo, cartões) já vinha sendo persistida desde a migration 004 mas nunca
+	// exposta; Prioridade Média (chutes de área, bloqueados, faltas, impedimentos)
+	// adicionada na migration 010.
+	HomePossession      *int `json:"home_possession,omitempty" db:"home_possession"`
+	AwayPossession      *int `json:"away_possession,omitempty" db:"away_possession"`
+	HomeShots           *int `json:"home_shots,omitempty" db:"home_shots"`
+	AwayShots           *int `json:"away_shots,omitempty" db:"away_shots"`
+	HomeShotsOnTarget   *int `json:"home_shots_on_target,omitempty" db:"home_shots_on_target"`
+	AwayShotsOnTarget   *int `json:"away_shots_on_target,omitempty" db:"away_shots_on_target"`
+	HomeYellowCards     *int `json:"home_yellow_cards,omitempty" db:"home_yellow_cards"`
+	AwayYellowCards     *int `json:"away_yellow_cards,omitempty" db:"away_yellow_cards"`
+	HomeRedCards        *int `json:"home_red_cards,omitempty" db:"home_red_cards"`
+	AwayRedCards        *int `json:"away_red_cards,omitempty" db:"away_red_cards"`
+	HomeShotsInsidebox  *int `json:"home_shots_insidebox,omitempty" db:"home_shots_insidebox"`
+	AwayShotsInsidebox  *int `json:"away_shots_insidebox,omitempty" db:"away_shots_insidebox"`
+	HomeShotsOutsidebox *int `json:"home_shots_outsidebox,omitempty" db:"home_shots_outsidebox"`
+	AwayShotsOutsidebox *int `json:"away_shots_outsidebox,omitempty" db:"away_shots_outsidebox"`
+	HomeBlockedShots    *int `json:"home_blocked_shots,omitempty" db:"home_blocked_shots"`
+	AwayBlockedShots    *int `json:"away_blocked_shots,omitempty" db:"away_blocked_shots"`
+	HomeFouls           *int `json:"home_fouls,omitempty" db:"home_fouls"`
+	AwayFouls           *int `json:"away_fouls,omitempty" db:"away_fouls"`
+	HomeOffsides        *int `json:"home_offsides,omitempty" db:"home_offsides"`
+	AwayOffsides        *int `json:"away_offsides,omitempty" db:"away_offsides"`
+
 	// CornerOdds mapeia "linha" (ex: "4.5", "5.5" ... "10.5") -> odd histórica registrada
 	// para o mercado "mais de X escanteios". Usado pelo motor de filtros/backtesting e
 	// pelo simulador financeiro para calcular ROI/yield/lucro de forma reproduzível.
@@ -81,6 +109,31 @@ type TeamMatchView struct {
 	CornersAgainst int       `json:"corners_against"`
 	TotalCorners   int       `json:"total_corners"`
 	OpponentTier   string    `json:"opponent_tier"`
+
+	// Estatísticas complementares (ver comentário em Match), já reorientadas pela
+	// perspectiva da equipe consultada (For = a própria equipe, Against = o
+	// adversário) — mesmo padrão de CornersFor/CornersAgainst. Nil quando o provedor
+	// não publicou aquele campo para a partida.
+	PossessionFor          *int `json:"possession_for,omitempty"`
+	PossessionAgainst      *int `json:"possession_against,omitempty"`
+	ShotsFor               *int `json:"shots_for,omitempty"`
+	ShotsAgainst           *int `json:"shots_against,omitempty"`
+	ShotsOnTargetFor       *int `json:"shots_on_target_for,omitempty"`
+	ShotsOnTargetAgainst   *int `json:"shots_on_target_against,omitempty"`
+	ShotsInsideboxFor      *int `json:"shots_insidebox_for,omitempty"`
+	ShotsInsideboxAgainst  *int `json:"shots_insidebox_against,omitempty"`
+	ShotsOutsideboxFor     *int `json:"shots_outsidebox_for,omitempty"`
+	ShotsOutsideboxAgainst *int `json:"shots_outsidebox_against,omitempty"`
+	BlockedShotsFor        *int `json:"blocked_shots_for,omitempty"`
+	BlockedShotsAgainst    *int `json:"blocked_shots_against,omitempty"`
+	FoulsFor               *int `json:"fouls_for,omitempty"`
+	FoulsAgainst           *int `json:"fouls_against,omitempty"`
+	OffsidesFor            *int `json:"offsides_for,omitempty"`
+	OffsidesAgainst        *int `json:"offsides_against,omitempty"`
+	YellowCardsFor         *int `json:"yellow_cards_for,omitempty"`
+	YellowCardsAgainst     *int `json:"yellow_cards_against,omitempty"`
+	RedCardsFor            *int `json:"red_cards_for,omitempty"`
+	RedCardsAgainst        *int `json:"red_cards_against,omitempty"`
 }
 
 // User representa um usuário da plataforma

@@ -10,6 +10,7 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatIconModule } from '@angular/material/icon';
 
 import { ApiService } from '../../core/api.service';
 import { DashboardResult, League, Season, Team, TeamMatchView } from '../../core/models';
@@ -43,6 +44,7 @@ interface ChartData {
     MatProgressSpinnerModule,
     MatTableModule,
     MatTooltipModule,
+    MatIconModule,
     SimpleChartComponent,
     AdSlotComponent,
   ],
@@ -67,7 +69,27 @@ export class DashboardComponent implements OnInit {
   result = signal<DashboardResult | null>(null);
   trendChart = signal<ChartData>({ labels: [], datasets: [] });
 
-  matchColumns = ['match_date', 'opponent', 'is_home', 'corners_for', 'corners_against', 'total_corners'];
+  matchColumns = ['match_date', 'opponent', 'is_home', 'corners_for', 'corners_against', 'total_corners', 'expand'];
+
+  // Linha expansível "Últimos jogos" — mostra posse, chutes, cartões etc. sem
+  // poluir a tabela principal (dado complementar, ver conversa sobre estatísticas
+  // extras da API-Football). Guardado por match_id, não por índice, pra sobreviver
+  // à reordenação da tabela.
+  private expandedMatchIds = signal<Set<number>>(new Set());
+
+  toggleMatchDetails(matchId: number): void {
+    const current = new Set(this.expandedMatchIds());
+    if (current.has(matchId)) {
+      current.delete(matchId);
+    } else {
+      current.add(matchId);
+    }
+    this.expandedMatchIds.set(current);
+  }
+
+  isMatchExpanded(matchId: number): boolean {
+    return this.expandedMatchIds().has(matchId);
+  }
 
   // Ordenação manual da tabela "Últimos jogos" (ver setSort/sortedMatches) —
   // clique no cabeçalho da coluna para alternar asc/desc.

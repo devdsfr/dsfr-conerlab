@@ -54,6 +54,7 @@
       Descoberta: {{ sr.discovery.FixturesFound }} jogos encontrados, {{ sr.discovery.FixturesUpserted }} novos gravados.
       Atualização: {{ sr.update.Checked }} verificados, {{ sr.update.Finalized }} finalizados
       @if (sr.update.StillOpen > 0) { ({{ sr.update.StillOpen }} ainda sem resultado publicado pelo provedor) }.
+      Levou {{ formatDuration(sr.duration_ms) }}.
     </div>
   }
 

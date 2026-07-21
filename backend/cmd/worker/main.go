@@ -89,9 +89,10 @@ func main() {
 	// Health check roda uma vez antes de tudo, para já saber se o provedor está
 	// saudável antes do primeiro ciclo de descoberta/atualização.
 	runHealthCheck(ctx, healthUC)
+	cycleStart := time.Now()
 	discoveryResult := runDiscovery(ctx, discoveryUC)
 	updateResult := runUpdate(ctx, updateUC)
-	recordRun(ctx, syncRunRepo, discoveryResult, updateResult)
+	recordRun(ctx, syncRunRepo, discoveryResult, updateResult, time.Since(cycleStart).Milliseconds())
 
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
@@ -168,7 +169,7 @@ func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) (result statsync
 // recordRun grava o histórico desta execução (ver domain.SyncRun) para o painel
 // Integrações mostrar "Última sincronização: ...". Nunca derruba o worker por causa
 // de uma falha ao salvar — a sincronização em si já rodou.
-func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.DiscoveryResult, u statsync.UpdateResult) {
+func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.DiscoveryResult, u statsync.UpdateResult, durationMs int64) {
 	entry := &domain.SyncRun{
 		TriggeredBy:      "cron",
 		Targets:          d.Targets,
@@ -177,6 +178,7 @@ func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.Disco
 		MatchesChecked:   u.Checked,
 		MatchesFinalized: u.Finalized,
 		Errors:           d.Errors + u.Errors,
+		DurationMs:       durationMs,
 	}
 	if err := repo.AddRun(ctx, entry); err != nil {
 		slog.Error("falha ao registrar histórico de sincronização", "error", err)

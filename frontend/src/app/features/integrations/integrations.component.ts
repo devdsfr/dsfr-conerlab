@@ -102,7 +102,19 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     const hh = String(d.getHours()).padStart(2, '0');
     const min = String(d.getMinutes()).padStart(2, '0');
     const origem = run.triggered_by === 'cron' ? 'automática' : 'manual';
-    return `${dd}/${mm} ${hh}:${min} (${origem})`;
+    const duracao = this.formatDuration(run.duration_ms);
+    return `${dd}/${mm} ${hh}:${min} (${origem}, durou ${duracao})`;
+  }
+
+  // Duração do ciclo completo (descoberta + atualização) — pedido do usuário para
+  // decidir o horário do Render Cron Job com base em quanto tempo isso realmente leva.
+  formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    const totalSeconds = Math.round(ms / 1000);
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}min ${seconds}s`;
   }
 
   checkApiFootball(): void {

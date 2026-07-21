@@ -294,6 +294,7 @@ export interface SyncRunResult {
     StillOpen: number;
     Errors: number;
   };
+  duration_ms: number;
 }
 
 // Última execução de sincronização registrada em sync_runs (manual ou via Render
@@ -308,6 +309,7 @@ export interface SyncRun {
   matches_checked: number;
   matches_finalized: number;
   errors: number;
+  duration_ms: number;
   created_at: string;
 }
 

@@ -15,5 +15,6 @@ type SyncRun struct {
 	MatchesChecked    int       `json:"matches_checked" db:"matches_checked"`
 	MatchesFinalized  int       `json:"matches_finalized" db:"matches_finalized"`
 	Errors            int       `json:"errors" db:"errors"`
+	DurationMs        int64     `json:"duration_ms" db:"duration_ms"` // quanto tempo o ciclo completo (descoberta + atualização) levou
 	CreatedAt         time.Time `json:"created_at" db:"created_at"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,8 +30,9 @@ func NewSyncHandler(discovery *statsync.DiscoveryUsecase, update *statsync.Updat
 }
 
 type syncRunResponse struct {
-	Discovery statsync.DiscoveryResult `json:"discovery"`
-	Update    statsync.UpdateResult    `json:"update"`
+	Discovery  statsync.DiscoveryResult `json:"discovery"`
+	Update     statsync.UpdateResult    `json:"update"`
+	DurationMs int64                    `json:"duration_ms"`
 }
 
 // Run godoc
@@ -39,6 +41,7 @@ type syncRunResponse struct {
 // @Router /api/v1/sync/run [post]
 func (h *SyncHandler) Run(c *gin.Context) {
 	ctx := c.Request.Context()
+	start := time.Now()
 
 	discoveryResult, err := h.discovery.Run(ctx)
 	if err != nil {
@@ -53,9 +56,10 @@ func (h *SyncHandler) Run(c *gin.Context) {
 		})
 		return
 	}
+	durationMs := time.Since(start).Milliseconds()
 
-	h.recordRun(ctx, "manual", discoveryResult, updateResult)
-	c.JSON(http.StatusOK, syncRunResponse{Discovery: discoveryResult, Update: updateResult})
+	h.recordRun(ctx, "manual", discoveryResult, updateResult, durationMs)
+	c.JSON(http.StatusOK, syncRunResponse{Discovery: discoveryResult, Update: updateResult, DurationMs: durationMs})
 }
 
 // Status godoc
@@ -74,7 +78,7 @@ func (h *SyncHandler) Status(c *gin.Context) {
 
 // recordRun nunca falha a requisição por causa de um erro ao salvar o histórico —
 // a sincronização em si já rodou com sucesso, perder o registro não pode virar 500.
-func (h *SyncHandler) recordRun(ctx context.Context, triggeredBy string, d statsync.DiscoveryResult, u statsync.UpdateResult) {
+func (h *SyncHandler) recordRun(ctx context.Context, triggeredBy string, d statsync.DiscoveryResult, u statsync.UpdateResult, durationMs int64) {
 	entry := &domain.SyncRun{
 		TriggeredBy:      triggeredBy,
 		Targets:          d.Targets,
@@ -83,6 +87,7 @@ func (h *SyncHandler) recordRun(ctx context.Context, triggeredBy string, d stats
 		MatchesChecked:   u.Checked,
 		MatchesFinalized: u.Finalized,
 		Errors:           d.Errors + u.Errors,
+		DurationMs:       durationMs,
 	}
 	if err := h.runs.AddRun(ctx, entry); err != nil {
 		slog.Error("falha ao registrar histórico de sincronização", "error", err)

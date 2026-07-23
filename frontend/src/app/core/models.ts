@@ -5,6 +5,20 @@ export interface League {
   tier: string;
 }
 
+// Próximo jogo mapeado (status AGENDADO) — alimenta o calendário da página "Visão
+// Geral", a tela inicial do app.
+export interface UpcomingMatch {
+  match_id: number;
+  match_date: string;
+  league_id: number;
+  league_name: string;
+  round: number;
+  home_team_id: number;
+  home_team_name: string;
+  away_team_id: number;
+  away_team_name: string;
+}
+
 export interface Season {
   id: number;
   league_id: number;

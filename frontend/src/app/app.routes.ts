@@ -1,7 +1,11 @@
 import { Routes } from '@angular/router';
 
 export const routes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+  { path: '', redirectTo: 'visao-geral', pathMatch: 'full' },
+  {
+    path: 'visao-geral',
+    loadComponent: () => import('./features/overview/overview.component').then(m => m.OverviewComponent),
+  },
   {
     path: 'dashboard',
     loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
@@ -34,5 +38,5 @@ export const routes: Routes = [
     path: 'integracoes',
     loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
   },
-  { path: '**', redirectTo: 'dashboard' },
+  { path: '**', redirectTo: 'visao-geral' },
 ];

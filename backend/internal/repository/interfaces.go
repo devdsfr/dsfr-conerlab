@@ -44,6 +44,10 @@ type MatchRepository interface {
 	AllMatches(ctx context.Context, leagueID int64, seasonIDs []int64) ([]domain.Match, error)
 
 	GetMatchTeams(ctx context.Context, matchIDs []int64) (map[int64]domain.Match, error)
+
+	// ListUpcoming retorna as próximas partidas AGENDADO das ligas com dado real
+	// (external_id preenchido), para o calendário da página "Visão Geral".
+	ListUpcoming(ctx context.Context) ([]domain.UpcomingMatch, error)
 }
 
 type UserRepository interface {

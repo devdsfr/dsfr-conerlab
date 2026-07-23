@@ -123,6 +123,7 @@ func main() {
 		Bankroll:        handlers.NewBankrollHandler(bankrollUC),
 		Billing:         handlers.NewBillingHandler(billingUC),
 		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC, syncRunRepo),
+		Overview:        handlers.NewOverviewHandler(matchRepo),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

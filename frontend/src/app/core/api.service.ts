@@ -20,6 +20,7 @@ import {
   SyncRunResult,
   SyncStatusResponse,
   BillingStatus,
+  UpcomingMatch,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -42,6 +43,11 @@ export class ApiService {
   private readonly base = API_BASE_URL;
 
   constructor(private http: HttpClient) {}
+
+  /** Calendário da Visão Geral — próximos jogos mapeados (ligas com dado real). */
+  getUpcomingMatches(): Observable<{ matches: UpcomingMatch[] }> {
+    return this.http.get<{ matches: UpcomingMatch[] }>(`${this.base}/overview/upcoming`);
+  }
 
   // Catálogo
   listLeagues(): Observable<League[]> {

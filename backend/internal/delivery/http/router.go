@@ -24,6 +24,7 @@ type Handlers struct {
 	Bankroll        *handlers.BankrollHandler
 	Billing         *handlers.BillingHandler
 	Sync            *handlers.SyncHandler
+	Overview        *handlers.OverviewHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
@@ -53,6 +54,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		api.GET("/leagues", h.Catalog.ListLeagues)
 		api.GET("/leagues/:id/seasons", h.Catalog.ListSeasons)
 		api.GET("/teams", h.Catalog.ListTeams)
+
+		// Página "Visão Geral" (tela inicial) — calendário de próximos jogos, leitura
+		// pública, mesma política do Dashboard/Comparador.
+		api.GET("/overview/upcoming", h.Overview.UpcomingMatches)
 
 		api.GET("/dashboard", h.Dashboard.GetDashboard)
 		api.GET("/comparator", h.Comparator.Compare)

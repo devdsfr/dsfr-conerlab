@@ -32,6 +32,7 @@ export class App {
   protected readonly title = 'CornerLab';
 
   protected readonly navItems: NavItem[] = [
+    { label: 'Visão Geral', route: '/visao-geral', icon: 'calendar_month' },
     { label: 'Dashboard', route: '/dashboard', icon: 'query_stats' },
     { label: 'Comparador', route: '/comparador', icon: 'compare_arrows' },
     { label: 'Simulador de Filtros', route: '/filtros', icon: 'tune' },
@@ -56,6 +57,6 @@ export class App {
   logout(): void {
     this.auth.logout();
     this.menuOpen.set(false);
-    this.router.navigate(['/dashboard']);
+    this.router.navigate(['/visao-geral']);
   }
 }

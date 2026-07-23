@@ -243,6 +243,42 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 	return matches, rows.Err()
 }
 
+// ListUpcoming busca as próximas partidas AGENDADO (status ainda não FINALIZADO) das
+// ligas com dado real (l.external_id IS NOT NULL — mesmo guardrail do catálogo de
+// ligas, ver league_repo.go) para o calendário da página "Visão Geral". Limitado aos
+// próximos 120 dias / 1000 jogos como teto de segurança — o worker de descoberta
+// mapeia a temporada inteira à frente, então sem esse limite o payload cresceria sem
+// necessidade real para uma tela de calendário.
+func (r *MatchRepo) ListUpcoming(ctx context.Context) ([]domain.UpcomingMatch, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT m.id, m.match_date, m.league_id, l.name, m.round,
+		       m.home_team_id, ht.name, m.away_team_id, at.name
+		FROM matches m
+		JOIN leagues l ON l.id = m.league_id
+		JOIN teams ht ON ht.id = m.home_team_id
+		JOIN teams at ON at.id = m.away_team_id
+		WHERE m.status = 'AGENDADO'
+		  AND l.external_id IS NOT NULL
+		  AND m.match_date <= now() + interval '120 days'
+		ORDER BY m.match_date ASC
+		LIMIT 1000`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	matches := make([]domain.UpcomingMatch, 0)
+	for rows.Next() {
+		var m domain.UpcomingMatch
+		if err := rows.Scan(&m.MatchID, &m.MatchDate, &m.LeagueID, &m.LeagueName, &m.Round,
+			&m.HomeTeamID, &m.HomeTeamName, &m.AwayTeamID, &m.AwayTeamName); err != nil {
+			return nil, err
+		}
+		matches = append(matches, m)
+	}
+	return matches, rows.Err()
+}
+
 func (r *MatchRepo) GetMatchTeams(ctx context.Context, matchIDs []int64) (map[int64]domain.Match, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, league_id, season_id, round, match_date, home_team_id, away_team_id,

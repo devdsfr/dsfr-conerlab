@@ -40,6 +40,7 @@ export class App {
     { label: 'Projeções', route: '/projecoes', icon: 'trending_up' },
     { label: 'Assinatura', route: '/assinatura', icon: 'workspace_premium' },
     { label: 'Integrações', route: '/integracoes', icon: 'sync' },
+    { label: 'Suporte', route: '/suporte', icon: 'support_agent' },
   ];
 
   menuOpen = signal(false);

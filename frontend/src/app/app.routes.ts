@@ -38,5 +38,9 @@ export const routes: Routes = [
     path: 'integracoes',
     loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
   },
+  {
+    path: 'suporte',
+    loadComponent: () => import('./features/support/support.component').then(m => m.SupportComponent),
+  },
   { path: '**', redirectTo: 'visao-geral' },
 ];

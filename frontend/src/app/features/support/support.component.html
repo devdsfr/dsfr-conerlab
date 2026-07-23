@@ -1,0 +1,48 @@
+<div class="max-w-4xl mx-auto flex flex-col gap-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Suporte</h1>
+    <p class="text-sm text-slate-400 mt-1">Precisa de ajuda ou quer dar uma sugestão? Fale com a gente.</p>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <a
+      [href]="whatsappLink"
+      target="_blank"
+      rel="noopener"
+      class="cl-card p-5 flex items-center gap-4 no-underline hover:border-cornerlab-primary transition-colors"
+    >
+      <mat-icon class="!text-cornerlab-primary !w-9 !h-9 !text-[36px] !leading-9">chat</mat-icon>
+      <div>
+        <div class="text-xs text-slate-400 uppercase tracking-wide">WhatsApp</div>
+        <div class="text-base font-medium text-slate-100">{{ whatsappDisplay }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Toque para abrir a conversa</div>
+      </div>
+    </a>
+
+    <a
+      [href]="emailLink"
+      class="cl-card p-5 flex items-center gap-4 no-underline hover:border-cornerlab-accent transition-colors"
+    >
+      <mat-icon class="!text-cornerlab-accent !w-9 !h-9 !text-[36px] !leading-9">mail</mat-icon>
+      <div>
+        <div class="text-xs text-slate-400 uppercase tracking-wide">E-mail</div>
+        <div class="text-base font-medium text-slate-100 break-all">{{ email }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Respondemos assim que possível</div>
+      </div>
+    </a>
+  </div>
+
+  <div class="cl-card p-5">
+    <h2 class="text-sm text-slate-300 font-medium mb-3">Perguntas frequentes</h2>
+    <div class="flex flex-col divide-y divide-slate-800">
+      @for (item of faq; track item.q) {
+        <div class="py-3">
+          <div class="text-sm text-slate-100 font-medium">{{ item.q }}</div>
+          <div class="text-sm text-slate-400 mt-1">{{ item.a }}</div>
+        </div>
+      }
+    </div>
+  </div>
+
+  <p class="cl-disclaimer">O CornerLab organiza dados históricos, calcula estatísticas e simula cenários. A plataforma nunca recomenda apostas.</p>
+</div>

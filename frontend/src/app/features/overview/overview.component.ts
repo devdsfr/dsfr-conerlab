@@ -8,6 +8,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { UpcomingMatch } from '../../core/models';
+import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 interface CalendarDay {
   date: Date;
@@ -33,7 +34,7 @@ function dayKey(d: Date): string {
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule, AdSlotComponent],
   templateUrl: './overview.component.html',
   styleUrl: './overview.component.scss',
 })

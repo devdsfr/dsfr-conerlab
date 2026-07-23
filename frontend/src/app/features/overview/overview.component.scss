@@ -1,0 +1,291 @@
+// Tema dark futurista do calendário da Visão Geral. Escrito em CSS "cru" (não
+// Tailwind) por causa de: (a) preflight desligado no projeto — os <button> herdam o
+// estilo claro do Material, então precisamos resetar explicitamente; (b) glow, borda
+// em gradiente, glassmorphism e animação de pulso não saem limpos só com utilitários.
+// Encapsulamento Emulated do Angular garante que estas classes não vazam pra fora.
+
+:host {
+  --ov-neon: #22c55e; // verde da marca
+  --ov-cyan: #38bdf8; // acento secundário
+  --ov-panel-1: #0a0e1a;
+  --ov-panel-2: #0d1420;
+  --ov-cell: rgba(255, 255, 255, 0.02);
+  --ov-cell-border: rgba(148, 163, 184, 0.14);
+  --ov-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", "Courier New", monospace;
+}
+
+// Painel do calendário — fundo quase preto azulado com um leve brilho radial no topo.
+.ov-panel {
+  position: relative;
+  border-radius: 1rem;
+  padding: 1.25rem;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(56, 189, 248, 0.08), transparent 60%),
+    linear-gradient(160deg, var(--ov-panel-2), var(--ov-panel-1));
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.ov-month {
+  font-family: var(--ov-mono);
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+  min-width: 11rem;
+  text-align: center;
+}
+
+.ov-nav-btn,
+.ov-today-btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--ov-mono);
+  color: #cbd5e1;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 0.5rem;
+  transition: all 0.15s ease;
+}
+.ov-nav-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.ov-today-btn {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ov-neon);
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+}
+.ov-nav-btn:hover,
+.ov-today-btn:hover {
+  border-color: var(--ov-cyan);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+  color: #fff;
+}
+.ov-today-btn:hover {
+  border-color: var(--ov-neon);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.4);
+}
+
+.ov-weekhead {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.ov-weekhead > span {
+  text-align: center;
+  font-family: var(--ov-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.7);
+  padding: 0.25rem 0;
+}
+
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+// Célula base de dia — vidro fosco escuro, borda fina.
+.ov-day {
+  appearance: none;
+  cursor: pointer;
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0;
+  border-radius: 0.7rem;
+  background: var(--ov-cell);
+  border: 1px solid var(--ov-cell-border);
+  backdrop-filter: blur(2px);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.ov-day-num {
+  font-family: var(--ov-mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1;
+  z-index: 2;
+}
+
+// Dias de outro mês — apagados, mas ainda legíveis (não cinza-sobre-cinza).
+.ov-day--muted {
+  background: rgba(255, 255, 255, 0.01);
+  border-color: rgba(148, 163, 184, 0.07);
+}
+.ov-day--muted .ov-day-num {
+  color: rgba(148, 163, 184, 0.45);
+}
+
+// Contador de jogos — pill com brilho, integrado ao card.
+.ov-day-count {
+  font-family: var(--ov-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  color: #041007;
+  background: var(--ov-neon);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+  z-index: 2;
+}
+
+// Barra neon na base — sinaliza "tem jogo" mesmo à distância.
+.ov-day-bar {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--ov-neon), transparent);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  z-index: 2;
+}
+
+// Dia com jogos — realce em glass verde translúcido + glow suave.
+.ov-day--games {
+  background:
+    linear-gradient(160deg, rgba(34, 197, 94, 0.1), rgba(56, 189, 248, 0.04)),
+    var(--ov-cell);
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.08), 0 4px 16px rgba(34, 197, 94, 0.08);
+}
+.ov-day--games:hover {
+  transform: translateY(-3px);
+  border-color: var(--ov-neon);
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.35), 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+.ov-day:hover:not(.ov-day--games):not(.ov-day--selected) {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.04);
+}
+
+// Dia atual — borda neon com pulso animado, número bem legível.
+.ov-day--today {
+  border-color: var(--ov-cyan);
+  animation: ov-pulse 2.2s ease-in-out infinite;
+}
+.ov-day--today .ov-day-num {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+}
+
+// Dia selecionado — preenchimento neon sólido, texto escuro, tem prioridade visual.
+.ov-day--selected {
+  background: linear-gradient(160deg, var(--ov-neon), #16a34a);
+  border-color: var(--ov-neon);
+  box-shadow: 0 0 22px rgba(34, 197, 94, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: none;
+}
+.ov-day--selected .ov-day-num {
+  color: #041007;
+  text-shadow: none;
+}
+.ov-day--selected .ov-day-count {
+  color: var(--ov-neon);
+  background: #041007;
+  box-shadow: 0 0 8px rgba(4, 16, 7, 0.6);
+}
+.ov-day--selected .ov-day-bar {
+  background: linear-gradient(90deg, transparent, #041007, transparent);
+  box-shadow: none;
+}
+
+@keyframes ov-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+  50% { box-shadow: 0 0 16px 2px rgba(56, 189, 248, 0.45); }
+}
+
+// --- Lista de jogos do dia selecionado ---
+.ov-detail-date {
+  font-family: var(--ov-mono);
+  letter-spacing: 0.06em;
+  color: #cbd5e1;
+}
+.ov-match-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+.ov-match-time {
+  font-family: var(--ov-mono);
+  font-size: 0.8rem;
+  color: var(--ov-cyan);
+  width: 3.4rem;
+  flex-shrink: 0;
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+}
+.ov-match-league {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: rgba(148, 163, 184, 0.75);
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+// Chip do time — reset do estilo claro do Material, vira contorno neon clicável.
+.ov-team {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  transition: all 0.15s ease;
+}
+.ov-team:hover {
+  color: #fff;
+  border-color: var(--ov-neon);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.35);
+}
+.ov-vs {
+  color: rgba(148, 163, 184, 0.6);
+  font-family: var(--ov-mono);
+  font-size: 0.8rem;
+}
+
+// --- Responsivo ---
+// Em telas pequenas o grid de 7 colunas continua, mas com respiro menor e números
+// compactos; se a tela for muito estreita, o painel permite scroll horizontal em
+// vez de espremer as células a ponto de ficarem ilegíveis.
+@media (max-width: 640px) {
+  .ov-grid,
+  .ov-weekhead {
+    min-width: 336px;
+    gap: 0.28rem;
+  }
+  .ov-grid-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ov-day-num { font-size: 0.8rem; }
+  .ov-day-count { font-size: 0.55rem; padding: 0.1rem 0.32rem; }
+  .ov-month { min-width: 8.5rem; font-size: 0.82rem; }
+}

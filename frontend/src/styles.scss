@@ -124,3 +124,17 @@ html, body {
   font-size: 9px;
   color: #22c55e;
 }
+
+// Tooltip de resumo de jogos da Visão Geral — o overlay do Material fica fora do
+// componente, então o estilo precisa ser global. pre-line preserva as quebras de
+// linha (um confronto por linha, ver OverviewComponent.daySummary).
+.ov-tooltip .mdc-tooltip__surface,
+.ov-tooltip.mat-mdc-tooltip .mdc-tooltip__surface {
+  white-space: pre-line;
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", monospace;
+  font-size: 11px;
+  background: #0d1420;
+  color: #e2e8f0;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  max-width: 260px;
+}

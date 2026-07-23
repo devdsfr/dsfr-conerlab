@@ -13,72 +13,63 @@
   }
 
   @if (!loading() && !error()) {
-    <div class="cl-card p-4">
+    <div class="ov-panel">
       <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-1">
-          <button mat-icon-button type="button" (click)="prevMonth()" matTooltip="Mês anterior">
-            <mat-icon>chevron_left</mat-icon>
-          </button>
-          <h2 class="text-base font-medium text-slate-100 w-44 text-center capitalize">{{ monthLabel() }}</h2>
-          <button mat-icon-button type="button" (click)="nextMonth()" matTooltip="Próximo mês">
-            <mat-icon>chevron_right</mat-icon>
-          </button>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ov-nav-btn" (click)="prevMonth()" matTooltip="Mês anterior">‹</button>
+          <h2 class="ov-month">{{ monthLabel() }}</h2>
+          <button type="button" class="ov-nav-btn" (click)="nextMonth()" matTooltip="Próximo mês">›</button>
         </div>
-        <button mat-stroked-button type="button" color="primary" (click)="goToday()">Hoje</button>
+        <button type="button" class="ov-today-btn" (click)="goToday()">Hoje</button>
       </div>
 
-      <div class="grid grid-cols-7 text-center text-xs text-slate-500 mb-1">
-        @for (wd of weekdayLabels; track wd) {
-          <div class="py-1">{{ wd }}</div>
-        }
-      </div>
+      <div class="ov-grid-scroll">
+        <div class="ov-weekhead">
+          @for (wd of weekdayLabels; track wd) {
+            <span>{{ wd }}</span>
+          }
+        </div>
 
-      <div class="grid grid-cols-7 gap-1">
-        @for (day of calendarDays(); track day.key) {
-          <button
-            type="button"
-            (click)="selectDay(day)"
-            class="aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-colors"
-            [class.text-slate-600]="!day.inCurrentMonth"
-            [class.text-slate-200]="day.inCurrentMonth && !isSelected(day)"
-            [class.bg-cornerlab-primary]="isSelected(day)"
-            [class.text-slate-950]="isSelected(day)"
-            [class.font-semibold]="isSelected(day)"
-            [class.ring-1]="day.isToday && !isSelected(day)"
-            [class.ring-cornerlab-primary]="day.isToday && !isSelected(day)"
-            [class.hover:bg-slate-800]="!isSelected(day)"
-          >
-            <span>{{ day.date.getDate() }}</span>
-            @if (matchCountFor(day) > 0) {
-              <span
-                class="text-[10px] leading-none rounded-full px-1.5 py-0.5"
-                [class.bg-slate-950]="isSelected(day)"
-                [class.text-cornerlab-primary]="isSelected(day)"
-                [class.bg-cornerlab-primary]="!isSelected(day)"
-                [class.text-slate-950]="!isSelected(day)"
-              >{{ matchCountFor(day) }}</span>
-            }
-          </button>
-        }
+        <div class="ov-grid">
+          @for (day of calendarDays(); track day.key) {
+            <button
+              type="button"
+              class="ov-day"
+              [class.ov-day--games]="matchCountFor(day) > 0"
+              [class.ov-day--today]="day.isToday"
+              [class.ov-day--muted]="!day.inCurrentMonth"
+              [class.ov-day--selected]="isSelected(day)"
+              [matTooltip]="daySummary(day)"
+              matTooltipClass="ov-tooltip"
+              (click)="selectDay(day)"
+            >
+              <span class="ov-day-num">{{ day.date.getDate() }}</span>
+              @if (matchCountFor(day) > 0) {
+                <span class="ov-day-count">{{ matchCountFor(day) }}</span>
+                <span class="ov-day-bar"></span>
+              }
+            </button>
+          }
+        </div>
       </div>
     </div>
 
     <div class="cl-card p-4">
-      <h3 class="text-sm text-slate-300 font-medium mb-3 capitalize">{{ selectedDateLabel() }}</h3>
+      <h3 class="ov-detail-date text-sm font-medium mb-3 capitalize">{{ selectedDateLabel() }}</h3>
 
       @if (selectedDayMatches().length === 0) {
         <div class="text-sm text-slate-500 py-6 text-center">Nenhum jogo mapeado nesse dia.</div>
       } @else {
-        <div class="flex flex-col divide-y divide-slate-800">
+        <div class="flex flex-col">
           @for (m of selectedDayMatches(); track m.match_id) {
-            <div class="py-3 flex items-center gap-4">
-              <div class="text-xs text-slate-500 w-14 shrink-0">{{ m.match_date | date:'HH:mm' }}</div>
+            <div class="ov-match-row">
+              <div class="ov-match-time">{{ m.match_date | date:'HH:mm' }}</div>
               <div class="flex-1 min-w-0">
-                <div class="text-[11px] text-slate-500 mb-0.5">{{ m.league_name }} @if (m.round) { · Rodada {{ m.round }} }</div>
-                <div class="text-sm text-slate-200 flex items-center gap-2 flex-wrap">
-                  <button type="button" class="hover:text-cornerlab-primary hover:underline" (click)="openTeamDashboard(m, m.home_team_id)">{{ m.home_team_name }}</button>
-                  <span class="text-slate-600">x</span>
-                  <button type="button" class="hover:text-cornerlab-primary hover:underline" (click)="openTeamDashboard(m, m.away_team_id)">{{ m.away_team_name }}</button>
+                <div class="ov-match-league">{{ m.league_name }} @if (m.round) { · Rodada {{ m.round }} }</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <button type="button" class="ov-team" (click)="openTeamDashboard(m, m.home_team_id)">{{ m.home_team_name }}</button>
+                  <span class="ov-vs">x</span>
+                  <button type="button" class="ov-team" (click)="openTeamDashboard(m, m.away_team_id)">{{ m.away_team_name }}</button>
                 </div>
               </div>
             </div>

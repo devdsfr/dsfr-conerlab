@@ -35,6 +35,7 @@ function dayKey(d: Date): string {
   standalone: true,
   imports: [CommonModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatTooltipModule],
   templateUrl: './overview.component.html',
+  styleUrl: './overview.component.scss',
 })
 export class OverviewComponent implements OnInit {
   readonly weekdayLabels = WEEKDAY_LABELS;
@@ -109,6 +110,17 @@ export class OverviewComponent implements OnInit {
 
   matchCountFor(day: CalendarDay): number {
     return this.matchesByDay().get(day.key)?.length ?? 0;
+  }
+
+  // Resumo rápido pro tooltip ao passar o mouse num dia com jogos (pedido do
+  // redesign) — lista os primeiros confrontos, com "+N" se houver mais.
+  daySummary(day: CalendarDay): string {
+    const list = this.matchesByDay().get(day.key);
+    if (!list || list.length === 0) return '';
+    const sorted = [...list].sort((a, b) => a.match_date.localeCompare(b.match_date));
+    const lines = sorted.slice(0, 5).map(m => `${m.home_team_name} x ${m.away_team_name}`);
+    if (sorted.length > 5) lines.push(`+${sorted.length - 5} jogo(s)`);
+    return lines.join('\n');
   }
 
   isSelected(day: CalendarDay): boolean {

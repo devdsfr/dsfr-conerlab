@@ -31,9 +31,11 @@ func NewUpdateUsecase(provider statsprovider.StatisticsProvider, repo *postgres.
 const dueBuffer = 2 * time.Hour
 
 // maxPerCycle limita quantas partidas são atualizadas por ciclo, para não estourar a
-// cota diária de um provedor com plano gratuito de uma vez só — o restante é pego no
-// próximo ciclo (15 em 15 minutos).
-const maxPerCycle = 20
+// cota do provedor de uma vez só — o restante é pego no próximo ciclo. Combinado com o
+// ORDER BY match_date DESC (ver ListDueForUpdate), os jogos mais recentes são sempre
+// finalizados primeiro, então esse teto não atrasa o que o usuário realmente olha; ele
+// só espalha ao longo dos ciclos a limpeza da fila histórica de jogos antigos.
+const maxPerCycle = 50
 
 type UpdateResult struct {
 	Checked   int

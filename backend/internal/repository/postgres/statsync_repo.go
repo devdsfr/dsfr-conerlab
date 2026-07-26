@@ -112,10 +112,17 @@ type DueFixture struct {
 }
 
 func (r *StatSyncRepo) ListDueForUpdate(ctx context.Context, buffer time.Duration, limit int) ([]DueFixture, error) {
+	// ORDER BY match_date DESC: finaliza os jogos MAIS RECENTES primeiro. Antes era
+	// ASC (mais antigos primeiro), o que fazia um jogo recém-disputado ficar no fim de
+	// uma fila enorme de jogos passados ainda AGENDADO — na prática, um jogo de ontem
+	// só era finalizado depois de centenas de jogos velhos, e demorava dias pra
+	// aparecer com estatísticas. Como o usuário sempre olha os jogos recentes, faz
+	// sentido priorizá-los; jogos antigos sem stats (que nunca finalizam) ficam no fim
+	// e não travam mais os novos.
 	rows, err := r.db.Query(ctx, `
 		SELECT external_id, match_date FROM matches
 		WHERE status = 'AGENDADO' AND match_date < (now() - ($1 * interval '1 second')) AND external_id IS NOT NULL
-		ORDER BY match_date ASC
+		ORDER BY match_date DESC
 		LIMIT $2`, buffer.Seconds(), limit)
 	if err != nil {
 		return nil, err

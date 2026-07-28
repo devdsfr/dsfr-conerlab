@@ -127,6 +127,18 @@ export interface DashboardResult {
   goal_trend: number[];
   goal_home_stats?: SplitStats;
   goal_away_stats?: SplitStats;
+
+  // Análise de impedimentos — calculada só sobre jogos com o dado (offside_sample_size
+  // pode ser menor que sample_size; 0 = sem dados de impedimento).
+  offsides_for: StatSummary;
+  offsides_against: StatSummary;
+  total_offsides: StatSummary;
+  offside_balance: number;
+  offside_frequencies: FrequencyResult[];
+  offside_trend: number[];
+  offside_home_stats?: SplitStats;
+  offside_away_stats?: SplitStats;
+  offside_sample_size: number;
 }
 
 export interface TeamComparisonSide {

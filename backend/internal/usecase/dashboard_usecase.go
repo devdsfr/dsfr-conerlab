@@ -43,6 +43,21 @@ type DashboardResult struct {
 	GoalTrend       []int             `json:"goal_trend"`
 	GoalHomeStats   *SplitStats       `json:"goal_home_stats,omitempty"`
 	GoalAwayStats   *SplitStats       `json:"goal_away_stats,omitempty"`
+
+	// Análise de IMPEDIMENTOS (offsides) — mesma estrutura das outras métricas. Difere
+	// num ponto: o provedor nem sempre publica impedimentos por jogo, então essas
+	// estatísticas são calculadas SÓ sobre os jogos que têm o dado. OffsideSampleSize
+	// informa quantos jogos entraram (pode ser menor que sample_size); quando 0, o
+	// frontend mostra "sem dados de impedimento".
+	OffsidesFor        StatSummary       `json:"offsides_for"`
+	OffsidesAgainst    StatSummary       `json:"offsides_against"`
+	TotalOffsides      StatSummary       `json:"total_offsides"`
+	OffsideBalance     int               `json:"offside_balance"`
+	OffsideFrequencies []FrequencyResult `json:"offside_frequencies"`
+	OffsideTrend       []int             `json:"offside_trend"`
+	OffsideHomeStats   *SplitStats       `json:"offside_home_stats,omitempty"`
+	OffsideAwayStats   *SplitStats       `json:"offside_away_stats,omitempty"`
+	OffsideSampleSize  int               `json:"offside_sample_size"`
 }
 
 type SplitStats struct {
@@ -60,6 +75,12 @@ var DefaultFrequencyThresholds = []int{4, 5, 6, 7, 8, 9, 10}
 // linha "N.5": t=0 -> "acima de 0.5" (1+ gol), t=1 -> "acima de 1.5" (2+ gols), etc. O
 // frontend exibe o rótulo como "{N}.5".
 var GoalFrequencyThresholds = []int{0, 1, 2, 3, 4}
+
+// OffsideFrequencyThresholds — linhas over/under de impedimentos por jogo (total dos
+// dois times costuma ficar entre 0 e ~8). Mesma convenção de gols: t=N -> "acima de
+// N.5". Vai um pouco mais alto (até 5.5) porque impedimentos por jogo costumam somar
+// mais que gols.
+var OffsideFrequencyThresholds = []int{0, 1, 2, 3, 4, 5}
 
 func (u *DashboardUsecase) GetDashboard(ctx context.Context, teamID int64, leagueID *int64, seasonID *int64, limit int) (*DashboardResult, error) {
 	if limit <= 0 {
@@ -143,6 +164,45 @@ func (u *DashboardUsecase) GetDashboard(ctx context.Context, teamID int64, leagu
 	result.AwayStats = buildSplitStats(awayValues)
 	result.GoalHomeStats = buildSplitStats(goalHomeValues)
 	result.GoalAwayStats = buildSplitStats(goalAwayValues)
+
+	// Impedimentos: nullable no provedor, então só entram os jogos com o dado. Amostra
+	// própria (OffsideSampleSize) pode ser menor que a de escanteios/gols.
+	offFor := []int{}
+	offAgainst := []int{}
+	totalOff := []int{}
+	offTrend := []int{}
+	offHomeValues := []int{}
+	offAwayValues := []int{}
+	for _, v := range views {
+		if v.OffsidesFor == nil || v.OffsidesAgainst == nil {
+			continue
+		}
+		f, a := *v.OffsidesFor, *v.OffsidesAgainst
+		offFor = append(offFor, f)
+		offAgainst = append(offAgainst, a)
+		totalOff = append(totalOff, f+a)
+		if v.IsHome {
+			offHomeValues = append(offHomeValues, f+a)
+		} else {
+			offAwayValues = append(offAwayValues, f+a)
+		}
+	}
+	for i := len(views) - 1; i >= 0; i-- {
+		v := views[i]
+		if v.OffsidesFor == nil || v.OffsidesAgainst == nil {
+			continue
+		}
+		offTrend = append(offTrend, *v.OffsidesFor+*v.OffsidesAgainst)
+	}
+	result.OffsidesFor = Summarize(offFor)
+	result.OffsidesAgainst = Summarize(offAgainst)
+	result.TotalOffsides = Summarize(totalOff)
+	result.OffsideBalance = sumInts(offFor) - sumInts(offAgainst)
+	result.OffsideFrequencies = FrequencyAboveThresholds(totalOff, OffsideFrequencyThresholds)
+	result.OffsideTrend = offTrend
+	result.OffsideHomeStats = buildSplitStats(offHomeValues)
+	result.OffsideAwayStats = buildSplitStats(offAwayValues)
+	result.OffsideSampleSize = len(totalOff)
 
 	return result, nil
 }

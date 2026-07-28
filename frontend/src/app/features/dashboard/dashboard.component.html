@@ -76,11 +76,20 @@
         <mat-button-toggle-group [value]="metric()" (change)="setMetric($event.value)" hideSingleSelectionIndicator>
           <mat-button-toggle value="corners">Escanteios</mat-button-toggle>
           <mat-button-toggle value="goals">Gols</mat-button-toggle>
+          <mat-button-toggle value="offsides">Impedimentos</mat-button-toggle>
         </mat-button-toggle-group>
       </div>
     </div>
 
     @if (view(); as v) {
+    @if (v.noData) {
+      <div class="cl-card p-6 text-center text-sm text-slate-400">
+        Sem dados de impedimento para os jogos desta amostra. O provedor nem sempre publica impedimentos — jogos sincronizados recentemente costumam ter esse dado.
+      </div>
+    } @else {
+    @if (v.sampleNote) {
+      <div class="text-xs text-slate-500">{{ v.sampleNote }}</div>
+    }
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="cl-card p-4">
         <h3 class="text-sm text-slate-400 mb-2">{{ v.forLabel }}</h3>
@@ -172,6 +181,7 @@
       }
     </div>
     }
+    }
 
     <div class="cl-card p-4">
       <h3 class="text-sm text-slate-400 mb-3">Últimos jogos</h3>
@@ -199,20 +209,20 @@
           <th mat-header-cell *matHeaderCellDef>
             <button type="button" class="cl-sort-th" (click)="setSort('corners_for')">A favor <span class="cl-sort-arrow">{{ sortArrow('corners_for') }}</span></button>
           </th>
-          <td mat-cell *matCellDef="let m">{{ matchFor(m) }}</td>
+          <td mat-cell *matCellDef="let m">{{ matchFor(m) ?? '—' }}</td>
         </ng-container>
         <ng-container matColumnDef="corners_against">
           <th mat-header-cell *matHeaderCellDef>
             <button type="button" class="cl-sort-th" (click)="setSort('corners_against')">Sofridos <span class="cl-sort-arrow">{{ sortArrow('corners_against') }}</span></button>
           </th>
-          <td mat-cell *matCellDef="let m">{{ matchAgainst(m) }}</td>
+          <td mat-cell *matCellDef="let m">{{ matchAgainst(m) ?? '—' }}</td>
         </ng-container>
         <ng-container matColumnDef="total_corners">
           <th mat-header-cell *matHeaderCellDef>
             <button type="button" class="cl-sort-th" (click)="setSort('total_corners')">Total <span class="cl-sort-arrow">{{ sortArrow('total_corners') }}</span></button>
           </th>
           <td mat-cell *matCellDef="let m">
-            <span [class.text-cornerlab-primary]="matchFor(m) > matchAgainst(m)" [class.text-red-400]="matchFor(m) < matchAgainst(m)">{{ matchTotal(m) }}</span>
+            <span [class.text-cornerlab-primary]="matchTotal(m) !== null && matchFor(m)! > matchAgainst(m)!" [class.text-red-400]="matchTotal(m) !== null && matchFor(m)! < matchAgainst(m)!">{{ matchTotal(m) ?? '—' }}</span>
           </td>
         </ng-container>
 

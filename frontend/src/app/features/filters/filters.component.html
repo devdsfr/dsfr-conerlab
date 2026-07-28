@@ -41,6 +41,7 @@
       <mat-button-toggle-group [(ngModel)]="metric" hideSingleSelectionIndicator>
         <mat-button-toggle value="corners">Escanteios</mat-button-toggle>
         <mat-button-toggle value="goals">Gols</mat-button-toggle>
+        <mat-button-toggle value="offsides">Impedimentos</mat-button-toggle>
       </mat-button-toggle-group>
     </div>
 
@@ -65,12 +66,12 @@
         </mat-button-toggle-group>
       </div>
 
-      @if (!isGoals) {
+      @if (metric === 'corners') {
         <mat-form-field appearance="outline" class="w-52">
           <mat-label>Acima de (escanteios)</mat-label>
           <input matInput type="number" [(ngModel)]="cornersThreshold" min="1">
         </mat-form-field>
-      } @else {
+      } @else if (isGoals) {
         <mat-form-field appearance="outline" class="w-52">
           <mat-label>Linha de gols (over)</mat-label>
           <mat-select [(ngModel)]="goalsThreshold" panelClass="cl-select-panel">
@@ -79,6 +80,18 @@
             <mat-option [value]="2">Acima de 2.5</mat-option>
             <mat-option [value]="3">Acima de 3.5</mat-option>
             <mat-option [value]="4">Acima de 4.5</mat-option>
+          </mat-select>
+        </mat-form-field>
+      } @else {
+        <mat-form-field appearance="outline" class="w-56">
+          <mat-label>Linha de impedimentos (over)</mat-label>
+          <mat-select [(ngModel)]="offsidesThreshold" panelClass="cl-select-panel">
+            <mat-option [value]="0">Acima de 0.5</mat-option>
+            <mat-option [value]="1">Acima de 1.5</mat-option>
+            <mat-option [value]="2">Acima de 2.5</mat-option>
+            <mat-option [value]="3">Acima de 3.5</mat-option>
+            <mat-option [value]="4">Acima de 4.5</mat-option>
+            <mat-option [value]="5">Acima de 5.5</mat-option>
           </mat-select>
         </mat-form-field>
       }
@@ -93,13 +106,13 @@
         </mat-select>
       </mat-form-field>
 
-      @if (!isGoals) {
+      @if (!usesFixedOdd) {
         <mat-form-field appearance="outline" class="w-40">
           <mat-label>Odds máximas</mat-label>
           <input matInput type="number" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
         </mat-form-field>
       } @else {
-        <mat-form-field appearance="outline" class="w-40" matTooltip="Gols não têm odds históricas no banco. Informe uma odd fixa para simular o retorno (opcional).">
+        <mat-form-field appearance="outline" class="w-40" matTooltip="Esta métrica não tem odds históricas no banco. Informe uma odd fixa para simular o retorno (opcional).">
           <mat-label>Odd fixa (simular)</mat-label>
           <input matInput type="number" step="0.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
         </mat-form-field>
@@ -140,9 +153,14 @@
         </a>
       </div>
     }
-    @if (isGoals && !fixedOdd) {
+    @if (usesFixedOdd && !fixedOdd) {
       <div class="cl-card p-3 text-xs text-slate-400">
-        Sem odd fixa informada, o backtest de gols mostra só a taxa de acerto — o ROI/lucro não têm significado (os gols não têm odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.
+        Sem odd fixa informada, o backtest mostra só a taxa de acerto — o ROI/lucro não têm significado (esta métrica não tem odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.
+      </div>
+    }
+    @if (isOffsides) {
+      <div class="cl-card p-3 text-xs text-slate-400">
+        Impedimentos nem sempre são publicados pelo provedor: jogos sem esse dado ficam de fora do backtest, então a quantidade de partidas pode ser menor que a de escanteios/gols.
       </div>
     }
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -164,8 +182,8 @@
         <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.profit >= 0" [class.text-red-400]="r.profit < 0">{{ r.profit }}</div>
       </div>
       <div class="cl-card p-4">
-        <div class="text-xs text-slate-400">{{ isGoals ? 'Média de gols' : 'Média de escanteios' }}</div>
-        <div class="text-xl font-semibold">{{ isGoals ? r.average_goals : r.average_corners }}</div>
+        <div class="text-xs text-slate-400">{{ averageLabel() }}</div>
+        <div class="text-xl font-semibold">{{ averageValue(r) }}</div>
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Maior sequência (acertos)</div>
@@ -202,7 +220,7 @@
             <td mat-cell *matCellDef="let e">{{ e.is_home ? 'Casa' : 'Fora' }}</td>
           </ng-container>
           <ng-container matColumnDef="total">
-            <th mat-header-cell *matHeaderCellDef>{{ isGoals ? 'Gols' : 'Escanteios' }}</th>
+            <th mat-header-cell *matHeaderCellDef>{{ entryLabel() }}</th>
             <td mat-cell *matCellDef="let e">{{ entryTotal(e) }}</td>
           </ng-container>
           <ng-container matColumnDef="hit">

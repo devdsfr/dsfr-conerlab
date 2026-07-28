@@ -35,11 +35,12 @@ type FilterRunRequest struct {
 	MaxOdds          float64 `json:"max_odds"`
 	Stake            float64 `json:"stake"`
 
-	// Métrica de gols (ver FilterCriteria): "goals" ativa a análise de gols com
-	// goals_threshold (linha over/under) e fixed_odd (odd simulada).
-	Metric         string  `json:"metric"`
-	GoalsThreshold int     `json:"goals_threshold"`
-	FixedOdd       float64 `json:"fixed_odd"`
+	// Métrica alternativa (ver FilterCriteria): "goals" usa goals_threshold, "offsides"
+	// usa offsides_threshold; ambas com fixed_odd (odd simulada, sem odds históricas).
+	Metric            string  `json:"metric"`
+	GoalsThreshold    int     `json:"goals_threshold"`
+	OffsidesThreshold int     `json:"offsides_threshold"`
+	FixedOdd          float64 `json:"fixed_odd"`
 }
 
 type SaveFilterRequest struct {

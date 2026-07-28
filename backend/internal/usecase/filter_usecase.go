@@ -25,28 +25,38 @@ type FilterCriteria struct {
 	MaxOdds          float64 `json:"max_odds,omitempty"`
 	Stake            float64 `json:"stake,omitempty"`
 
-	// Metric escolhe o que backtestar: "corners" (padrão) ou "goals". Para gols usa-se
-	// GoalsThreshold (linha over/under: 0 = "acima de 0.5", 2 = "acima de 2.5") e, como
-	// não há odds históricas de gols no banco (diferente de corner_odds), o retorno é
-	// simulado com FixedOdd — uma odd única informada pelo usuário. Sem FixedOdd, o
-	// backtest de gols é só análise de acerto (sem ROI significativo).
-	Metric         string  `json:"metric,omitempty"`
-	GoalsThreshold int     `json:"goals_threshold,omitempty"`
-	FixedOdd       float64 `json:"fixed_odd,omitempty"`
+	// Metric escolhe o que backtestar: "corners" (padrão), "goals" ou "offsides". Para
+	// gols usa-se GoalsThreshold e para impedimentos OffsidesThreshold (ambos linha
+	// over/under: 0 = "acima de 0.5", 2 = "acima de 2.5"). Como nem gols nem
+	// impedimentos têm odds históricas no banco (diferente de corner_odds), o retorno é
+	// simulado com FixedOdd — uma odd única informada pelo usuário. Sem FixedOdd, é só
+	// análise de acerto (sem ROI significativo). Impedimentos são nullable no provedor:
+	// jogos sem o dado são ignorados no backtest.
+	Metric            string  `json:"metric,omitempty"`
+	GoalsThreshold    int     `json:"goals_threshold,omitempty"`
+	OffsidesThreshold int     `json:"offsides_threshold,omitempty"`
+	FixedOdd          float64 `json:"fixed_odd,omitempty"`
 }
 
-func (c FilterCriteria) isGoals() bool { return c.Metric == "goals" }
+func (c FilterCriteria) isGoals() bool    { return c.Metric == "goals" }
+func (c FilterCriteria) isOffsides() bool { return c.Metric == "offsides" }
 
 func (c FilterCriteria) Validate() error {
-	if c.Metric != "" && c.Metric != "corners" && c.Metric != "goals" {
-		return fmt.Errorf("metric deve ser 'corners', 'goals' ou vazio")
-	}
-	if c.isGoals() {
+	switch c.Metric {
+	case "", "corners":
+		if c.CornersThreshold <= 0 {
+			return fmt.Errorf("corners_threshold deve ser maior que zero")
+		}
+	case "goals":
 		if c.GoalsThreshold < 0 {
 			return fmt.Errorf("goals_threshold não pode ser negativo")
 		}
-	} else if c.CornersThreshold <= 0 {
-		return fmt.Errorf("corners_threshold deve ser maior que zero")
+	case "offsides":
+		if c.OffsidesThreshold < 0 {
+			return fmt.Errorf("offsides_threshold não pode ser negativo")
+		}
+	default:
+		return fmt.Errorf("metric deve ser 'corners', 'goals', 'offsides' ou vazio")
 	}
 	if c.HomeAway != "" && c.HomeAway != "home" && c.HomeAway != "away" {
 		return fmt.Errorf("home_away deve ser 'home', 'away' ou vazio")
@@ -57,16 +67,17 @@ func (c FilterCriteria) Validate() error {
 // BacktestEntry representa uma ocorrência individual (um "jogo-equipe") que atendeu
 // aos critérios do filtro.
 type BacktestEntry struct {
-	MatchID      int64   `json:"match_id"`
-	MatchDate    string  `json:"match_date"`
-	Team         string  `json:"team"`
-	Opponent     string  `json:"opponent"`
-	IsHome       bool    `json:"is_home"`
-	TotalCorners int     `json:"total_corners"`
-	TotalGoals   int     `json:"total_goals"`
-	Hit          bool    `json:"hit"`
-	Odd          float64 `json:"odd"`
-	ProfitLoss   float64 `json:"profit_loss"`
+	MatchID       int64   `json:"match_id"`
+	MatchDate     string  `json:"match_date"`
+	Team          string  `json:"team"`
+	Opponent      string  `json:"opponent"`
+	IsHome        bool    `json:"is_home"`
+	TotalCorners  int     `json:"total_corners"`
+	TotalGoals    int     `json:"total_goals"`
+	TotalOffsides int     `json:"total_offsides"`
+	Hit           bool    `json:"hit"`
+	Odd           float64 `json:"odd"`
+	ProfitLoss    float64 `json:"profit_loss"`
 }
 
 // BacktestResult agrega as métricas do Módulo 3 exigidas pelos critérios de aceite:
@@ -82,6 +93,7 @@ type BacktestResult struct {
 	MissRate          float64         `json:"miss_rate"`
 	AverageCorners    float64         `json:"average_corners"`
 	AverageGoals      float64         `json:"average_goals"`
+	AverageOffsides   float64         `json:"average_offsides"`
 	Metric            string          `json:"metric"`
 	LongestWinStreak  int             `json:"longest_win_streak"`
 	LongestLoseStreak int             `json:"longest_lose_streak"`
@@ -150,28 +162,30 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	}
 
 	type candidate struct {
-		match    domain.Match
-		teamID   int64
-		oppID    int64
-		isHome   bool
-		cornersF int
-		cornersA int
-		goalsF   int
-		goalsA   int
+		match     domain.Match
+		teamID    int64
+		oppID     int64
+		isHome    bool
+		cornersF  int
+		cornersA  int
+		goalsF    int
+		goalsA    int
+		offsidesF *int
+		offsidesA *int
 	}
 	var candidates []candidate
 	for _, m := range allMatches {
 		if criteria.TeamID != nil {
 			if *criteria.TeamID == m.HomeTeamID {
-				candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals})
+				candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals, m.HomeOffsides, m.AwayOffsides})
 			}
 			if *criteria.TeamID == m.AwayTeamID {
-				candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals})
+				candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals, m.AwayOffsides, m.HomeOffsides})
 			}
 			continue
 		}
-		candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals})
-		candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals})
+		candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals, m.HomeOffsides, m.AwayOffsides})
+		candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals, m.AwayOffsides, m.HomeOffsides})
 	}
 
 	if criteria.LastNGames > 0 {
@@ -204,7 +218,19 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		}
 		var total, threshold int
 		var odd float64
-		if criteria.isGoals() {
+		if criteria.isOffsides() {
+			// Impedimentos: nullable no provedor — sem o dado, o jogo não entra. Linha
+			// over/under com odd fixa simulada (mesma lógica de gols).
+			if c.offsidesF == nil || c.offsidesA == nil {
+				continue
+			}
+			total = *c.offsidesF + *c.offsidesA
+			threshold = criteria.OffsidesThreshold
+			odd = criteria.FixedOdd
+			if odd <= 0 {
+				odd = 1.0
+			}
+		} else if criteria.isGoals() {
 			// Gols: linha over/under, sem odds históricas. Usa a odd fixa informada (se
 			// houver) para simular retorno; senão odd 1.0 (só análise de acerto).
 			total = c.goalsF + c.goalsA
@@ -249,7 +275,9 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			Odd:        odd,
 			ProfitLoss: round2(pl),
 		}
-		if criteria.isGoals() {
+		if criteria.isOffsides() {
+			entry.TotalOffsides = total
+		} else if criteria.isGoals() {
 			entry.TotalGoals = total
 		} else {
 			entry.TotalCorners = total
@@ -291,6 +319,7 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	hits := 0
 	totalCorners := 0
 	totalGoals := 0
+	totalOffsides := 0
 	profit := 0.0
 	totalStaked := 0.0
 
@@ -305,6 +334,7 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	for _, e := range entries {
 		totalCorners += e.TotalCorners
 		totalGoals += e.TotalGoals
+		totalOffsides += e.TotalOffsides
 		totalStaked += stake
 		profit += e.ProfitLoss
 		cumulative += e.ProfitLoss
@@ -339,6 +369,7 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	result.MissRate = round2(100 * float64(misses) / float64(n))
 	result.AverageCorners = round2(float64(totalCorners) / float64(n))
 	result.AverageGoals = round2(float64(totalGoals) / float64(n))
+	result.AverageOffsides = round2(float64(totalOffsides) / float64(n))
 	result.Metric = criteria.Metric
 	result.LongestWinStreak = maxWin
 	result.LongestLoseStreak = maxLose

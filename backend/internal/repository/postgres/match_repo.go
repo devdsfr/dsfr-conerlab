@@ -218,6 +218,7 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 	query := `
 		SELECT id, league_id, season_id, round, match_date, home_team_id, away_team_id,
 		       home_corners, away_corners, home_goals, away_goals,
+		       home_offsides, away_offsides,
 		       corner_odds::text, created_at
 		FROM matches
 		WHERE league_id = $1 AND status = 'FINALIZADO'
@@ -241,6 +242,7 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 		var oddsRaw string
 		if err := rows.Scan(&m.ID, &m.LeagueID, &m.SeasonID, &m.Round, &m.MatchDate, &m.HomeTeamID, &m.AwayTeamID,
 			&m.HomeCorners, &m.AwayCorners, &m.HomeGoals, &m.AwayGoals,
+			&m.HomeOffsides, &m.AwayOffsides,
 			&oddsRaw, &m.CreatedAt); err != nil {
 			return nil, err
 		}

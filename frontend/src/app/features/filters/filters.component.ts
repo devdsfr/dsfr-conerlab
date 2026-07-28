@@ -56,10 +56,12 @@ export class FiltersComponent implements OnInit {
   maxOdds?: number;
   stake = 10;
 
-  // Métrica: 'corners' (escanteios, com odds históricas) ou 'goals' (gols, com odd
-  // fixa simulada). goalsThreshold é a linha over/under (2 = "acima de 2.5").
-  metric: 'corners' | 'goals' = 'corners';
+  // Métrica: 'corners' (com odds históricas), 'goals' ou 'offsides' (com odd fixa
+  // simulada). goalsThreshold/offsidesThreshold são a linha over/under (2 = "acima de
+  // 2.5").
+  metric: 'corners' | 'goals' | 'offsides' = 'corners';
   goalsThreshold = 2;
+  offsidesThreshold = 2;
   fixedOdd?: number;
 
   loading = signal(false);
@@ -71,12 +73,27 @@ export class FiltersComponent implements OnInit {
   get isGoals(): boolean {
     return this.metric === 'goals';
   }
-  // Total da métrica ativa por entrada (escanteios ou gols).
-  entryTotal(e: { total_corners: number; total_goals: number }): number {
-    return this.isGoals ? e.total_goals : e.total_corners;
+  get isOffsides(): boolean {
+    return this.metric === 'offsides';
   }
-  goalLineLabel(threshold: number): string {
-    return `${threshold}.5`;
+  // Métricas sem odds históricas (usam odd fixa simulada).
+  get usesFixedOdd(): boolean {
+    return this.metric === 'goals' || this.metric === 'offsides';
+  }
+  // Total da métrica ativa por entrada.
+  entryTotal(e: { total_corners: number; total_goals: number; total_offsides: number }): number {
+    if (this.isOffsides) return e.total_offsides;
+    if (this.isGoals) return e.total_goals;
+    return e.total_corners;
+  }
+  entryLabel(): string {
+    return this.isOffsides ? 'Impedimentos' : this.isGoals ? 'Gols' : 'Escanteios';
+  }
+  averageValue(r: BacktestResult): number {
+    return this.isOffsides ? r.average_offsides : this.isGoals ? r.average_goals : r.average_corners;
+  }
+  averageLabel(): string {
+    return this.isOffsides ? 'Média de impedimentos' : this.isGoals ? 'Média de gols' : 'Média de escanteios';
   }
 
   readonly drawdownTooltip =
@@ -120,11 +137,12 @@ export class FiltersComponent implements OnInit {
       // para gols enviamos metric/goals_threshold/fixed_odd.
       corners_threshold: this.cornersThreshold,
       opponent_tier: this.opponentTier || undefined,
-      max_odds: this.isGoals ? undefined : (this.maxOdds || undefined),
+      max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
       stake: this.stake || undefined,
       metric: this.metric,
       goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
-      fixed_odd: this.isGoals ? (this.fixedOdd || undefined) : undefined,
+      offsides_threshold: this.isOffsides ? this.offsidesThreshold : undefined,
+      fixed_odd: this.usesFixedOdd ? (this.fixedOdd || undefined) : undefined,
     }).subscribe({
       next: res => {
         this.result.set(res);

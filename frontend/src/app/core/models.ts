@@ -168,9 +168,11 @@ export interface FilterRunRequest {
   opponent_tier?: string;
   max_odds?: number;
   stake?: number;
-  // Métrica de gols: "goals" usa goals_threshold (linha over/under) + fixed_odd.
+  // Métrica alternativa: "goals" usa goals_threshold, "offsides" usa
+  // offsides_threshold (linhas over/under) + fixed_odd.
   metric?: string;
   goals_threshold?: number;
+  offsides_threshold?: number;
   fixed_odd?: number;
 }
 
@@ -182,6 +184,7 @@ export interface BacktestEntry {
   is_home: boolean;
   total_corners: number;
   total_goals: number;
+  total_offsides: number;
   hit: boolean;
   odd: number;
   profit_loss: number;
@@ -197,6 +200,7 @@ export interface BacktestResult {
   miss_rate: number;
   average_corners: number;
   average_goals: number;
+  average_offsides: number;
   metric: string;
   longest_win_streak: number;
   longest_lose_streak: number;

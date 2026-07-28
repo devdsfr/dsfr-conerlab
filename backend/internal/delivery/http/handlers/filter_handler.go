@@ -49,16 +49,17 @@ func (h *FilterHandler) Run(c *gin.Context) {
 	}
 
 	criteria := usecase.FilterCriteria{
-		TeamID:           req.TeamID,
-		LastNGames:       req.LastNGames,
-		HomeAway:         req.HomeAway,
-		CornersThreshold: req.CornersThreshold,
-		OpponentTier:     req.OpponentTier,
-		MaxOdds:          req.MaxOdds,
-		Stake:            req.Stake,
-		Metric:           req.Metric,
-		GoalsThreshold:   req.GoalsThreshold,
-		FixedOdd:         req.FixedOdd,
+		TeamID:            req.TeamID,
+		LastNGames:        req.LastNGames,
+		HomeAway:          req.HomeAway,
+		CornersThreshold:  req.CornersThreshold,
+		OpponentTier:      req.OpponentTier,
+		MaxOdds:           req.MaxOdds,
+		Stake:             req.Stake,
+		Metric:            req.Metric,
+		GoalsThreshold:    req.GoalsThreshold,
+		OffsidesThreshold: req.OffsidesThreshold,
+		FixedOdd:          req.FixedOdd,
 	}
 
 	// Cap de histórico do plano gratuito: sem token, ou com token de usuário sem

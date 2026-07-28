@@ -36,6 +36,14 @@
       </mat-form-field>
     </div>
 
+    <div>
+      <div class="text-xs text-slate-400 mb-1">Métrica</div>
+      <mat-button-toggle-group [(ngModel)]="metric" hideSingleSelectionIndicator>
+        <mat-button-toggle value="corners">Escanteios</mat-button-toggle>
+        <mat-button-toggle value="goals">Gols</mat-button-toggle>
+      </mat-button-toggle-group>
+    </div>
+
     <div class="flex flex-wrap items-end gap-4">
       <div>
         <div class="text-xs text-slate-400 mb-1">Últimos jogos</div>
@@ -57,10 +65,23 @@
         </mat-button-toggle-group>
       </div>
 
-      <mat-form-field appearance="outline" class="w-52">
-        <mat-label>Acima de (escanteios)</mat-label>
-        <input matInput type="number" [(ngModel)]="cornersThreshold" min="1">
-      </mat-form-field>
+      @if (!isGoals) {
+        <mat-form-field appearance="outline" class="w-52">
+          <mat-label>Acima de (escanteios)</mat-label>
+          <input matInput type="number" [(ngModel)]="cornersThreshold" min="1">
+        </mat-form-field>
+      } @else {
+        <mat-form-field appearance="outline" class="w-52">
+          <mat-label>Linha de gols (over)</mat-label>
+          <mat-select [(ngModel)]="goalsThreshold" panelClass="cl-select-panel">
+            <mat-option [value]="0">Acima de 0.5</mat-option>
+            <mat-option [value]="1">Acima de 1.5</mat-option>
+            <mat-option [value]="2">Acima de 2.5</mat-option>
+            <mat-option [value]="3">Acima de 3.5</mat-option>
+            <mat-option [value]="4">Acima de 4.5</mat-option>
+          </mat-select>
+        </mat-form-field>
+      }
 
       <mat-form-field appearance="outline" class="w-44">
         <mat-label>Contra equipes</mat-label>
@@ -72,10 +93,17 @@
         </mat-select>
       </mat-form-field>
 
-      <mat-form-field appearance="outline" class="w-40">
-        <mat-label>Odds máximas</mat-label>
-        <input matInput type="number" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
-      </mat-form-field>
+      @if (!isGoals) {
+        <mat-form-field appearance="outline" class="w-40">
+          <mat-label>Odds máximas</mat-label>
+          <input matInput type="number" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
+        </mat-form-field>
+      } @else {
+        <mat-form-field appearance="outline" class="w-40" matTooltip="Gols não têm odds históricas no banco. Informe uma odd fixa para simular o retorno (opcional).">
+          <mat-label>Odd fixa (simular)</mat-label>
+          <input matInput type="number" step="0.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
+        </mat-form-field>
+      }
 
       <mat-form-field appearance="outline" class="w-36">
         <mat-label>Stake</mat-label>
@@ -112,6 +140,11 @@
         </a>
       </div>
     }
+    @if (isGoals && !fixedOdd) {
+      <div class="cl-card p-3 text-xs text-slate-400">
+        Sem odd fixa informada, o backtest de gols mostra só a taxa de acerto — o ROI/lucro não têm significado (os gols não têm odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.
+      </div>
+    }
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Partidas encontradas</div>
@@ -131,8 +164,8 @@
         <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.profit >= 0" [class.text-red-400]="r.profit < 0">{{ r.profit }}</div>
       </div>
       <div class="cl-card p-4">
-        <div class="text-xs text-slate-400">Média de escanteios</div>
-        <div class="text-xl font-semibold">{{ r.average_corners }}</div>
+        <div class="text-xs text-slate-400">{{ isGoals ? 'Média de gols' : 'Média de escanteios' }}</div>
+        <div class="text-xl font-semibold">{{ isGoals ? r.average_goals : r.average_corners }}</div>
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Maior sequência (acertos)</div>
@@ -168,9 +201,9 @@
             <th mat-header-cell *matHeaderCellDef>Mando</th>
             <td mat-cell *matCellDef="let e">{{ e.is_home ? 'Casa' : 'Fora' }}</td>
           </ng-container>
-          <ng-container matColumnDef="total_corners">
-            <th mat-header-cell *matHeaderCellDef>Escanteios</th>
-            <td mat-cell *matCellDef="let e">{{ e.total_corners }}</td>
+          <ng-container matColumnDef="total">
+            <th mat-header-cell *matHeaderCellDef>{{ isGoals ? 'Gols' : 'Escanteios' }}</th>
+            <td mat-cell *matCellDef="let e">{{ entryTotal(e) }}</td>
           </ng-container>
           <ng-container matColumnDef="hit">
             <th mat-header-cell *matHeaderCellDef>Resultado</th>

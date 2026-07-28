@@ -56,6 +56,9 @@ func (h *FilterHandler) Run(c *gin.Context) {
 		OpponentTier:     req.OpponentTier,
 		MaxOdds:          req.MaxOdds,
 		Stake:            req.Stake,
+		Metric:           req.Metric,
+		GoalsThreshold:   req.GoalsThreshold,
+		FixedOdd:         req.FixedOdd,
 	}
 
 	// Cap de histórico do plano gratuito: sem token, ou com token de usuário sem

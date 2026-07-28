@@ -24,13 +24,22 @@ type FilterRunRequest struct {
 	LeagueID  int64   `json:"league_id" binding:"required"`
 	SeasonIDs []int64 `json:"season_ids"`
 
-	TeamID           *int64  `json:"team_id"`
-	LastNGames       int     `json:"last_n_games"`
-	HomeAway         string  `json:"home_away"`
-	CornersThreshold int     `json:"corners_threshold" binding:"required"`
+	TeamID     *int64 `json:"team_id"`
+	LastNGames int    `json:"last_n_games"`
+	HomeAway   string `json:"home_away"`
+	// corners_threshold deixou de ser obrigatório no bind porque o Simulador agora
+	// aceita métrica "goals" (que usa goals_threshold). A obrigatoriedade por métrica é
+	// validada em FilterCriteria.Validate().
+	CornersThreshold int     `json:"corners_threshold"`
 	OpponentTier     string  `json:"opponent_tier"`
 	MaxOdds          float64 `json:"max_odds"`
 	Stake            float64 `json:"stake"`
+
+	// Métrica de gols (ver FilterCriteria): "goals" ativa a análise de gols com
+	// goals_threshold (linha over/under) e fixed_odd (odd simulada).
+	Metric         string  `json:"metric"`
+	GoalsThreshold int     `json:"goals_threshold"`
+	FixedOdd       float64 `json:"fixed_odd"`
 }
 
 type SaveFilterRequest struct {

@@ -56,11 +56,28 @@ export class FiltersComponent implements OnInit {
   maxOdds?: number;
   stake = 10;
 
+  // Métrica: 'corners' (escanteios, com odds históricas) ou 'goals' (gols, com odd
+  // fixa simulada). goalsThreshold é a linha over/under (2 = "acima de 2.5").
+  metric: 'corners' | 'goals' = 'corners';
+  goalsThreshold = 2;
+  fixedOdd?: number;
+
   loading = signal(false);
   error = signal<string | null>(null);
   result = signal<BacktestResult | null>(null);
 
-  entryColumns = ['match_date', 'team', 'opponent', 'is_home', 'total_corners', 'hit', 'odd', 'profit_loss'];
+  entryColumns = ['match_date', 'team', 'opponent', 'is_home', 'total', 'hit', 'odd', 'profit_loss'];
+
+  get isGoals(): boolean {
+    return this.metric === 'goals';
+  }
+  // Total da métrica ativa por entrada (escanteios ou gols).
+  entryTotal(e: { total_corners: number; total_goals: number }): number {
+    return this.isGoals ? e.total_goals : e.total_corners;
+  }
+  goalLineLabel(threshold: number): string {
+    return `${threshold}.5`;
+  }
 
   readonly drawdownTooltip =
     'Drawdown máximo: a maior sequência de perdas acumuladas (em unidades de stake) observada durante o backtest — indica o pior momento de "prejuízo" pelo qual a estratégia passou.';
@@ -99,10 +116,15 @@ export class FiltersComponent implements OnInit {
       team_id: this.selectedTeamId ?? null,
       last_n_games: this.lastNGames || undefined,
       home_away: this.homeAway || undefined,
+      // corners_threshold sempre vai (ignorado no backend quando metric=goals);
+      // para gols enviamos metric/goals_threshold/fixed_odd.
       corners_threshold: this.cornersThreshold,
       opponent_tier: this.opponentTier || undefined,
-      max_odds: this.maxOdds || undefined,
+      max_odds: this.isGoals ? undefined : (this.maxOdds || undefined),
       stake: this.stake || undefined,
+      metric: this.metric,
+      goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
+      fixed_odd: this.isGoals ? (this.fixedOdd || undefined) : undefined,
     }).subscribe({
       next: res => {
         this.result.set(res);

@@ -24,10 +24,28 @@ type FilterCriteria struct {
 	OpponentTier     string  `json:"opponent_tier,omitempty"`
 	MaxOdds          float64 `json:"max_odds,omitempty"`
 	Stake            float64 `json:"stake,omitempty"`
+
+	// Metric escolhe o que backtestar: "corners" (padrão) ou "goals". Para gols usa-se
+	// GoalsThreshold (linha over/under: 0 = "acima de 0.5", 2 = "acima de 2.5") e, como
+	// não há odds históricas de gols no banco (diferente de corner_odds), o retorno é
+	// simulado com FixedOdd — uma odd única informada pelo usuário. Sem FixedOdd, o
+	// backtest de gols é só análise de acerto (sem ROI significativo).
+	Metric         string  `json:"metric,omitempty"`
+	GoalsThreshold int     `json:"goals_threshold,omitempty"`
+	FixedOdd       float64 `json:"fixed_odd,omitempty"`
 }
 
+func (c FilterCriteria) isGoals() bool { return c.Metric == "goals" }
+
 func (c FilterCriteria) Validate() error {
-	if c.CornersThreshold <= 0 {
+	if c.Metric != "" && c.Metric != "corners" && c.Metric != "goals" {
+		return fmt.Errorf("metric deve ser 'corners', 'goals' ou vazio")
+	}
+	if c.isGoals() {
+		if c.GoalsThreshold < 0 {
+			return fmt.Errorf("goals_threshold não pode ser negativo")
+		}
+	} else if c.CornersThreshold <= 0 {
 		return fmt.Errorf("corners_threshold deve ser maior que zero")
 	}
 	if c.HomeAway != "" && c.HomeAway != "home" && c.HomeAway != "away" {
@@ -45,6 +63,7 @@ type BacktestEntry struct {
 	Opponent     string  `json:"opponent"`
 	IsHome       bool    `json:"is_home"`
 	TotalCorners int     `json:"total_corners"`
+	TotalGoals   int     `json:"total_goals"`
 	Hit          bool    `json:"hit"`
 	Odd          float64 `json:"odd"`
 	ProfitLoss   float64 `json:"profit_loss"`
@@ -62,6 +81,8 @@ type BacktestResult struct {
 	HitRate           float64         `json:"hit_rate"`
 	MissRate          float64         `json:"miss_rate"`
 	AverageCorners    float64         `json:"average_corners"`
+	AverageGoals      float64         `json:"average_goals"`
+	Metric            string          `json:"metric"`
 	LongestWinStreak  int             `json:"longest_win_streak"`
 	LongestLoseStreak int             `json:"longest_lose_streak"`
 	MaxDrawdown       float64         `json:"max_drawdown"`
@@ -135,20 +156,22 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		isHome   bool
 		cornersF int
 		cornersA int
+		goalsF   int
+		goalsA   int
 	}
 	var candidates []candidate
 	for _, m := range allMatches {
 		if criteria.TeamID != nil {
 			if *criteria.TeamID == m.HomeTeamID {
-				candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners})
+				candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals})
 			}
 			if *criteria.TeamID == m.AwayTeamID {
-				candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners})
+				candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals})
 			}
 			continue
 		}
-		candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners})
-		candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners})
+		candidates = append(candidates, candidate{m, m.HomeTeamID, m.AwayTeamID, true, m.HomeCorners, m.AwayCorners, m.HomeGoals, m.AwayGoals})
+		candidates = append(candidates, candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals})
 	}
 
 	if criteria.LastNGames > 0 {
@@ -179,18 +202,34 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				continue
 			}
 		}
-		odd, hasOdd := c.match.OddForThreshold(criteria.CornersThreshold)
-		if criteria.MaxOdds > 0 {
-			if !hasOdd || odd > criteria.MaxOdds {
-				continue
+		var total, threshold int
+		var odd float64
+		if criteria.isGoals() {
+			// Gols: linha over/under, sem odds históricas. Usa a odd fixa informada (se
+			// houver) para simular retorno; senão odd 1.0 (só análise de acerto).
+			total = c.goalsF + c.goalsA
+			threshold = criteria.GoalsThreshold
+			odd = criteria.FixedOdd
+			if odd <= 0 {
+				odd = 1.0
+			}
+		} else {
+			// Escanteios: odd histórica real do mercado (corner_odds). MaxOdds filtra.
+			total = c.cornersF + c.cornersA
+			threshold = criteria.CornersThreshold
+			var hasOdd bool
+			odd, hasOdd = c.match.OddForThreshold(criteria.CornersThreshold)
+			if criteria.MaxOdds > 0 {
+				if !hasOdd || odd > criteria.MaxOdds {
+					continue
+				}
+			}
+			if !hasOdd {
+				odd = 1.0
 			}
 		}
-		if !hasOdd {
-			odd = 1.0
-		}
 
-		total := c.cornersF + c.cornersA
-		hit := total > criteria.CornersThreshold
+		hit := total > threshold
 
 		pl := -stake
 		if hit {
@@ -200,17 +239,22 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		teamName := teamsByID[c.teamID].Name
 		oppName := teamsByID[c.oppID].Name
 
-		entries = append(entries, BacktestEntry{
-			MatchID:      c.match.ID,
-			MatchDate:    c.match.MatchDate.Format("2006-01-02"),
-			Team:         teamName,
-			Opponent:     oppName,
-			IsHome:       c.isHome,
-			TotalCorners: total,
-			Hit:          hit,
-			Odd:          odd,
-			ProfitLoss:   round2(pl),
-		})
+		entry := BacktestEntry{
+			MatchID:    c.match.ID,
+			MatchDate:  c.match.MatchDate.Format("2006-01-02"),
+			Team:       teamName,
+			Opponent:   oppName,
+			IsHome:     c.isHome,
+			Hit:        hit,
+			Odd:        odd,
+			ProfitLoss: round2(pl),
+		}
+		if criteria.isGoals() {
+			entry.TotalGoals = total
+		} else {
+			entry.TotalCorners = total
+		}
+		entries = append(entries, entry)
 	}
 
 	result := buildBacktestResult(criteria, entries, stake)
@@ -246,6 +290,7 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 
 	hits := 0
 	totalCorners := 0
+	totalGoals := 0
 	profit := 0.0
 	totalStaked := 0.0
 
@@ -259,6 +304,7 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 
 	for _, e := range entries {
 		totalCorners += e.TotalCorners
+		totalGoals += e.TotalGoals
 		totalStaked += stake
 		profit += e.ProfitLoss
 		cumulative += e.ProfitLoss
@@ -292,6 +338,8 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	result.HitRate = round2(100 * float64(hits) / float64(n))
 	result.MissRate = round2(100 * float64(misses) / float64(n))
 	result.AverageCorners = round2(float64(totalCorners) / float64(n))
+	result.AverageGoals = round2(float64(totalGoals) / float64(n))
+	result.Metric = criteria.Metric
 	result.LongestWinStreak = maxWin
 	result.LongestLoseStreak = maxLose
 	result.MaxDrawdown = round2(maxDD)

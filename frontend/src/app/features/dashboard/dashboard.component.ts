@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -67,7 +67,26 @@ export class DashboardComponent implements OnInit {
   teamsLoading = signal(false);
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
-  trendChart = signal<ChartData>({ labels: [], datasets: [] });
+
+  // Métrica ativa da análise — "corners" (escanteios) ou "goals" (gols). O backend já
+  // manda as duas no mesmo response, então a troca de aba é instantânea (sem refetch).
+  metric = signal<'corners' | 'goals'>('corners');
+
+  setMetric(m: 'corners' | 'goals'): void {
+    this.metric.set(m);
+  }
+
+  // Gráfico de tendência derivado da métrica ativa (escanteios ou gols por jogo).
+  trendChart = computed<ChartData>(() => {
+    const r = this.result();
+    if (!r) return { labels: [], datasets: [] };
+    const isGoals = this.metric() === 'goals';
+    const data = isGoals ? r.goal_trend : r.trend;
+    return {
+      labels: data.map((_, i) => i + 1),
+      datasets: [{ label: isGoals ? 'Gols' : 'Escanteios', data }],
+    };
+  });
 
   matchColumns = ['match_date', 'opponent', 'is_home', 'corners_for', 'corners_against', 'total_corners', 'expand'];
 
@@ -200,10 +219,7 @@ export class DashboardComponent implements OnInit {
     this.api.getDashboard(this.selectedTeamId, this.selectedLeagueId, this.selectedSeasonId, this.limit).subscribe({
       next: res => {
         this.result.set(res);
-        this.trendChart.set({
-          labels: res.trend.map((_, i) => i + 1),
-          datasets: [{ label: 'Escanteios', data: res.trend }],
-        });
+        // trendChart é computed a partir de result() + metric() — nada a setar aqui.
         this.loading.set(false);
         this.syncQueryParams();
       },
@@ -261,9 +277,11 @@ export class DashboardComponent implements OnInit {
         case 'match_date': return m.match_date;
         case 'opponent': return m.opponent.name;
         case 'is_home': return m.is_home ? 1 : 0;
-        case 'corners_for': return m.corners_for;
-        case 'corners_against': return m.corners_against;
-        case 'total_corners': return m.total_corners;
+        // As colunas "A favor/Sofridos/Total" mostram a métrica ativa (escanteios ou
+        // gols), então a ordenação segue a mesma métrica.
+        case 'corners_for': return this.matchFor(m);
+        case 'corners_against': return this.matchAgainst(m);
+        case 'total_corners': return this.matchTotal(m);
       }
     };
     return [...matches].sort((a, b) => {
@@ -273,5 +291,49 @@ export class DashboardComponent implements OnInit {
       if (va > vb) return 1 * dir;
       return 0;
     });
+  }
+
+  // --- Acessores da métrica ativa (escanteios ou gols) — evitam duplicar o template.
+  private goalsActive(): boolean {
+    return this.metric() === 'goals';
+  }
+
+  matchFor(m: TeamMatchView): number {
+    return this.goalsActive() ? m.goals_for : m.corners_for;
+  }
+  matchAgainst(m: TeamMatchView): number {
+    return this.goalsActive() ? m.goals_against : m.corners_against;
+  }
+  matchTotal(m: TeamMatchView): number {
+    return this.goalsActive() ? m.total_goals : m.total_corners;
+  }
+
+  // Bloco consolidado da métrica ativa (summaries, saldo, frequências, casa/fora e
+  // rótulos), recalculado só quando result() ou metric() mudam.
+  readonly view = computed(() => {
+    const r = this.result();
+    if (!r) return null;
+    const goals = this.metric() === 'goals';
+    return {
+      goals,
+      forSummary: goals ? r.goals_for : r.corners_for,
+      againstSummary: goals ? r.goals_against : r.corners_against,
+      totalSummary: goals ? r.total_goals : r.total_corners,
+      balance: goals ? r.goal_balance : r.balance,
+      frequencies: goals ? r.goal_frequencies : r.frequencies,
+      homeStats: goals ? r.goal_home_stats : r.home_stats,
+      awayStats: goals ? r.goal_away_stats : r.away_stats,
+      forLabel: goals ? 'Gols marcados' : 'Escanteios conquistados',
+      againstLabel: goals ? 'Gols sofridos' : 'Escanteios sofridos',
+      totalLabel: goals ? 'Total de gols' : 'Total de escanteios',
+      freqTitle: goals ? 'Frequências (total de gols acima de N)' : 'Frequências (total de escanteios acima de N)',
+      trendTitle: goals ? 'Tendência (total de gols por jogo)' : 'Tendência (total de escanteios por jogo)',
+    };
+  });
+
+  // Rótulo de cada linha de frequência: gols usam linha over/under (0.5, 1.5...),
+  // escanteios usam inteiro.
+  freqLabel(threshold: number): string {
+    return this.goalsActive() ? `Acima de ${threshold}.5` : `Acima de ${threshold}`;
   }
 }

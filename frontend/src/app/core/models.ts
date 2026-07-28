@@ -70,6 +70,10 @@ export interface TeamMatchView {
   total_corners: number;
   opponent_tier: string;
 
+  goals_for: number;
+  goals_against: number;
+  total_goals: number;
+
   possession_for?: number | null;
   possession_against?: number | null;
   shots_for?: number | null;
@@ -113,6 +117,16 @@ export interface DashboardResult {
   trend: number[];
   home_stats?: SplitStats;
   away_stats?: SplitStats;
+
+  // Análise de gols — espelho dos escanteios (ver aba "Gols" no Dashboard).
+  goals_for: StatSummary;
+  goals_against: StatSummary;
+  total_goals: StatSummary;
+  goal_balance: number;
+  goal_frequencies: FrequencyResult[];
+  goal_trend: number[];
+  goal_home_stats?: SplitStats;
+  goal_away_stats?: SplitStats;
 }
 
 export interface TeamComparisonSide {

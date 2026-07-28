@@ -110,6 +110,12 @@ type TeamMatchView struct {
 	TotalCorners   int       `json:"total_corners"`
 	OpponentTier   string    `json:"opponent_tier"`
 
+	// Gols marcados/sofridos pela equipe consultada (mesma orientação For/Against dos
+	// escanteios) — base da aba de análise de gols do Dashboard.
+	GoalsFor     int `json:"goals_for"`
+	GoalsAgainst int `json:"goals_against"`
+	TotalGoals   int `json:"total_goals"`
+
 	// Estatísticas complementares (ver comentário em Match), já reorientadas pela
 	// perspectiva da equipe consultada (For = a própria equipe, Against = o
 	// adversário) — mesmo padrão de CornersFor/CornersAgainst. Nil quando o provedor

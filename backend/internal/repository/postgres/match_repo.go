@@ -39,6 +39,8 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 			(m.home_team_id = $1) AS is_home,
 			CASE WHEN m.home_team_id = $1 THEN m.home_corners ELSE m.away_corners END AS corners_for,
 			CASE WHEN m.home_team_id = $1 THEN m.away_corners ELSE m.home_corners END AS corners_against,
+			CASE WHEN m.home_team_id = $1 THEN m.home_goals ELSE m.away_goals END AS goals_for,
+			CASE WHEN m.home_team_id = $1 THEN m.away_goals ELSE m.home_goals END AS goals_against,
 			CASE WHEN m.home_team_id = $1 THEN m.home_possession ELSE m.away_possession END AS possession_for,
 			CASE WHEN m.home_team_id = $1 THEN m.away_possession ELSE m.home_possession END AS possession_against,
 			CASE WHEN m.home_team_id = $1 THEN m.home_shots ELSE m.away_shots END AS shots_for,
@@ -103,6 +105,8 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 		isHome         bool
 		cornersFor     int
 		cornersAgainst int
+		goalsFor       int
+		goalsAgainst   int
 
 		possessionFor, possessionAgainst           *int
 		shotsFor, shotsAgainst                     *int
@@ -122,6 +126,7 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 		var rr rawRow
 		if err := rows.Scan(
 			&rr.matchID, &rr.matchDate, &rr.opponentID, &rr.isHome, &rr.cornersFor, &rr.cornersAgainst,
+			&rr.goalsFor, &rr.goalsAgainst,
 			&rr.possessionFor, &rr.possessionAgainst,
 			&rr.shotsFor, &rr.shotsAgainst,
 			&rr.shotsOnTargetFor, &rr.shotsOnTargetAgainst,
@@ -174,6 +179,10 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 			CornersAgainst: rr.cornersAgainst,
 			TotalCorners:   rr.cornersFor + rr.cornersAgainst,
 			OpponentTier:   opp.Tier,
+
+			GoalsFor:     rr.goalsFor,
+			GoalsAgainst: rr.goalsAgainst,
+			TotalGoals:   rr.goalsFor + rr.goalsAgainst,
 
 			PossessionFor:          rr.possessionFor,
 			PossessionAgainst:      rr.possessionAgainst,

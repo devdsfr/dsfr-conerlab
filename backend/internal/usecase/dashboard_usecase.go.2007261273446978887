@@ -1,0 +1,311 @@
+package usecase
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/repository"
+)
+
+type DashboardUsecase struct {
+	matches repository.MatchRepository
+	teams   repository.TeamRepository
+}
+
+func NewDashboardUsecase(matches repository.MatchRepository, teams repository.TeamRepository) *DashboardUsecase {
+	return &DashboardUsecase{matches: matches, teams: teams}
+}
+
+// DashboardResult representa toda a resposta do Módulo 1 (Dashboard Principal).
+type DashboardResult struct {
+	Team           domain.Team            `json:"team"`
+	SampleSize     int                    `json:"sample_size"`
+	Period         string                 `json:"period"` // descreve o período/quantidade de jogos analisados (exigência: sempre exibir o período)
+	RecentMatches  []domain.TeamMatchView `json:"recent_matches"`
+	CornersFor     StatSummary            `json:"corners_for"`
+	CornersAgainst StatSummary            `json:"corners_against"`
+	TotalCorners   StatSummary            `json:"total_corners"`
+	Balance        int                    `json:"balance"` // saldo = a favor - sofridos
+	Frequencies    []FrequencyResult      `json:"frequencies"`
+	Trend          []int                  `json:"trend"` // últimos jogos em ordem cronológica (mais antigo -> mais recente)
+	HomeStats      *SplitStats            `json:"home_stats,omitempty"`
+	AwayStats      *SplitStats            `json:"away_stats,omitempty"`
+
+	// Análise de GOLS — mesma estrutura dos escanteios (marcados/sofridos/total,
+	// saldo, frequências, tendência, casa/fora), exposta em paralelo para a aba "Gols"
+	// do Dashboard. Frequências usam linhas over/under (ver GoalFrequencyThresholds).
+	GoalsFor        StatSummary       `json:"goals_for"`
+	GoalsAgainst    StatSummary       `json:"goals_against"`
+	TotalGoals      StatSummary       `json:"total_goals"`
+	GoalBalance     int               `json:"goal_balance"`
+	GoalFrequencies []FrequencyResult `json:"goal_frequencies"`
+	GoalTrend       []int             `json:"goal_trend"`
+	GoalHomeStats   *SplitStats       `json:"goal_home_stats,omitempty"`
+	GoalAwayStats   *SplitStats       `json:"goal_away_stats,omitempty"`
+
+	// Análise de IMPEDIMENTOS (offsides) — mesma estrutura das outras métricas. Difere
+	// num ponto: o provedor nem sempre publica impedimentos por jogo, então essas
+	// estatísticas são calculadas SÓ sobre os jogos que têm o dado. OffsideSampleSize
+	// informa quantos jogos entraram (pode ser menor que sample_size); quando 0, o
+	// frontend mostra "sem dados de impedimento".
+	OffsidesFor        StatSummary       `json:"offsides_for"`
+	OffsidesAgainst    StatSummary       `json:"offsides_against"`
+	TotalOffsides      StatSummary       `json:"total_offsides"`
+	OffsideBalance     int               `json:"offside_balance"`
+	OffsideFrequencies []FrequencyResult `json:"offside_frequencies"`
+	OffsideTrend       []int             `json:"offside_trend"`
+	OffsideHomeStats   *SplitStats       `json:"offside_home_stats,omitempty"`
+	OffsideAwayStats   *SplitStats       `json:"offside_away_stats,omitempty"`
+	OffsideSampleSize  int               `json:"offside_sample_size"`
+
+	// Chutes (total) — nullable como impedimentos (amostra própria).
+	ShotsFor       StatSummary       `json:"shots_for"`
+	ShotsAgainst   StatSummary       `json:"shots_against"`
+	TotalShots     StatSummary       `json:"total_shots"`
+	ShotBalance    int               `json:"shot_balance"`
+	ShotFrequencies []FrequencyResult `json:"shot_frequencies"`
+	ShotTrend      []int             `json:"shot_trend"`
+	ShotHomeStats  *SplitStats       `json:"shot_home_stats,omitempty"`
+	ShotAwayStats  *SplitStats       `json:"shot_away_stats,omitempty"`
+	ShotSampleSize int               `json:"shot_sample_size"`
+
+	// Chutes no gol — idem.
+	ShotsOnTargetFor       StatSummary       `json:"shots_on_target_for"`
+	ShotsOnTargetAgainst   StatSummary       `json:"shots_on_target_against"`
+	TotalShotsOnTarget     StatSummary       `json:"total_shots_on_target"`
+	SotBalance             int               `json:"sot_balance"`
+	SotFrequencies         []FrequencyResult `json:"sot_frequencies"`
+	SotTrend               []int             `json:"sot_trend"`
+	SotHomeStats           *SplitStats       `json:"sot_home_stats,omitempty"`
+	SotAwayStats           *SplitStats       `json:"sot_away_stats,omitempty"`
+	SotSampleSize          int               `json:"sot_sample_size"`
+}
+
+type SplitStats struct {
+	SampleSize  int     `json:"sample_size"`
+	Mean        float64 `json:"mean"`
+	Max         int     `json:"max"`
+	Min         int     `json:"min"`
+	Consistency float64 `json:"consistency"` // índice de consistência (1 - CV, limitado a [0,1])
+}
+
+var DefaultFrequencyThresholds = []int{4, 5, 6, 7, 8, 9, 10}
+
+// GoalFrequencyThresholds são as linhas over/under de gols. Como FrequencyAboveThresholds
+// conta valores estritamente MAIORES que o limite (v > t), o limite inteiro N equivale à
+// linha "N.5": t=0 -> "acima de 0.5" (1+ gol), t=1 -> "acima de 1.5" (2+ gols), etc. O
+// frontend exibe o rótulo como "{N}.5".
+var GoalFrequencyThresholds = []int{0, 1, 2, 3, 4}
+
+// OffsideFrequencyThresholds — linhas over/under de impedimentos por jogo (total dos
+// dois times costuma ficar entre 0 e ~8). Mesma convenção de gols: t=N -> "acima de
+// N.5". Vai um pouco mais alto (até 5.5) porque impedimentos por jogo costumam somar
+// mais que gols.
+var OffsideFrequencyThresholds = []int{0, 1, 2, 3, 4, 5}
+
+// ShotFrequencyThresholds — total de chutes (dois times) por jogo costuma ficar em
+// torno de 20–30. Faixas inteiras, estilo escanteios ("acima de N").
+var ShotFrequencyThresholds = []int{16, 18, 20, 22, 24, 26}
+
+// ShotOnTargetFrequencyThresholds — total de chutes no gol por jogo costuma ficar em
+// torno de 6–14. Faixas inteiras.
+var ShotOnTargetFrequencyThresholds = []int{4, 6, 8, 10, 12}
+
+func (u *DashboardUsecase) GetDashboard(ctx context.Context, teamID int64, leagueID *int64, seasonID *int64, limit int) (*DashboardResult, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	team, err := u.teams.GetByID(ctx, teamID)
+	if err != nil {
+		return nil, fmt.Errorf("equipe não encontrada: %w", err)
+	}
+
+	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{
+		TeamID:   teamID,
+		LeagueID: leagueID,
+		SeasonID: seasonID,
+		Limit:    limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cornersFor := make([]int, 0, len(views))
+	cornersAgainst := make([]int, 0, len(views))
+	totalCorners := make([]int, 0, len(views))
+	trend := make([]int, 0, len(views))
+
+	goalsFor := make([]int, 0, len(views))
+	goalsAgainst := make([]int, 0, len(views))
+	totalGoals := make([]int, 0, len(views))
+	goalTrend := make([]int, 0, len(views))
+
+	for _, v := range views {
+		cornersFor = append(cornersFor, v.CornersFor)
+		cornersAgainst = append(cornersAgainst, v.CornersAgainst)
+		totalCorners = append(totalCorners, v.TotalCorners)
+		goalsFor = append(goalsFor, v.GoalsFor)
+		goalsAgainst = append(goalsAgainst, v.GoalsAgainst)
+		totalGoals = append(totalGoals, v.TotalGoals)
+	}
+	// trend em ordem cronológica: views vêm mais recente -> mais antigo, então invertemos
+	for i := len(views) - 1; i >= 0; i-- {
+		trend = append(trend, views[i].TotalCorners)
+		goalTrend = append(goalTrend, views[i].TotalGoals)
+	}
+
+	result := &DashboardResult{
+		Team:           *team,
+		SampleSize:     len(views),
+		Period:         fmt.Sprintf("Últimos %d jogos", limit),
+		RecentMatches:  views,
+		CornersFor:     Summarize(cornersFor),
+		CornersAgainst: Summarize(cornersAgainst),
+		TotalCorners:   Summarize(totalCorners),
+		Balance:        sumInts(cornersFor) - sumInts(cornersAgainst),
+		Frequencies:    FrequencyAboveThresholds(totalCorners, DefaultFrequencyThresholds),
+		Trend:          trend,
+
+		GoalsFor:        Summarize(goalsFor),
+		GoalsAgainst:    Summarize(goalsAgainst),
+		TotalGoals:      Summarize(totalGoals),
+		GoalBalance:     sumInts(goalsFor) - sumInts(goalsAgainst),
+		GoalFrequencies: FrequencyAboveThresholds(totalGoals, GoalFrequencyThresholds),
+		GoalTrend:       goalTrend,
+	}
+
+	// Casa x Fora — escanteios e gols em paralelo.
+	homeValues := []int{}
+	awayValues := []int{}
+	goalHomeValues := []int{}
+	goalAwayValues := []int{}
+	for _, v := range views {
+		if v.IsHome {
+			homeValues = append(homeValues, v.TotalCorners)
+			goalHomeValues = append(goalHomeValues, v.TotalGoals)
+		} else {
+			awayValues = append(awayValues, v.TotalCorners)
+			goalAwayValues = append(goalAwayValues, v.TotalGoals)
+		}
+	}
+	result.HomeStats = buildSplitStats(homeValues)
+	result.AwayStats = buildSplitStats(awayValues)
+	result.GoalHomeStats = buildSplitStats(goalHomeValues)
+	result.GoalAwayStats = buildSplitStats(goalAwayValues)
+
+	// Métricas nullable (impedimentos, chutes, chutes no gol): só entram jogos com o
+	// dado, cada uma com amostra própria. Usam o mesmo helper.
+	off := computeNullableBlock(views, func(v domain.TeamMatchView) (*int, *int) { return v.OffsidesFor, v.OffsidesAgainst }, OffsideFrequencyThresholds)
+	result.OffsidesFor = off.For
+	result.OffsidesAgainst = off.Against
+	result.TotalOffsides = off.Total
+	result.OffsideBalance = off.Balance
+	result.OffsideFrequencies = off.Frequencies
+	result.OffsideTrend = off.Trend
+	result.OffsideHomeStats = off.HomeStats
+	result.OffsideAwayStats = off.AwayStats
+	result.OffsideSampleSize = off.SampleSize
+
+	shots := computeNullableBlock(views, func(v domain.TeamMatchView) (*int, *int) { return v.ShotsFor, v.ShotsAgainst }, ShotFrequencyThresholds)
+	result.ShotsFor = shots.For
+	result.ShotsAgainst = shots.Against
+	result.TotalShots = shots.Total
+	result.ShotBalance = shots.Balance
+	result.ShotFrequencies = shots.Frequencies
+	result.ShotTrend = shots.Trend
+	result.ShotHomeStats = shots.HomeStats
+	result.ShotAwayStats = shots.AwayStats
+	result.ShotSampleSize = shots.SampleSize
+
+	sot := computeNullableBlock(views, func(v domain.TeamMatchView) (*int, *int) { return v.ShotsOnTargetFor, v.ShotsOnTargetAgainst }, ShotOnTargetFrequencyThresholds)
+	result.ShotsOnTargetFor = sot.For
+	result.ShotsOnTargetAgainst = sot.Against
+	result.TotalShotsOnTarget = sot.Total
+	result.SotBalance = sot.Balance
+	result.SotFrequencies = sot.Frequencies
+	result.SotTrend = sot.Trend
+	result.SotHomeStats = sot.HomeStats
+	result.SotAwayStats = sot.AwayStats
+	result.SotSampleSize = sot.SampleSize
+
+	return result, nil
+}
+
+// nullableMetricBlock agrupa o resultado de uma métrica que pode faltar por jogo
+// (impedimentos, chutes, chutes no gol). Só entram os jogos com o dado.
+type nullableMetricBlock struct {
+	For, Against, Total  StatSummary
+	Balance              int
+	Frequencies          []FrequencyResult
+	Trend                []int
+	HomeStats, AwayStats *SplitStats
+	SampleSize           int
+}
+
+// computeNullableBlock calcula o bloco de uma métrica nullable. get devolve os valores
+// (for, against) da equipe consultada para cada jogo, ou nil quando o provedor não
+// publicou o dado — jogos assim são ignorados. views vêm mais recente -> mais antigo.
+func computeNullableBlock(views []domain.TeamMatchView, get func(domain.TeamMatchView) (*int, *int), thresholds []int) nullableMetricBlock {
+	forV := []int{}
+	againstV := []int{}
+	totalV := []int{}
+	homeV := []int{}
+	awayV := []int{}
+	trend := []int{}
+	for _, v := range views {
+		f, a := get(v)
+		if f == nil || a == nil {
+			continue
+		}
+		forV = append(forV, *f)
+		againstV = append(againstV, *a)
+		totalV = append(totalV, *f+*a)
+		if v.IsHome {
+			homeV = append(homeV, *f+*a)
+		} else {
+			awayV = append(awayV, *f+*a)
+		}
+	}
+	for i := len(views) - 1; i >= 0; i-- {
+		f, a := get(views[i])
+		if f == nil || a == nil {
+			continue
+		}
+		trend = append(trend, *f+*a)
+	}
+	return nullableMetricBlock{
+		For:        Summarize(forV),
+		Against:    Summarize(againstV),
+		Total:      Summarize(totalV),
+		Balance:    sumInts(forV) - sumInts(againstV),
+		Frequencies: FrequencyAboveThresholds(totalV, thresholds),
+		Trend:      trend,
+		HomeStats:  buildSplitStats(homeV),
+		AwayStats:  buildSplitStats(awayV),
+		SampleSize: len(totalV),
+	}
+}
+
+func buildSplitStats(values []int) *SplitStats {
+	if len(values) == 0 {
+		return &SplitStats{}
+	}
+	s := Summarize(values)
+	return &SplitStats{
+		SampleSize:  s.Count,
+		Mean:        s.Mean,
+		Max:         s.Max,
+		Min:         s.Min,
+		Consistency: s.ConsistencyIndex,
+	}
+}
+
+func sumInts(values []int) int {
+	sum := 0
+	for _, v := range values {
+		sum += v
+	}
+	return sum
+}

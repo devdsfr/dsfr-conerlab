@@ -14,7 +14,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
-import { BacktestResult, League, Season, Team } from '../../core/models';
+import { BacktestEntry, BacktestResult, League, Season, Team } from '../../core/models';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 @Component({
@@ -56,12 +56,14 @@ export class FiltersComponent implements OnInit {
   maxOdds?: number;
   stake = 10;
 
-  // Métrica: 'corners' (com odds históricas), 'goals' ou 'offsides' (com odd fixa
-  // simulada). goalsThreshold/offsidesThreshold são a linha over/under (2 = "acima de
-  // 2.5").
-  metric: 'corners' | 'goals' | 'offsides' = 'corners';
+  // Métrica: 'corners' (com odds históricas) ou as demais (odd fixa simulada). Cada
+  // uma tem seu threshold (linha over/under: 2 = "acima de 2.5"; chutes usam faixas
+  // inteiras maiores).
+  metric: 'corners' | 'goals' | 'offsides' | 'shots' | 'shots_on_target' = 'corners';
   goalsThreshold = 2;
   offsidesThreshold = 2;
+  shotsThreshold = 20;
+  shotsOnTargetThreshold = 6;
   fixedOdd?: number;
 
   loading = signal(false);
@@ -76,24 +78,47 @@ export class FiltersComponent implements OnInit {
   get isOffsides(): boolean {
     return this.metric === 'offsides';
   }
-  // Métricas sem odds históricas (usam odd fixa simulada).
+  get isShots(): boolean {
+    return this.metric === 'shots';
+  }
+  get isShotsOnTarget(): boolean {
+    return this.metric === 'shots_on_target';
+  }
+  // Métricas sem odds históricas (usam odd fixa simulada) e nullable (jogos sem o dado
+  // ficam de fora do backtest).
   get usesFixedOdd(): boolean {
-    return this.metric === 'goals' || this.metric === 'offsides';
+    return this.metric !== 'corners';
+  }
+  get isNullableMetric(): boolean {
+    return this.metric === 'offsides' || this.metric === 'shots' || this.metric === 'shots_on_target';
+  }
+  private label(): string {
+    return { corners: 'Escanteios', goals: 'Gols', offsides: 'Impedimentos', shots: 'Chutes', shots_on_target: 'Chutes no gol' }[this.metric];
   }
   // Total da métrica ativa por entrada.
-  entryTotal(e: { total_corners: number; total_goals: number; total_offsides: number }): number {
-    if (this.isOffsides) return e.total_offsides;
-    if (this.isGoals) return e.total_goals;
-    return e.total_corners;
+  entryTotal(e: BacktestEntry): number {
+    switch (this.metric) {
+      case 'goals': return e.total_goals;
+      case 'offsides': return e.total_offsides;
+      case 'shots': return e.total_shots;
+      case 'shots_on_target': return e.total_shots_on_target;
+      default: return e.total_corners;
+    }
   }
   entryLabel(): string {
-    return this.isOffsides ? 'Impedimentos' : this.isGoals ? 'Gols' : 'Escanteios';
+    return this.label();
   }
   averageValue(r: BacktestResult): number {
-    return this.isOffsides ? r.average_offsides : this.isGoals ? r.average_goals : r.average_corners;
+    switch (this.metric) {
+      case 'goals': return r.average_goals;
+      case 'offsides': return r.average_offsides;
+      case 'shots': return r.average_shots;
+      case 'shots_on_target': return r.average_shots_on_target;
+      default: return r.average_corners;
+    }
   }
   averageLabel(): string {
-    return this.isOffsides ? 'Média de impedimentos' : this.isGoals ? 'Média de gols' : 'Média de escanteios';
+    return `Média de ${this.label().toLowerCase()}`;
   }
 
   readonly drawdownTooltip =
@@ -142,6 +167,8 @@ export class FiltersComponent implements OnInit {
       metric: this.metric,
       goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
       offsides_threshold: this.isOffsides ? this.offsidesThreshold : undefined,
+      shots_threshold: this.isShots ? this.shotsThreshold : undefined,
+      shots_on_target_threshold: this.isShotsOnTarget ? this.shotsOnTargetThreshold : undefined,
       fixed_odd: this.usesFixedOdd ? (this.fixedOdd || undefined) : undefined,
     }).subscribe({
       next: res => {

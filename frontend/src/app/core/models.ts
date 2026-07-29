@@ -139,6 +139,28 @@ export interface DashboardResult {
   offside_home_stats?: SplitStats;
   offside_away_stats?: SplitStats;
   offside_sample_size: number;
+
+  // Chutes (total) — nullable, amostra própria (shot_sample_size).
+  shots_for: StatSummary;
+  shots_against: StatSummary;
+  total_shots: StatSummary;
+  shot_balance: number;
+  shot_frequencies: FrequencyResult[];
+  shot_trend: number[];
+  shot_home_stats?: SplitStats;
+  shot_away_stats?: SplitStats;
+  shot_sample_size: number;
+
+  // Chutes no gol — idem (sot_sample_size).
+  shots_on_target_for: StatSummary;
+  shots_on_target_against: StatSummary;
+  total_shots_on_target: StatSummary;
+  sot_balance: number;
+  sot_frequencies: FrequencyResult[];
+  sot_trend: number[];
+  sot_home_stats?: SplitStats;
+  sot_away_stats?: SplitStats;
+  sot_sample_size: number;
 }
 
 export interface TeamComparisonSide {
@@ -168,11 +190,12 @@ export interface FilterRunRequest {
   opponent_tier?: string;
   max_odds?: number;
   stake?: number;
-  // Métrica alternativa: "goals" usa goals_threshold, "offsides" usa
-  // offsides_threshold (linhas over/under) + fixed_odd.
+  // Métrica alternativa: cada uma com seu threshold; não-escanteios usam fixed_odd.
   metric?: string;
   goals_threshold?: number;
   offsides_threshold?: number;
+  shots_threshold?: number;
+  shots_on_target_threshold?: number;
   fixed_odd?: number;
 }
 
@@ -185,6 +208,8 @@ export interface BacktestEntry {
   total_corners: number;
   total_goals: number;
   total_offsides: number;
+  total_shots: number;
+  total_shots_on_target: number;
   hit: boolean;
   odd: number;
   profit_loss: number;
@@ -201,6 +226,8 @@ export interface BacktestResult {
   average_corners: number;
   average_goals: number;
   average_offsides: number;
+  average_shots: number;
+  average_shots_on_target: number;
   metric: string;
   longest_win_streak: number;
   longest_lose_streak: number;

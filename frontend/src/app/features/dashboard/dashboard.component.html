@@ -77,6 +77,8 @@
           <mat-button-toggle value="corners">Escanteios</mat-button-toggle>
           <mat-button-toggle value="goals">Gols</mat-button-toggle>
           <mat-button-toggle value="offsides">Impedimentos</mat-button-toggle>
+          <mat-button-toggle value="shots">Chutes</mat-button-toggle>
+          <mat-button-toggle value="shots_on_target">Chutes no gol</mat-button-toggle>
         </mat-button-toggle-group>
       </div>
     </div>
@@ -84,7 +86,7 @@
     @if (view(); as v) {
     @if (v.noData) {
       <div class="cl-card p-6 text-center text-sm text-slate-400">
-        Sem dados de impedimento para os jogos desta amostra. O provedor nem sempre publica impedimentos — jogos sincronizados recentemente costumam ter esse dado.
+        Sem dados dessa métrica para os jogos desta amostra. O provedor nem sempre publica esse dado — jogos sincronizados recentemente costumam tê-lo.
       </div>
     } @else {
     @if (v.sampleNote) {

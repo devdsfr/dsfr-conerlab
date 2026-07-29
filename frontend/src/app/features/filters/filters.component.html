@@ -42,6 +42,8 @@
         <mat-button-toggle value="corners">Escanteios</mat-button-toggle>
         <mat-button-toggle value="goals">Gols</mat-button-toggle>
         <mat-button-toggle value="offsides">Impedimentos</mat-button-toggle>
+        <mat-button-toggle value="shots">Chutes</mat-button-toggle>
+        <mat-button-toggle value="shots_on_target">Chutes no gol</mat-button-toggle>
       </mat-button-toggle-group>
     </div>
 
@@ -82,7 +84,7 @@
             <mat-option [value]="4">Acima de 4.5</mat-option>
           </mat-select>
         </mat-form-field>
-      } @else {
+      } @else if (isOffsides) {
         <mat-form-field appearance="outline" class="w-56">
           <mat-label>Linha de impedimentos (over)</mat-label>
           <mat-select [(ngModel)]="offsidesThreshold" panelClass="cl-select-panel">
@@ -93,6 +95,16 @@
             <mat-option [value]="4">Acima de 4.5</mat-option>
             <mat-option [value]="5">Acima de 5.5</mat-option>
           </mat-select>
+        </mat-form-field>
+      } @else if (isShots) {
+        <mat-form-field appearance="outline" class="w-52">
+          <mat-label>Acima de (chutes)</mat-label>
+          <input matInput type="number" [(ngModel)]="shotsThreshold" min="0">
+        </mat-form-field>
+      } @else {
+        <mat-form-field appearance="outline" class="w-56">
+          <mat-label>Acima de (chutes no gol)</mat-label>
+          <input matInput type="number" [(ngModel)]="shotsOnTargetThreshold" min="0">
         </mat-form-field>
       }
 
@@ -158,9 +170,9 @@
         Sem odd fixa informada, o backtest mostra só a taxa de acerto — o ROI/lucro não têm significado (esta métrica não tem odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.
       </div>
     }
-    @if (isOffsides) {
+    @if (isNullableMetric) {
       <div class="cl-card p-3 text-xs text-slate-400">
-        Impedimentos nem sempre são publicados pelo provedor: jogos sem esse dado ficam de fora do backtest, então a quantidade de partidas pode ser menor que a de escanteios/gols.
+        Essa métrica nem sempre é publicada pelo provedor: jogos sem o dado ficam de fora do backtest, então a quantidade de partidas pode ser menor que a de escanteios/gols.
       </div>
     }
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">

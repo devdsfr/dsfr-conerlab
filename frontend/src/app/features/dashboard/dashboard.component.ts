@@ -21,6 +21,21 @@ const VALID_LIMITS = [5, 10, 15, 20];
 
 type MatchSortColumn = 'match_date' | 'opponent' | 'is_home' | 'corners_for' | 'corners_against' | 'total_corners';
 
+// Métricas analisáveis no Dashboard. corners/goals vêm sempre; offsides/shots/
+// shots_on_target são nullable por jogo (nem todo provedor publica).
+type Metric = 'corners' | 'goals' | 'offsides' | 'shots' | 'shots_on_target';
+
+const METRIC_LABELS: Record<Metric, string> = {
+  corners: 'Escanteios',
+  goals: 'Gols',
+  offsides: 'Impedimentos',
+  shots: 'Chutes',
+  shots_on_target: 'Chutes no gol',
+};
+
+// Métricas cuja frequência usa linha over/under (rótulo "acima de N.5").
+const HALF_LINE_METRICS: Metric[] = ['goals', 'offsides'];
+
 // Rótulo/valor de um gráfico já "congelado": só é recalculado quando um novo
 // resultado chega do backend, nunca a cada ciclo de change detection. Isso
 // evita recriar o gráfico (e, com ele, o bug de canvas em branco) a cada
@@ -68,11 +83,11 @@ export class DashboardComponent implements OnInit {
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
 
-  // Métrica ativa — escanteios, gols ou impedimentos. O backend manda as três no mesmo
-  // response, então a troca de aba é instantânea (sem refetch).
-  metric = signal<'corners' | 'goals' | 'offsides'>('corners');
+  // Métrica ativa. O backend manda todas no mesmo response, então a troca de aba é
+  // instantânea (sem refetch).
+  metric = signal<Metric>('corners');
 
-  setMetric(m: 'corners' | 'goals' | 'offsides'): void {
+  setMetric(m: Metric): void {
     this.metric.set(m);
   }
 
@@ -81,8 +96,13 @@ export class DashboardComponent implements OnInit {
     const r = this.result();
     if (!r) return { labels: [], datasets: [] };
     const m = this.metric();
-    const data = m === 'goals' ? r.goal_trend : m === 'offsides' ? r.offside_trend : r.trend;
-    const label = m === 'goals' ? 'Gols' : m === 'offsides' ? 'Impedimentos' : 'Escanteios';
+    const data =
+      m === 'goals' ? r.goal_trend :
+      m === 'offsides' ? r.offside_trend :
+      m === 'shots' ? r.shot_trend :
+      m === 'shots_on_target' ? r.sot_trend :
+      r.trend;
+    const label = METRIC_LABELS[m];
     return {
       labels: data.map((_, i) => i + 1),
       datasets: [{ label, data }],
@@ -297,60 +317,71 @@ export class DashboardComponent implements OnInit {
   // --- Acessores da métrica ativa — evitam duplicar o template. Impedimentos podem
   // vir nulos por jogo (nem todo provedor publica), daí o retorno number | null.
   matchFor(m: TeamMatchView): number | null {
-    const mt = this.metric();
-    if (mt === 'goals') return m.goals_for;
-    if (mt === 'offsides') return m.offsides_for ?? null;
-    return m.corners_for;
+    switch (this.metric()) {
+      case 'goals': return m.goals_for;
+      case 'offsides': return m.offsides_for ?? null;
+      case 'shots': return m.shots_for ?? null;
+      case 'shots_on_target': return m.shots_on_target_for ?? null;
+      default: return m.corners_for;
+    }
   }
   matchAgainst(m: TeamMatchView): number | null {
-    const mt = this.metric();
-    if (mt === 'goals') return m.goals_against;
-    if (mt === 'offsides') return m.offsides_against ?? null;
-    return m.corners_against;
+    switch (this.metric()) {
+      case 'goals': return m.goals_against;
+      case 'offsides': return m.offsides_against ?? null;
+      case 'shots': return m.shots_against ?? null;
+      case 'shots_on_target': return m.shots_on_target_against ?? null;
+      default: return m.corners_against;
+    }
   }
   matchTotal(m: TeamMatchView): number | null {
-    const mt = this.metric();
-    if (mt === 'goals') return m.total_goals;
-    if (mt === 'offsides') {
-      if (m.offsides_for == null || m.offsides_against == null) return null;
-      return m.offsides_for + m.offsides_against;
-    }
-    return m.total_corners;
+    const f = this.matchFor(m);
+    const a = this.matchAgainst(m);
+    if (f == null || a == null) return null;
+    return f + a;
   }
 
-  // Bloco consolidado da métrica ativa (summaries, saldo, frequências, casa/fora e
-  // rótulos), recalculado só quando result() ou metric() mudam.
+  // Bloco consolidado da métrica ativa (summaries, saldo, frequências, casa/fora,
+  // rótulos e amostra), recalculado só quando result() ou metric() mudam. Cada métrica
+  // aponta para o seu conjunto de campos no DashboardResult. sample = null para métricas
+  // sempre presentes (escanteios/gols); número para as nullable.
   readonly view = computed(() => {
     const r = this.result();
     if (!r) return null;
     const m = this.metric();
-    const goals = m === 'goals';
-    const offs = m === 'offsides';
+    const map = {
+      corners: { forS: r.corners_for, againstS: r.corners_against, totalS: r.total_corners, balance: r.balance, freqs: r.frequencies, home: r.home_stats, away: r.away_stats, sample: null as number | null, forL: 'Escanteios conquistados', againstL: 'Escanteios sofridos', totalL: 'Total de escanteios', noun: 'escanteios' },
+      goals: { forS: r.goals_for, againstS: r.goals_against, totalS: r.total_goals, balance: r.goal_balance, freqs: r.goal_frequencies, home: r.goal_home_stats, away: r.goal_away_stats, sample: null as number | null, forL: 'Gols marcados', againstL: 'Gols sofridos', totalL: 'Total de gols', noun: 'gols' },
+      offsides: { forS: r.offsides_for, againstS: r.offsides_against, totalS: r.total_offsides, balance: r.offside_balance, freqs: r.offside_frequencies, home: r.offside_home_stats, away: r.offside_away_stats, sample: r.offside_sample_size as number | null, forL: 'Impedimentos cometidos', againstL: 'Impedimentos do adversário', totalL: 'Total de impedimentos', noun: 'impedimentos' },
+      shots: { forS: r.shots_for, againstS: r.shots_against, totalS: r.total_shots, balance: r.shot_balance, freqs: r.shot_frequencies, home: r.shot_home_stats, away: r.shot_away_stats, sample: r.shot_sample_size as number | null, forL: 'Chutes (a favor)', againstL: 'Chutes (do adversário)', totalL: 'Total de chutes', noun: 'chutes' },
+      shots_on_target: { forS: r.shots_on_target_for, againstS: r.shots_on_target_against, totalS: r.total_shots_on_target, balance: r.sot_balance, freqs: r.sot_frequencies, home: r.sot_home_stats, away: r.sot_away_stats, sample: r.sot_sample_size as number | null, forL: 'Chutes no gol (a favor)', againstL: 'Chutes no gol (do adversário)', totalL: 'Total de chutes no gol', noun: 'chutes no gol' },
+    };
+    const b = map[m];
     return {
       metric: m,
-      forSummary: offs ? r.offsides_for : goals ? r.goals_for : r.corners_for,
-      againstSummary: offs ? r.offsides_against : goals ? r.goals_against : r.corners_against,
-      totalSummary: offs ? r.total_offsides : goals ? r.total_goals : r.total_corners,
-      balance: offs ? r.offside_balance : goals ? r.goal_balance : r.balance,
-      frequencies: offs ? r.offside_frequencies : goals ? r.goal_frequencies : r.frequencies,
-      homeStats: offs ? r.offside_home_stats : goals ? r.goal_home_stats : r.home_stats,
-      awayStats: offs ? r.offside_away_stats : goals ? r.goal_away_stats : r.away_stats,
-      forLabel: offs ? 'Impedimentos cometidos' : goals ? 'Gols marcados' : 'Escanteios conquistados',
-      againstLabel: offs ? 'Impedimentos do adversário' : goals ? 'Gols sofridos' : 'Escanteios sofridos',
-      totalLabel: offs ? 'Total de impedimentos' : goals ? 'Total de gols' : 'Total de escanteios',
-      freqTitle: offs ? 'Frequências (total de impedimentos acima de N)' : goals ? 'Frequências (total de gols acima de N)' : 'Frequências (total de escanteios acima de N)',
-      trendTitle: offs ? 'Tendência (total de impedimentos por jogo)' : goals ? 'Tendência (total de gols por jogo)' : 'Tendência (total de escanteios por jogo)',
-      // Impedimentos têm amostra própria (só jogos com o dado). Vazia => aviso.
-      noData: offs && r.offside_sample_size === 0,
-      sampleNote: offs && r.offside_sample_size > 0 && r.offside_sample_size < r.sample_size
-        ? `Impedimentos disponíveis em ${r.offside_sample_size} de ${r.sample_size} jogos.`
+      forSummary: b.forS,
+      againstSummary: b.againstS,
+      totalSummary: b.totalS,
+      balance: b.balance,
+      frequencies: b.freqs,
+      homeStats: b.home,
+      awayStats: b.away,
+      forLabel: b.forL,
+      againstLabel: b.againstL,
+      totalLabel: b.totalL,
+      freqTitle: `Frequências (total de ${b.noun} acima de N)`,
+      trendTitle: `Tendência (total de ${b.noun} por jogo)`,
+      // Métricas nullable: amostra própria. Vazia => aviso "sem dados".
+      noData: b.sample === 0,
+      sampleNote: b.sample !== null && b.sample > 0 && b.sample < r.sample_size
+        ? `${METRIC_LABELS[m]}: dado disponível em ${b.sample} de ${r.sample_size} jogos.`
         : '',
     };
   });
 
   // Rótulo de cada linha de frequência: gols e impedimentos usam linha over/under
-  // (0.5, 1.5...), escanteios usam inteiro.
+  // (0.5, 1.5...); escanteios, chutes e chutes no gol usam inteiro.
   freqLabel(threshold: number): string {
-    return this.metric() === 'corners' ? `Acima de ${threshold}` : `Acima de ${threshold}.5`;
+    return HALF_LINE_METRICS.includes(this.metric()) ? `Acima de ${threshold}.5` : `Acima de ${threshold}`;
   }
 }

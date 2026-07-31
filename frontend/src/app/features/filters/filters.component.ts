@@ -121,6 +121,49 @@ export class FiltersComponent implements OnInit {
     return `Média de ${this.label().toLowerCase()}`;
   }
 
+  // ---- Análise de valor / odd -------------------------------------------------
+  // A odd que a casa oferece para o evento — usada só na calculadora de valor, não
+  // altera o backtest. hit_rate e roi já vêm em % do backend.
+  marketOdd?: number;
+
+  private hitRateFraction(r: BacktestResult): number {
+    return (r.hit_rate ?? 0) / 100;
+  }
+
+  // Odd mínima para a estratégia empatar no longo prazo = 1 / taxa de acerto. Acima
+  // disso é lucro esperado; abaixo, prejuízo esperado.
+  breakEvenOdd(r: BacktestResult): number | null {
+    const p = this.hitRateFraction(r);
+    return p > 0 ? 1 / p : null;
+  }
+
+  // ROI esperado por aposta para uma dada odd = taxa de acerto × odd − 1 (em %).
+  expectedRoiPct(r: BacktestResult, odd: number): number | null {
+    if (!odd || odd <= 1) return null;
+    return (this.hitRateFraction(r) * odd - 1) * 100;
+  }
+
+  marketRoiPct(r: BacktestResult): number | null {
+    return this.marketOdd ? this.expectedRoiPct(r, this.marketOdd) : null;
+  }
+
+  // A cada 10 apostas, quantas dá pra errar e ainda sair no lucro, para uma odd.
+  // Precisa vencer mais que 10/odd unidades; mínimo de vitórias = floor(10/odd)+1.
+  safetyMissesPer10(odd?: number): number | null {
+    if (!odd || odd <= 1) return null;
+    const minWins = Math.floor(10 / odd) + 1;
+    return Math.max(0, 10 - minWins);
+  }
+
+  // Cenários de odd para a mini-tabela comparativa (usa a taxa de acerto do filtro).
+  readonly oddScenarios = [1.5, 1.8, 2.0, 2.5, 3.0, 4.0];
+  scenarioRows(r: BacktestResult): { odd: number; roiPct: number; positive: boolean }[] {
+    return this.oddScenarios.map(odd => {
+      const roi = this.expectedRoiPct(r, odd) ?? 0;
+      return { odd, roiPct: roi, positive: roi > 0 };
+    });
+  }
+
   readonly drawdownTooltip =
     'Drawdown máximo: a maior sequência de perdas acumuladas (em unidades de stake) observada durante o backtest — indica o pior momento de "prejuízo" pelo qual a estratégia passou.';
   readonly consistencyTooltip =

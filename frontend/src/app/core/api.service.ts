@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   League,
   Season,
@@ -55,7 +56,17 @@ export class ApiService {
   }
 
   listSeasons(leagueId: number): Observable<Season[]> {
-    return this.http.get<Season[]>(`${this.base}/leagues/${leagueId}/seasons`);
+    // Mostra só temporadas do ano corrente pra frente — temporadas antigas (ex: 2024)
+    // poluíam os seletores e traziam times já rebaixados. É filtro de interface: o
+    // dado continua no banco. Fallback: se nada sobrar (liga só com histórico antigo),
+    // devolve tudo pra não deixar o seletor vazio.
+    const currentYear = new Date().getFullYear();
+    return this.http.get<Season[]>(`${this.base}/leagues/${leagueId}/seasons`).pipe(
+      map(seasons => {
+        const recent = seasons.filter(s => s.year >= currentYear);
+        return recent.length ? recent : seasons;
+      }),
+    );
   }
 
   /** seasonId restringe a equipes que de fato jogaram naquela liga+temporada — evita

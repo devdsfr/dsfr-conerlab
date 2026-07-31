@@ -212,6 +212,67 @@
     </div>
 
     <div class="cl-card p-4">
+      <h3 class="text-sm text-slate-400 mb-1">Análise de valor (odd)</h3>
+      <p class="text-xs text-slate-500 mb-4">
+        Com base na taxa de acerto histórica deste filtro ({{ r.hit_rate }}%). Isto mede desempenho
+        histórico — não é recomendação de aposta nem garantia de resultado futuro.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div class="cl-card p-4 !bg-slate-900/40">
+          <div class="text-xs text-slate-400">
+            Odd de equilíbrio
+            <span class="cl-help" matTooltip="Odd mínima para o filtro empatar no longo prazo = 1 ÷ taxa de acerto. Se a casa pagar acima disso, o retorno esperado é positivo; abaixo, negativo.">?</span>
+          </div>
+          @if (breakEvenOdd(r); as be) {
+            <div class="text-2xl font-semibold text-cornerlab-primary">{{ be | number:'1.2-2' }}</div>
+            <div class="text-xs text-slate-400">Só compensa buscar odds acima deste valor.</div>
+          } @else {
+            <div class="text-2xl font-semibold text-slate-500">—</div>
+            <div class="text-xs text-slate-400">Sem acertos no histórico.</div>
+          }
+        </div>
+
+        <div class="cl-card p-4 !bg-slate-900/40">
+          <div class="text-xs text-slate-400 mb-2">Testar uma odd da casa</div>
+          <mat-form-field appearance="outline" class="w-40">
+            <mat-label>Odd da casa</mat-label>
+            <input matInput type="number" step="0.01" min="1.01" [(ngModel)]="marketOdd" placeholder="ex: 2.10" />
+          </mat-form-field>
+          @if (marketRoiPct(r); as roi) {
+            <div class="mt-1">
+              <span class="text-sm text-slate-400">ROI esperado por aposta: </span>
+              <span class="text-lg font-semibold" [class.text-cornerlab-primary]="roi >= 0" [class.text-red-400]="roi < 0">
+                {{ roi >= 0 ? '+' : '' }}{{ roi | number:'1.1-1' }}%
+              </span>
+            </div>
+            <div class="text-xs text-slate-400">
+              A cada 10 apostas nessa odd, pode errar até
+              <span class="text-slate-200 font-semibold">{{ safetyMissesPer10(marketOdd) }}</span>
+              e ainda sair no lucro.
+            </div>
+          } @else {
+            <div class="text-xs text-slate-500">Informe a odd para ver o ROI esperado e a margem de segurança.</div>
+          }
+        </div>
+      </div>
+
+      <div class="text-xs text-slate-400 mb-2">
+        Comparativo de odds (ROI esperado com a taxa de acerto atual)
+      </div>
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        @for (row of scenarioRows(r); track row.odd) {
+          <div class="cl-card p-3 text-center !bg-slate-900/40" [class.!border-emerald-500\/40]="row.positive">
+            <div class="text-sm font-semibold">{{ row.odd | number:'1.1-2' }}</div>
+            <div class="text-sm font-semibold" [class.text-cornerlab-primary]="row.positive" [class.text-red-400]="!row.positive">
+              {{ row.roiPct >= 0 ? '+' : '' }}{{ row.roiPct | number:'1.0-0' }}%
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="cl-card p-4">
       <h3 class="text-sm text-slate-400 mb-3">Ocorrências ({{ r.entries.length }})</h3>
       <div class="max-h-96 overflow-auto">
         <table mat-table [dataSource]="r.entries" class="w-full min-w-[640px] !bg-transparent">

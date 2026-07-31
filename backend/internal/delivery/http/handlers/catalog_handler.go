@@ -84,16 +84,22 @@ func (h *CatalogHandler) ListTeams(c *gin.Context) {
 		}
 		leagueID = &id
 	}
-	var seasonID *int64
-	if sq := c.Query("season_id"); sq != "" {
+	// season_id pode vir repetido (?season_id=1&season_id=2) — o Simulador de Filtros
+	// permite múltiplas temporadas, então o dropdown de times reflete quem jogou a
+	// liga em qualquer uma das temporadas selecionadas.
+	var seasonIDs []int64
+	for _, sq := range c.QueryArray("season_id") {
+		if sq == "" {
+			continue
+		}
 		id, err := strconv.ParseInt(sq, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "season_id inválido"})
 			return
 		}
-		seasonID = &id
+		seasonIDs = append(seasonIDs, id)
 	}
-	teams, err := h.teams.List(c.Request.Context(), leagueID, seasonID)
+	teams, err := h.teams.List(c.Request.Context(), leagueID, seasonIDs...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -18,7 +18,7 @@
 
       <mat-form-field appearance="outline" class="w-64">
         <mat-label>Temporadas (backtest)</mat-label>
-        <mat-select [(ngModel)]="selectedSeasonIds" multiple panelClass="cl-select-panel">
+        <mat-select [(ngModel)]="selectedSeasonIds" (selectionChange)="onSeasonChange()" multiple panelClass="cl-select-panel">
           @for (s of seasons(); track s.id) {
             <mat-option [value]="s.id">{{ s.label }}</mat-option>
           }

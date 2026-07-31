@@ -62,10 +62,13 @@ export class ApiService {
    * listar equipes de temporadas passadas (ex: rebaixadas) como se ainda
    * estivessem na liga atual. Omitir seasonId mantém o comportamento "todas as
    * temporadas" (vínculo histórico da liga). */
-  listTeams(leagueId?: number, query?: string, seasonId?: number): Observable<Team[]> {
+  listTeams(leagueId?: number, query?: string, seasonId?: number | number[]): Observable<Team[]> {
     let url = `${this.base}/teams?`;
     if (leagueId) url += `league_id=${leagueId}&`;
-    if (seasonId) url += `season_id=${seasonId}&`;
+    // season_id aceita um valor (Dashboard) ou vários (Simulador multi-temporada);
+    // repetido na query string vira season_id=1&season_id=2 no backend.
+    const seasons = seasonId == null ? [] : Array.isArray(seasonId) ? seasonId : [seasonId];
+    for (const s of seasons) url += `season_id=${s}&`;
     if (query) url += `q=${encodeURIComponent(query)}&`;
     return this.http.get<Team[]>(url);
   }

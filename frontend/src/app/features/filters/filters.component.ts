@@ -141,11 +141,30 @@ export class FiltersComponent implements OnInit {
   onLeagueChange(): void {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonIds = [];
+    this.selectedTeamId = undefined;
     this.api.listSeasons(this.selectedLeagueId).subscribe(s => {
       this.seasons.set(s);
       this.selectedSeasonIds = s.map(x => x.id); // por padrão, roda em todas as temporadas
+      this.reloadTeams();
     });
-    this.api.listTeams(this.selectedLeagueId).subscribe(t => this.teams.set(t));
+  }
+
+  // O dropdown de times reflete só quem jogou a liga nas temporadas selecionadas —
+  // sem isso, um time rebaixado (ex: Atlético-GO na Série A) aparecia para sempre
+  // via vínculo histórico. Recarrega ao trocar a seleção de temporadas.
+  onSeasonChange(): void {
+    this.reloadTeams();
+  }
+
+  private reloadTeams(): void {
+    if (!this.selectedLeagueId) return;
+    this.api.listTeams(this.selectedLeagueId, undefined, this.selectedSeasonIds).subscribe(t => {
+      this.teams.set(t);
+      // se o time escolhido não joga mais nas temporadas selecionadas, limpa.
+      if (this.selectedTeamId && !t.some(x => x.id === this.selectedTeamId)) {
+        this.selectedTeamId = undefined;
+      }
+    });
   }
 
   runFilter(): void {

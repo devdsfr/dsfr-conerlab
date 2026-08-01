@@ -56,7 +56,7 @@
   }
 
   @if (error()) {
-    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+    <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
   @if (!loading() && !error() && !result()) {
@@ -99,9 +99,9 @@
           <dt class="text-slate-400">Média</dt><dd>{{ v.forSummary.mean }}</dd>
           <dt class="text-slate-400">Maior</dt><dd>{{ v.forSummary.max }}</dd>
           <dt class="text-slate-400">Menor</dt><dd>{{ v.forSummary.min }}</dd>
-          <dt class="text-slate-400">Desvio padrão <span class="cl-help" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.forSummary.std_dev }}</dd>
+          <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.forSummary.std_dev }}</dd>
           <dt class="text-slate-400">Mediana</dt><dd>{{ v.forSummary.median }}</dd>
-          <dt class="text-slate-400">Moda <span class="cl-help" [matTooltip]="modeTooltip">?</span></dt><dd>{{ v.forSummary.mode?.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Moda <span class="cl-help" tabindex="0" [matTooltip]="modeTooltip">?</span></dt><dd>{{ v.forSummary.mode?.join(', ') || '—' }}</dd>
           <dt class="text-slate-400">Total</dt><dd>{{ v.forSummary.total }}</dd>
         </dl>
       </div>
@@ -111,9 +111,9 @@
           <dt class="text-slate-400">Média</dt><dd>{{ v.againstSummary.mean }}</dd>
           <dt class="text-slate-400">Maior</dt><dd>{{ v.againstSummary.max }}</dd>
           <dt class="text-slate-400">Menor</dt><dd>{{ v.againstSummary.min }}</dd>
-          <dt class="text-slate-400">Desvio padrão <span class="cl-help" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.againstSummary.std_dev }}</dd>
+          <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.againstSummary.std_dev }}</dd>
           <dt class="text-slate-400">Mediana</dt><dd>{{ v.againstSummary.median }}</dd>
-          <dt class="text-slate-400">Moda <span class="cl-help" [matTooltip]="modeTooltip">?</span></dt><dd>{{ v.againstSummary.mode?.join(', ') || '—' }}</dd>
+          <dt class="text-slate-400">Moda <span class="cl-help" tabindex="0" [matTooltip]="modeTooltip">?</span></dt><dd>{{ v.againstSummary.mode?.join(', ') || '—' }}</dd>
           <dt class="text-slate-400">Total</dt><dd>{{ v.againstSummary.total }}</dd>
         </dl>
       </div>
@@ -126,8 +126,8 @@
           <dt class="text-slate-400">Média</dt><dd>{{ v.totalSummary.mean }}</dd>
           <dt class="text-slate-400">Maior</dt><dd>{{ v.totalSummary.max }}</dd>
           <dt class="text-slate-400">Menor</dt><dd>{{ v.totalSummary.min }}</dd>
-          <dt class="text-slate-400">Desvio padrão <span class="cl-help" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.totalSummary.std_dev }}</dd>
-          <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.totalSummary.consistency_index }}</dd>
+          <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ v.totalSummary.std_dev }}</dd>
+          <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.totalSummary.consistency_index }}</dd>
         </dl>
       </div>
     </div>
@@ -165,7 +165,7 @@
             <dt class="text-slate-400">Média</dt><dd>{{ v.homeStats.mean }}</dd>
             <dt class="text-slate-400">Maior</dt><dd>{{ v.homeStats.max }}</dd>
             <dt class="text-slate-400">Menor</dt><dd>{{ v.homeStats.min }}</dd>
-            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.homeStats.consistency }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.homeStats.consistency }}</dd>
           </dl>
         </div>
       }
@@ -177,7 +177,7 @@
             <dt class="text-slate-400">Média</dt><dd>{{ v.awayStats.mean }}</dd>
             <dt class="text-slate-400">Maior</dt><dd>{{ v.awayStats.max }}</dd>
             <dt class="text-slate-400">Menor</dt><dd>{{ v.awayStats.min }}</dd>
-            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.awayStats.consistency }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ v.awayStats.consistency }}</dd>
           </dl>
         </div>
       }
@@ -234,7 +234,7 @@
           <th mat-header-cell *matHeaderCellDef></th>
           <td mat-cell *matCellDef="let m">
             <button mat-icon-button type="button" (click)="toggleMatchDetails(m.match_id)" matTooltip="Mais estatísticas desta partida">
-              <mat-icon class="!text-[18px] !w-[18px] !h-[18px] !leading-[18px]">{{ isMatchExpanded(m.match_id) ? 'expand_less' : 'expand_more' }}</mat-icon>
+              <mat-icon aria-hidden="true" class="!text-[18px] !w-[18px] !h-[18px] !leading-[18px]">{{ isMatchExpanded(m.match_id) ? 'expand_less' : 'expand_more' }}</mat-icon>
             </button>
           </td>
         </ng-container>

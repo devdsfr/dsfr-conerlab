@@ -8,30 +8,30 @@
 
   <div class="cl-card p-5 border border-cornerlab-primary/30 bg-gradient-to-br from-cornerlab-primary/10 to-transparent">
     <div class="flex items-center gap-2 mb-3">
-      <mat-icon class="text-amber-400">star</mat-icon>
+      <mat-icon aria-hidden="true" class="text-amber-400">star</mat-icon>
       <span class="text-sm font-medium text-slate-100">Por que assinar o Premium</span>
     </div>
     <div class="grid gap-3 sm:grid-cols-2">
       <div class="flex gap-2 items-start">
-        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">account_balance_wallet</mat-icon>
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">account_balance_wallet</mat-icon>
         <div class="text-sm text-slate-300">
           <span class="font-medium text-slate-100">Gestão de Banca completa</span> — acompanhe stake, ROI e evolução do seu capital sem depender de planilhas manuais.
         </div>
       </div>
       <div class="flex gap-2 items-start">
-        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">insights</mat-icon>
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">insights</mat-icon>
         <div class="text-sm text-slate-300">
           <span class="font-medium text-slate-100">Projeções automáticas</span> — simule cenários e enxergue a tendência da sua estratégia antes de apostar.
         </div>
       </div>
       <div class="flex gap-2 items-start">
-        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">history</mat-icon>
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">history</mat-icon>
         <div class="text-sm text-slate-300">
           <span class="font-medium text-slate-100">Histórico completo</span> — o plano gratuito limita a 90 dias; assinantes analisam a temporada inteira.
         </div>
       </div>
       <div class="flex gap-2 items-start">
-        <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">notifications_active</mat-icon>
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">notifications_active</mat-icon>
         <div class="text-sm text-slate-300">
           <span class="font-medium text-slate-100">Alertas e exportações</span> — receba avisos das suas ligas favoritas e exporte relatórios quando precisar.
         </div>
@@ -55,11 +55,11 @@
         <div class="flex flex-col gap-3">
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="loginEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="loginEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha</mat-label>
-            <input matInput type="password" [(ngModel)]="loginPassword">
+            <input matInput type="password" autocomplete="current-password" name="password" [(ngModel)]="loginPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
           <button mat-button type="button" class="!text-xs !min-w-0 self-start !px-1" (click)="loginMode.set('forgot')">Esqueci minha senha</button>
@@ -72,11 +72,11 @@
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="registerEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="registerEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha (mín. 6 caracteres)</mat-label>
-            <input matInput type="password" [(ngModel)]="registerPassword">
+            <input matInput type="password" autocomplete="new-password" name="new-password" [(ngModel)]="registerPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
         </div>
@@ -87,13 +87,13 @@
             <p class="text-xs text-slate-400 -mt-1">Informe o e-mail da sua conta — enviaremos um link para você escolher uma nova senha.</p>
             <mat-form-field appearance="outline">
               <mat-label>E-mail</mat-label>
-              <input matInput type="email" [(ngModel)]="forgotEmail">
+              <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="forgotEmail">
             </mat-form-field>
             <button mat-flat-button color="primary" [disabled]="forgotLoading()" (click)="submitForgotPassword()">
               @if (forgotLoading()) { <mat-spinner diameter="18"></mat-spinner> } @else { Enviar link de redefinição }
             </button>
             @if (forgotError()) {
-              <div class="text-xs text-red-400">{{ forgotError() }}</div>
+              <div role="alert" class="text-xs text-red-400">{{ forgotError() }}</div>
             }
           } @else {
             <div class="text-sm text-cyan-300">Se o e-mail estiver cadastrado, enviamos um link de redefinição — confira sua caixa de entrada (e o spam).</div>
@@ -106,7 +106,7 @@
         <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
       }
       @if (authError()) {
-        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+        <div role="alert" class="text-xs text-red-400 mt-3">{{ authError() }}</div>
       }
     </div>
   } @else {
@@ -127,7 +127,7 @@
       } @else if (status.is_premium) {
         <div class="cl-card p-6 max-w-md flex flex-col gap-3">
           <div class="flex items-center gap-2">
-            <mat-icon class="text-cyan-400">workspace_premium</mat-icon>
+            <mat-icon aria-hidden="true" class="text-cyan-400">workspace_premium</mat-icon>
             <span class="text-slate-100 font-medium">
               Você é assinante Premium
               @if (status.subscription_status === 'trialing') { <span class="text-amber-400">(período de teste)</span> }
@@ -152,7 +152,7 @@
           <ul class="flex flex-col gap-2 text-sm text-slate-300">
             @for (f of features; track f) {
               <li class="flex items-start gap-2">
-                <mat-icon class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">check</mat-icon>
+                <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary mt-0.5">check</mat-icon>
                 <span>{{ f }}</span>
               </li>
             }
@@ -165,7 +165,7 @@
     }
 
     @if (actionError()) {
-      <div class="text-xs text-red-400">{{ actionError() }}</div>
+      <div role="alert" class="text-xs text-red-400">{{ actionError() }}</div>
     }
   }
 

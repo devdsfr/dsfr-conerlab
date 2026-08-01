@@ -13,7 +13,7 @@ import { MatIconModule } from '@angular/material/icon';
   imports: [CommonModule, RouterLink, MatIconModule],
   template: `
     <div class="cl-card max-w-md mx-auto my-12 p-8 flex flex-col items-center text-center gap-2">
-      <mat-icon class="!text-4xl !w-10 !h-10 text-cyan-400 mb-1">workspace_premium</mat-icon>
+      <mat-icon aria-hidden="true" class="!text-4xl !w-10 !h-10 text-cyan-400 mb-1">workspace_premium</mat-icon>
       <h2 class="text-lg font-semibold text-slate-100">{{ title() }}</h2>
       <p class="text-sm text-slate-400 mb-2">{{ description() }}</p>
       <a

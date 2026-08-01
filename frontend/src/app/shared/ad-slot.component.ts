@@ -19,6 +19,7 @@ const ADSENSE_CONFIGURED = ADSENSE_CLIENT_ID !== 'ca-pub-0000000000000000';
       <ins
         class="adsbygoogle block"
         style="display:block"
+        aria-hidden="true"
         [attr.data-ad-client]="clientId"
         [attr.data-ad-slot]="slot()"
         data-ad-format="auto"

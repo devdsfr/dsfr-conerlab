@@ -11,7 +11,7 @@
       rel="noopener"
       class="cl-card p-5 flex items-center gap-4 no-underline hover:border-cornerlab-primary transition-colors"
     >
-      <mat-icon class="!text-cornerlab-primary !w-9 !h-9 !text-[36px] !leading-9">chat</mat-icon>
+      <mat-icon aria-hidden="true" class="!text-cornerlab-primary !w-9 !h-9 !text-[36px] !leading-9">chat</mat-icon>
       <div>
         <div class="text-xs text-slate-400 uppercase tracking-wide">WhatsApp</div>
         <div class="text-base font-medium text-slate-100">{{ whatsappDisplay }}</div>
@@ -23,7 +23,7 @@
       [href]="emailLink"
       class="cl-card p-5 flex items-center gap-4 no-underline hover:border-cornerlab-accent transition-colors"
     >
-      <mat-icon class="!text-cornerlab-accent !w-9 !h-9 !text-[36px] !leading-9">mail</mat-icon>
+      <mat-icon aria-hidden="true" class="!text-cornerlab-accent !w-9 !h-9 !text-[36px] !leading-9">mail</mat-icon>
       <div>
         <div class="text-xs text-slate-400 uppercase tracking-wide">E-mail</div>
         <div class="text-base font-medium text-slate-100 break-all">{{ email }}</div>
@@ -38,7 +38,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
       @for (f of features; track f.name) {
         <div class="flex items-start gap-3">
-          <mat-icon class="!text-cornerlab-primary !w-6 !h-6 !text-[22px] !leading-6 shrink-0 mt-0.5">{{ f.icon }}</mat-icon>
+          <mat-icon aria-hidden="true" class="!text-cornerlab-primary !w-6 !h-6 !text-[22px] !leading-6 shrink-0 mt-0.5">{{ f.icon }}</mat-icon>
           <div>
             <div class="text-sm text-slate-100 font-medium">{{ f.name }}</div>
             <div class="text-xs text-slate-400 mt-0.5">{{ f.text }}</div>

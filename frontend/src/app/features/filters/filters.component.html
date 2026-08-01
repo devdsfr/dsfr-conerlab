@@ -71,7 +71,7 @@
       @if (metric === 'corners') {
         <mat-form-field appearance="outline" class="w-52">
           <mat-label>Acima de (escanteios)</mat-label>
-          <input matInput type="number" [(ngModel)]="cornersThreshold" min="1">
+          <input matInput type="number" inputmode="decimal" [(ngModel)]="cornersThreshold" min="1">
         </mat-form-field>
       } @else if (isGoals) {
         <mat-form-field appearance="outline" class="w-52">
@@ -99,12 +99,12 @@
       } @else if (isShots) {
         <mat-form-field appearance="outline" class="w-52">
           <mat-label>Acima de (chutes)</mat-label>
-          <input matInput type="number" [(ngModel)]="shotsThreshold" min="0">
+          <input matInput type="number" inputmode="decimal" [(ngModel)]="shotsThreshold" min="0">
         </mat-form-field>
       } @else {
         <mat-form-field appearance="outline" class="w-56">
           <mat-label>Acima de (chutes no gol)</mat-label>
-          <input matInput type="number" [(ngModel)]="shotsOnTargetThreshold" min="0">
+          <input matInput type="number" inputmode="decimal" [(ngModel)]="shotsOnTargetThreshold" min="0">
         </mat-form-field>
       }
 
@@ -121,18 +121,18 @@
       @if (!usesFixedOdd) {
         <mat-form-field appearance="outline" class="w-40">
           <mat-label>Odds máximas</mat-label>
-          <input matInput type="number" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
+          <input matInput type="number" inputmode="decimal" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
         </mat-form-field>
       } @else {
         <mat-form-field appearance="outline" class="w-40" matTooltip="Esta métrica não tem odds históricas no banco. Informe uma odd fixa para simular o retorno (opcional).">
           <mat-label>Odd fixa (simular)</mat-label>
-          <input matInput type="number" step="0.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
+          <input matInput type="number" inputmode="decimal" step="0.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
         </mat-form-field>
       }
 
       <mat-form-field appearance="outline" class="w-36">
         <mat-label>Stake</mat-label>
-        <input matInput type="number" [(ngModel)]="stake" min="1">
+        <input matInput type="number" inputmode="decimal" [(ngModel)]="stake" min="1">
       </mat-form-field>
 
       <button mat-flat-button color="primary" (click)="runFilter()" [disabled]="!selectedLeagueId || loading()">
@@ -145,7 +145,7 @@
     <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
   }
   @if (error()) {
-    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+    <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
   @if (!loading() && !error() && !result()) {
@@ -206,7 +206,7 @@
         <div class="text-xl font-semibold">{{ r.longest_lose_streak }}</div>
       </div>
       <div class="cl-card p-4">
-        <div class="text-xs text-slate-400">Drawdown máximo <span class="cl-help" [matTooltip]="drawdownTooltip">?</span></div>
+        <div class="text-xs text-slate-400">Drawdown máximo <span class="cl-help" tabindex="0" [matTooltip]="drawdownTooltip">?</span></div>
         <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
       </div>
     </div>
@@ -222,7 +222,7 @@
         <div class="cl-card p-4 !bg-slate-900/40">
           <div class="text-xs text-slate-400">
             Odd de equilíbrio
-            <span class="cl-help" matTooltip="Odd mínima para o filtro empatar no longo prazo = 1 ÷ taxa de acerto. Se a casa pagar acima disso, o retorno esperado é positivo; abaixo, negativo.">?</span>
+            <span class="cl-help" tabindex="0" matTooltip="Odd mínima para o filtro empatar no longo prazo = 1 ÷ taxa de acerto. Se a casa pagar acima disso, o retorno esperado é positivo; abaixo, negativo.">?</span>
           </div>
           @if (breakEvenOdd(r); as be) {
             <div class="text-2xl font-semibold text-cornerlab-primary">{{ be | number:'1.2-2' }}</div>
@@ -237,7 +237,7 @@
           <div class="text-xs text-slate-400 mb-2">Testar uma odd da casa</div>
           <mat-form-field appearance="outline" class="w-40">
             <mat-label>Odd da casa</mat-label>
-            <input matInput type="number" step="0.01" min="1.01" [(ngModel)]="marketOdd" placeholder="ex: 2.10" />
+            <input matInput type="number" inputmode="decimal" step="0.01" min="1.01" [(ngModel)]="marketOdd" placeholder="ex.: 2.10…" />
           </mat-form-field>
           @if (marketRoiPct(r); as roi) {
             <div class="mt-1">

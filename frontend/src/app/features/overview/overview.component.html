@@ -9,7 +9,7 @@
   }
 
   @if (error()) {
-    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+    <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
   @if (!loading() && !error()) {

@@ -19,13 +19,23 @@ import Chart from 'chart.js/auto';
 @Component({
   selector: 'cl-simple-chart',
   standalone: true,
-  template: `<canvas #canvasRef></canvas>`,
+  template: `<canvas #canvasRef role="img" [attr.aria-label]="ariaLabel || chartDescription()"></canvas>`,
   styles: [':host { display:block; height: 220px; width: 100%; }', 'canvas { max-height: 220px; }'],
 })
 export class SimpleChartComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() labels: (string | number)[] = [];
   @Input() datasets: { label: string; data: number[]; color?: string }[] = [];
   @Input() type: 'line' | 'bar' = 'line';
+  // Alternativa textual para leitores de tela (canvas não tem conteúdo acessível).
+  @Input() ariaLabel?: string;
+
+  chartDescription(): string {
+    const series = this.datasets.map(d => d.label).filter(Boolean).join(', ');
+    const kind = this.type === 'bar' ? 'de barras' : 'de linha';
+    return series
+      ? `Gráfico ${kind} — ${series}`
+      : `Gráfico ${kind} de estatísticas`;
+  }
 
   @ViewChild('canvasRef') canvasRef!: ElementRef<HTMLCanvasElement>;
   private chart?: Chart;

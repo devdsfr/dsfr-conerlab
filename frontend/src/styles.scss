@@ -21,12 +21,46 @@ html {
 @tailwind components;
 @tailwind utilities;
 
+html {
+  color-scheme: dark;
+}
+
 html, body {
   height: 100%;
   margin: 0;
   font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
   background-color: #0f172a;
   color: #e2e8f0;
+  // Alinha os dígitos em tabelas/cards de estatística (colunas não "dançam").
+  font-variant-numeric: tabular-nums;
+}
+
+// Respeita usuários que pedem menos movimento: reduz transições/animações a quase
+// instantâneas em vez de removê-las bruscamente.
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+// Link "pular para o conteúdo" — visível só quando recebe foco por teclado.
+.cl-skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 2000;
+  background: #111827;
+  color: #e2e8f0;
+  border: 1px solid #22c55e;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  transition: top 0.15s ease;
+}
+.cl-skip-link:focus {
+  top: 0.5rem;
 }
 
 .cl-card {

@@ -15,11 +15,11 @@
         <div class="flex flex-col gap-3">
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="loginEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="loginEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha</mat-label>
-            <input matInput type="password" [(ngModel)]="loginPassword">
+            <input matInput type="password" autocomplete="current-password" name="password" [(ngModel)]="loginPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
         </div>
@@ -31,11 +31,11 @@
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="registerEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="registerEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha (mín. 6 caracteres)</mat-label>
-            <input matInput type="password" [(ngModel)]="registerPassword">
+            <input matInput type="password" autocomplete="new-password" name="new-password" [(ngModel)]="registerPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
         </div>
@@ -45,7 +45,7 @@
         <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
       }
       @if (authError()) {
-        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+        <div role="alert" class="text-xs text-red-400 mt-3">{{ authError() }}</div>
       }
     </div>
   } @else if (billing.loading()) {
@@ -60,17 +60,17 @@
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
     <mat-form-field appearance="outline" class="w-52">
       <mat-label>Banca inicial (R$)</mat-label>
-      <input matInput type="number" min="0" step="100" [(ngModel)]="banca" />
+      <input matInput type="number" inputmode="decimal" min="0" step="100" [(ngModel)]="banca" />
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="w-40">
       <mat-label>Odd média</mat-label>
-      <input matInput type="number" min="1.01" step="0.01" [(ngModel)]="oddMedia" />
+      <input matInput type="number" inputmode="decimal" min="1.01" step="0.01" [(ngModel)]="oddMedia" />
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="w-52">
-      <mat-label>Vitórias consecutivas <span class="cl-help" [matTooltip]="explicacaoFormula">?</span></mat-label>
-      <input matInput type="number" min="1" step="1" [(ngModel)]="vitorias" />
+      <mat-label>Vitórias consecutivas <span class="cl-help" tabindex="0" [matTooltip]="explicacaoFormula">?</span></mat-label>
+      <input matInput type="number" inputmode="decimal" min="1" step="1" [(ngModel)]="vitorias" />
     </mat-form-field>
   </div>
 

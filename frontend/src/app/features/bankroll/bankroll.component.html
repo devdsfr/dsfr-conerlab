@@ -23,11 +23,11 @@
         <div class="flex flex-col gap-3">
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="loginEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="loginEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha</mat-label>
-            <input matInput type="password" [(ngModel)]="loginPassword">
+            <input matInput type="password" autocomplete="current-password" name="password" [(ngModel)]="loginPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitLogin()">Entrar</button>
         </div>
@@ -39,11 +39,11 @@
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>E-mail</mat-label>
-            <input matInput type="email" [(ngModel)]="registerEmail">
+            <input matInput type="email" autocomplete="email" name="email" spellcheck="false" [(ngModel)]="registerEmail">
           </mat-form-field>
           <mat-form-field appearance="outline">
             <mat-label>Senha (mín. 6 caracteres)</mat-label>
-            <input matInput type="password" [(ngModel)]="registerPassword">
+            <input matInput type="password" autocomplete="new-password" name="new-password" [(ngModel)]="registerPassword">
           </mat-form-field>
           <button mat-flat-button color="primary" [disabled]="authLoading()" (click)="submitRegister()">Criar conta e continuar</button>
         </div>
@@ -53,7 +53,7 @@
         <div class="flex justify-center py-3"><mat-spinner diameter="24"></mat-spinner></div>
       }
       @if (authError()) {
-        <div class="text-xs text-red-400 mt-3">{{ authError() }}</div>
+        <div role="alert" class="text-xs text-red-400 mt-3">{{ authError() }}</div>
       }
       <p class="text-xs text-slate-400 mt-4">
         Este módulo acompanha a evolução da sua banca com base nas apostas que você registra na plataforma (Módulo de Apostas) — por isso é vinculado à sua conta.
@@ -81,7 +81,7 @@
         <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
       }
       @if (statusError()) {
-        <div class="cl-card p-4 text-red-400">{{ statusError() }}</div>
+        <div role="alert" class="cl-card p-4 text-red-400">{{ statusError() }}</div>
       }
 
       @if (status(); as s) {
@@ -109,7 +109,7 @@
           <div class="flex items-center justify-between">
             <div class="text-sm text-slate-400">
               Score de Maturidade da Estratégia (SME)
-              <span class="cl-help" [matTooltip]="smeTooltip">?</span>
+              <span class="cl-help" tabindex="0" [matTooltip]="smeTooltip">?</span>
             </div>
             <div class="text-lg font-semibold">{{ s.maturity.score }}/100</div>
           </div>
@@ -205,7 +205,7 @@
           </div>
 
           @if (actionError()) {
-            <div class="text-xs text-red-400 mt-2">{{ actionError() }}</div>
+            <div role="alert" class="text-xs text-red-400 mt-2">{{ actionError() }}</div>
           }
         </div>
 
@@ -236,7 +236,7 @@
               <div class="flex items-center gap-2">
                 <mat-form-field appearance="outline" class="w-20">
                   <mat-label>Ordem</mat-label>
-                  <input matInput type="number" [(ngModel)]="p.sequence">
+                  <input matInput type="number" inputmode="decimal" [(ngModel)]="p.sequence">
                 </mat-form-field>
                 <mat-form-field appearance="outline" class="w-48">
                   <mat-label>Nome</mat-label>
@@ -244,7 +244,7 @@
                 </mat-form-field>
                 <mat-form-field appearance="outline" class="w-40">
                   <mat-label>Valor (R$)</mat-label>
-                  <input matInput type="number" [(ngModel)]="p.amount">
+                  <input matInput type="number" inputmode="decimal" [(ngModel)]="p.amount">
                 </mat-form-field>
                 <button mat-icon-button color="warn" (click)="removePhase($index)" matTooltip="Remover fase">✕</button>
               </div>
@@ -257,7 +257,7 @@
           </div>
         }
         @if (phasesError()) {
-          <div class="text-xs text-red-400 mt-2">{{ phasesError() }}</div>
+          <div role="alert" class="text-xs text-red-400 mt-2">{{ phasesError() }}</div>
         }
       </div>
     }
@@ -311,7 +311,7 @@
                   <div class="flex flex-col gap-2 mt-3 pt-3 border-t border-slate-800">
                     <mat-form-field appearance="outline">
                       <mat-label>Resultado real desta rodada (R$, use negativo se foi prejuízo)</mat-label>
-                      <input matInput type="number" [(ngModel)]="roundResult">
+                      <input matInput type="number" inputmode="decimal" [(ngModel)]="roundResult">
                     </mat-form-field>
                     <mat-form-field appearance="outline">
                       <mat-label>Observações (opcional)</mat-label>
@@ -322,7 +322,7 @@
                       <button mat-button (click)="cancelConfirmRound()">Cancelar</button>
                     </div>
                     @if (roundError()) {
-                      <div class="text-xs text-red-400">{{ roundError() }}</div>
+                      <div role="alert" class="text-xs text-red-400">{{ roundError() }}</div>
                     }
                   </div>
                 }
@@ -385,31 +385,31 @@
           <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             <mat-form-field appearance="outline">
               <mat-label>Tempo mínimo (dias)</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_days">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_days">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Quantidade mínima de apostas</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_bets">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_bets">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Win Rate mínimo (%)</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_win_rate">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_win_rate">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>ROI mínimo (%)</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_roi">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_roi">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Yield mínimo (%)</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_yield">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_yield">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Ciclos completos mínimos</mat-label>
-              <input matInput type="number" [(ngModel)]="c.min_completed_cycles">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.min_completed_cycles">
             </mat-form-field>
             <mat-form-field appearance="outline">
               <mat-label>Vitórias consecutivas por ciclo</mat-label>
-              <input matInput type="number" [(ngModel)]="c.cycle_win_streak">
+              <input matInput type="number" inputmode="decimal" [(ngModel)]="c.cycle_win_streak">
             </mat-form-field>
           </div>
           <mat-checkbox class="mt-2" [(ngModel)]="c.require_positive_profit">Exigir lucro líquido positivo</mat-checkbox>
@@ -419,7 +419,7 @@
           </div>
         }
         @if (criteriaError()) {
-          <div class="text-xs text-red-400 mt-2">{{ criteriaError() }}</div>
+          <div role="alert" class="text-xs text-red-400 mt-2">{{ criteriaError() }}</div>
         }
       </div>
     }

@@ -3,7 +3,7 @@
     <h1 class="text-xl font-semibold text-slate-100">Integrações</h1>
     <p class="text-sm text-slate-400 mt-1">
       Status e consumo das APIs externas usadas pelo CornerLab (OpenAI para explicações via IA, API-Football e SportMonks para dados reais de partidas).
-      <span class="cl-help" [matTooltip]="panelTooltip">?</span>
+      <span class="cl-help" tabindex="0" [matTooltip]="panelTooltip">?</span>
     </p>
   </div>
 
@@ -27,7 +27,7 @@
           }
         }
         <button mat-icon-button (click)="checkApiFootball()" matTooltip="Verificar de novo" class="!w-6 !h-6 !leading-6">
-          <mat-icon class="!text-[16px] !w-[16px] !h-[16px] !leading-[16px]">refresh</mat-icon>
+          <mat-icon aria-hidden="true" class="!text-[16px] !w-[16px] !h-[16px] !leading-[16px]">refresh</mat-icon>
         </button>
       </div>
       <div class="text-xs text-slate-400 mt-1">
@@ -47,7 +47,7 @@
   </div>
 
   @if (syncError()) {
-    <div class="cl-card p-3 text-xs text-red-400">{{ syncError() }}</div>
+    <div role="alert" class="cl-card p-3 text-xs text-red-400">{{ syncError() }}</div>
   }
   @if (syncResult(); as sr) {
     <div class="cl-card p-3 text-xs text-cornerlab-primary">
@@ -94,7 +94,7 @@
   }
   @if (error()) {
     <div class="cl-card p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-      <div class="text-sm text-red-400 flex-1">{{ error() }}</div>
+      <div role="alert" class="text-sm text-red-400 flex-1">{{ error() }}</div>
       <button mat-stroked-button color="primary" (click)="load()">Tentar novamente</button>
     </div>
   }

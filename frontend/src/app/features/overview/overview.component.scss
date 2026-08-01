@@ -46,7 +46,7 @@
   background: rgba(56, 189, 248, 0.06);
   border: 1px solid rgba(56, 189, 248, 0.22);
   border-radius: 0.5rem;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 .ov-nav-btn {
   width: 2.25rem;
@@ -258,7 +258,7 @@
   border: 1px solid rgba(56, 189, 248, 0.2);
   border-radius: 0.5rem;
   padding: 0.2rem 0.6rem;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 .ov-team:hover {
   color: #fff;

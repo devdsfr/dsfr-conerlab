@@ -53,7 +53,7 @@
     <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
   }
   @if (error()) {
-    <div class="cl-card p-4 text-red-400">{{ error() }}</div>
+    <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
   @if (!loading() && !error() && !result()) {
@@ -71,8 +71,8 @@
           <h2 class="text-lg font-medium mb-2">{{ side.data.team.name }} <span class="text-xs text-slate-400">({{ side.data.team.tier }})</span></h2>
           <dl class="grid grid-cols-2 gap-y-1 text-sm mb-3">
             <dt class="text-slate-400">Média (total)</dt><dd>{{ side.data.total_corners.mean }}</dd>
-            <dt class="text-slate-400">Desvio padrão <span class="cl-help" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.total_corners.std_dev }}</dd>
-            <dt class="text-slate-400">Consistência <span class="cl-help" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.total_corners.consistency_index }}</dd>
+            <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.total_corners.std_dev }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.total_corners.consistency_index }}</dd>
             <dt class="text-slate-400">Média casa</dt><dd>{{ side.data.home?.mean ?? '—' }}</dd>
             <dt class="text-slate-400">Média fora</dt><dd>{{ side.data.away?.mean ?? '—' }}</dd>
           </dl>

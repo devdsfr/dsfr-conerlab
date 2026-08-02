@@ -182,3 +182,19 @@ type SyncRunRepository interface {
 	// LastRun retorna nil (sem erro) se nenhuma sincronização foi registrada ainda.
 	LastRun(ctx context.Context) (*domain.SyncRun, error)
 }
+
+// LeagueSeason é um par liga+temporada com jogos finalizados — unidade de
+// trabalho do Analytics Worker (Remodelagem F3, doc 15).
+type LeagueSeason struct {
+	LeagueID int64
+	SeasonID int64
+}
+
+// AnalyticsRepository persiste a camada ANALYTICS (migration 011). Regra do
+// doc 15: só workers escrevem aqui; handlers HTTP apenas leem.
+type AnalyticsRepository interface {
+	ListLeagueSeasons(ctx context.Context) ([]LeagueSeason, error)
+	UpsertTeamMetrics(ctx context.Context, m *domain.TeamMetrics) error
+	StartWorkerRun(ctx context.Context, worker string) (int64, error)
+	FinishWorkerRun(ctx context.Context, id int64, status string, processed, errCount int, started time.Time, details map[string]any) error
+}

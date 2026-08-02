@@ -39,6 +39,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider/sofascore"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
 	"github.com/devdsfr/cornerlab/internal/usagelog"
+	"github.com/devdsfr/cornerlab/internal/usecase/analytics"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
@@ -82,6 +83,11 @@ func main() {
 	updateUC := statsync.NewUpdateUsecase(provider, statSyncRepo, incidentRepo)
 	healthUC := statsync.NewHealthCheckUsecase(provider, incidentRepo)
 
+	// Analytics Worker (Remodelagem F3, doc 15): pré-calcula team_metrics após
+	// cada ciclo de sincronização — "o usuário consulta, workers calculam".
+	analyticsRepo := postgres.NewAnalyticsRepo(pool)
+	analyticsWorker := analytics.NewWorker(postgres.NewMatchRepo(pool), postgres.NewTeamRepo(pool), analyticsRepo)
+
 	appLog.Info("CornerLab worker de sincronização iniciando", "provider", provider.Name(),
 		"discovery_interval", discoveryInterval.String(), "update_interval", updateInterval.String(),
 		"health_check_interval", healthCheckInterval.String())
@@ -93,6 +99,7 @@ func main() {
 	discoveryResult := runDiscovery(ctx, discoveryUC)
 	updateResult := runUpdate(ctx, updateUC)
 	recordRun(ctx, syncRunRepo, discoveryResult, updateResult, time.Since(cycleStart).Milliseconds())
+	runAnalytics(ctx, analyticsWorker, analyticsRepo)
 
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
@@ -120,6 +127,7 @@ func main() {
 			runDiscovery(ctx, discoveryUC)
 		case <-updateTicker.C:
 			runUpdate(ctx, updateUC)
+			runAnalytics(ctx, analyticsWorker, analyticsRepo)
 		case <-healthTicker.C:
 			runHealthCheck(ctx, healthUC)
 		}
@@ -182,6 +190,38 @@ func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.Disco
 	}
 	if err := repo.AddRun(ctx, entry); err != nil {
 		slog.Error("falha ao registrar histórico de sincronização", "error", err)
+	}
+}
+
+// runAnalytics roda o Analytics Worker (Remodelagem F3) com a mesma resiliência
+// dos demais ciclos (recover + log) e observabilidade em worker_runs (doc 15:
+// cada worker registra tempo, quantidade processada e erros).
+func runAnalytics(ctx context.Context, w *analytics.Worker, repo *postgres.AnalyticsRepo) {
+	defer recoverAndLog("analytics")
+	start := time.Now()
+	runID, idErr := repo.StartWorkerRun(ctx, "analytics")
+	result, err := w.Run(ctx)
+	fields := []any{
+		"duration_ms", time.Since(start).Milliseconds(),
+		"league_seasons", result.LeagueSeasons, "teams", result.TeamsSeen,
+		"metrics_saved", result.MetricsSaved, "errors", result.Errors,
+	}
+	status := "ok"
+	if err != nil {
+		status = "error"
+		slog.Error("ciclo de analytics falhou", append(fields, "error", err)...)
+	} else {
+		slog.Info("ciclo de analytics concluído", fields...)
+	}
+	if idErr == nil {
+		details := map[string]any{
+			"league_seasons": result.LeagueSeasons,
+			"teams":          result.TeamsSeen,
+			"metrics_saved":  result.MetricsSaved,
+		}
+		if err := repo.FinishWorkerRun(ctx, runID, status, result.MetricsSaved, result.Errors, start, details); err != nil {
+			slog.Error("falha ao registrar worker_run de analytics", "error", err)
+		}
 	}
 }
 

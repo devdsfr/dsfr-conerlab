@@ -41,6 +41,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/usagelog"
 	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/internal/usecase/analytics"
+	"github.com/devdsfr/cornerlab/internal/usecase/discovery"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
 	"github.com/devdsfr/cornerlab/pkg/config"
@@ -52,6 +53,11 @@ const (
 	discoveryInterval   = 30 * time.Minute
 	updateInterval      = 15 * time.Minute
 	healthCheckInterval = 1 * time.Hour
+
+	// strategyDiscoveryInterval seguem o doc 08 ("Atualização: todos os dias"):
+	// minerar combinações é caro e o resultado só muda quando entram jogos novos,
+	// então não faz sentido rodar junto dos ciclos curtos de sincronização.
+	strategyDiscoveryInterval = 24 * time.Hour
 )
 
 func main() {
@@ -95,8 +101,18 @@ func main() {
 	// Strategy Worker (Remodelagem F4, Workers 04/05/07 do doc 15): reexecuta o
 	// backtest de todas as estratégias ativas e recalcula health + scores.
 	strategyRepo := postgres.NewStrategyRepo(pool)
-	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, postgres.NewLeagueRepo(pool))
+	leagueRepo := postgres.NewLeagueRepo(pool)
+	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, leagueRepo)
 	strategyEngine := strategyengine.NewEngine(filterUC, strategyRepo)
+
+	// Strategy Discovery Engine (Remodelagem F6, doc 08): minera combinações de
+	// filtros, valida contra os critérios mínimos e publica as sobreviventes como
+	// estratégias do sistema. IncludeTeams ligado aqui (e desligado na API): o ciclo
+	// noturno pode pagar o custo da varredura por equipe, uma requisição HTTP não.
+	discoveryEngine := discovery.NewEngine(
+		matchRepo, teamRepo, leagueRepo, strategyRepo, strategyEngine,
+		discovery.Options{Criteria: discovery.DefaultCriteria(), IncludeTeams: true},
+	)
 
 	appLog.Info("CornerLab worker de sincronização iniciando", "provider", provider.Name(),
 		"discovery_interval", discoveryInterval.String(), "update_interval", updateInterval.String(),
@@ -112,12 +128,22 @@ func main() {
 	runAnalytics(ctx, analyticsWorker, analyticsRepo)
 	runStrategies(ctx, strategyEngine, analyticsRepo)
 
+	// No modo cron (execução única) a descoberta só roda quando explicitamente
+	// pedida por DISCOVERY_RUN=true, porque o cron de sincronização dispara a cada
+	// poucos minutos e a varredura completa é diária: a intenção é ter um segundo
+	// Cron Job, agendado uma vez por dia, apontando para este mesmo binário.
+	// No modo loop ela roda no boot e depois no ticker de 24h.
+	runOnce := os.Getenv("SYNC_RUN_ONCE") == "true"
+	if !runOnce || os.Getenv("DISCOVERY_RUN") == "true" {
+		runStrategyDiscovery(ctx, discoveryEngine, analyticsRepo)
+	}
+
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
 	// processo 24h). Sem essa variável, comportamento original: loop infinito com
 	// tickers, pensado para rodar como Render Background Worker (mais caro, dados
 	// quase em tempo real) caso o produto precise disso no futuro.
-	if os.Getenv("SYNC_RUN_ONCE") == "true" {
+	if runOnce {
 		appLog.Info("worker de sincronização: execução única concluída (SYNC_RUN_ONCE=true)")
 		return
 	}
@@ -125,9 +151,11 @@ func main() {
 	discoveryTicker := time.NewTicker(discoveryInterval)
 	updateTicker := time.NewTicker(updateInterval)
 	healthTicker := time.NewTicker(healthCheckInterval)
+	strategyDiscoveryTicker := time.NewTicker(strategyDiscoveryInterval)
 	defer discoveryTicker.Stop()
 	defer updateTicker.Stop()
 	defer healthTicker.Stop()
+	defer strategyDiscoveryTicker.Stop()
 
 	for {
 		select {
@@ -142,6 +170,8 @@ func main() {
 			runStrategies(ctx, strategyEngine, analyticsRepo)
 		case <-healthTicker.C:
 			runHealthCheck(ctx, healthUC)
+		case <-strategyDiscoveryTicker.C:
+			runStrategyDiscovery(ctx, discoveryEngine, analyticsRepo)
 		}
 	}
 }
@@ -259,6 +289,41 @@ func runStrategies(ctx context.Context, e *strategyengine.Engine, repo *postgres
 		details := map[string]any{"strategies": result.Strategies, "evaluated": result.Evaluated}
 		if err := repo.FinishWorkerRun(ctx, runID, status, result.Evaluated, result.Errors, start, details); err != nil {
 			slog.Error("falha ao registrar worker_run do strategy engine", "error", err)
+		}
+	}
+}
+
+// runStrategyDiscovery roda o Discovery Worker (Remodelagem F6, doc 08) com a
+// mesma resiliência e observabilidade dos demais ciclos. É o worker mais caro do
+// pipeline (centenas de backtests por liga), por isso o tempo e a contagem de
+// combinações avaliadas ficam registrados em worker_runs.
+func runStrategyDiscovery(ctx context.Context, e *discovery.Engine, repo *postgres.AnalyticsRepo) {
+	defer recoverAndLog("strategy discovery")
+	start := time.Now()
+	runID, idErr := repo.StartWorkerRun(ctx, "discovery")
+	result, err := e.RunAll(ctx)
+	fields := []any{
+		"duration_ms", time.Since(start).Milliseconds(),
+		"leagues", result.Leagues, "combinations", result.Combinations,
+		"published", result.Published, "deactivated", result.Deactivated,
+		"errors", result.Errors,
+	}
+	status := "ok"
+	if err != nil {
+		status = "error"
+		slog.Error("ciclo de descoberta de estratégias falhou", append(fields, "error", err)...)
+	} else {
+		slog.Info("ciclo de descoberta de estratégias concluído", fields...)
+	}
+	if idErr == nil {
+		details := map[string]any{
+			"leagues":      result.Leagues,
+			"combinations": result.Combinations,
+			"published":    result.Published,
+			"deactivated":  result.Deactivated,
+		}
+		if err := repo.FinishWorkerRun(ctx, runID, status, result.Published, result.Errors, start, details); err != nil {
+			slog.Error("falha ao registrar worker_run de descoberta", "error", err)
 		}
 	}
 }

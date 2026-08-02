@@ -25,6 +25,8 @@ import {
   Strategy,
   StrategyBundle,
   StrategyEvaluation,
+  DiscoveredStrategiesResponse,
+  DiscoveryRunResult,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -130,6 +132,27 @@ export class ApiService {
 
   deleteStrategy(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/strategies/${id}`);
+  }
+
+  // Strategy Discovery Engine (Remodelagem F6, doc 08)
+
+  /**
+   * Ranking de estratégias descobertas automaticamente. Leitura pública: o
+   * worker noturno já deixou tudo calculado no banco.
+   */
+  listDiscoveredStrategies(leagueId?: number, limit = 50): Observable<DiscoveredStrategiesResponse> {
+    const params: Record<string, string> = { limit: String(limit) };
+    if (leagueId) params['league_id'] = String(leagueId);
+    return this.http.get<DiscoveredStrategiesResponse>(`${this.base}/discovery/strategies`, { params });
+  }
+
+  /**
+   * Dispara uma varredura agora. Exige login pelo custo do ciclo (centenas de
+   * backtests) — o caminho normal é esperar o worker diário.
+   * Sem leagueId, varre todas as ligas.
+   */
+  runDiscovery(leagueId?: number): Observable<DiscoveryRunResult> {
+    return this.http.post<DiscoveryRunResult>(`${this.base}/discovery/run`, leagueId ? { league_id: leagueId } : {});
   }
 
   // Painel "Integrações" — status/consumo das APIs externas

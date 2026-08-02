@@ -2,6 +2,15 @@
   <h1 class="text-xl font-semibold text-slate-100">Simulador de Filtros</h1>
   <p class="text-sm text-slate-400 -mt-4">Monte critérios e rode o backtest sobre o histórico de jogos. A plataforma nunca recomenda apostas — apenas mede o desempenho histórico do filtro.</p>
 
+  <!-- Chegada a partir da página "Descobertas": deixa explícito que os critérios
+       não foram montados pelo usuário e que ele está conferindo um padrão do sistema. -->
+  @if (loadedFromDiscovery()) {
+    <div class="cl-card p-3 border border-cornerlab-primary/40 text-sm text-slate-300">
+      Critérios carregados de uma <strong class="text-slate-100">estratégia descoberta</strong> pelo
+      sistema. Ajuste o que quiser e rode novamente para conferir os números jogo por jogo.
+    </div>
+  }
+
   <!-- Anúncio contextual (plano gratuito) — ver ESTRATEGIA-MONETIZACAO.md -->
   <app-ad-slot slot="7250099317"></app-ad-slot>
 

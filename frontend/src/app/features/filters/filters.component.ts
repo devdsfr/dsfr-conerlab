@@ -15,7 +15,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { BacktestEntry, BacktestResult, League, Season, Team } from '../../core/models';
+import { BacktestEntry, BacktestResult, FilterRunRequest, League, Season, Team } from '../../core/models';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 
 @Component({
@@ -221,13 +221,59 @@ export class FiltersComponent implements OnInit {
     });
   }
 
+  // Sinaliza no template que o formulário foi pré-preenchido por uma descoberta,
+  // e não montado pelo próprio usuário.
+  loadedFromDiscovery = signal(false);
+
   ngOnInit(): void {
+    // Definition vinda da página "Descobertas" (router state). O usuário clicou em
+    // "Conferir no Simulador": reproduzibilidade é um princípio da plataforma, então
+    // ele precisa poder reexecutar EXATAMENTE o backtest que gerou o número do
+    // ranking e conferir jogo por jogo, em vez de confiar na lista.
+    const incoming = (history.state?.definition ?? null) as FilterRunRequest | null;
+
     this.api.listLeagues().subscribe(leagues => {
       this.leagues.set(leagues);
-      if (leagues.length) {
-        this.selectedLeagueId = leagues[0].id;
-        this.onLeagueChange();
+      if (!leagues.length) return;
+
+      if (incoming?.league_id) {
+        this.selectedLeagueId = incoming.league_id;
+        this.applyDefinition(incoming);
+        return;
       }
+      this.selectedLeagueId = leagues[0].id;
+      this.onLeagueChange();
+    });
+  }
+
+  // Aplica uma definition salva/descoberta no formulário. Diferente de
+  // onLeagueChange(), NUNCA limpa a seleção — as listas dependentes (temporadas,
+  // equipes) são carregadas em volta dos valores que acabaram de chegar.
+  private applyDefinition(d: FilterRunRequest): void {
+    this.metric = (d.metric as typeof this.metric) || 'corners';
+    this.cornersThreshold = d.corners_threshold ?? this.cornersThreshold;
+    this.goalsThreshold = d.goals_threshold ?? this.goalsThreshold;
+    this.offsidesThreshold = d.offsides_threshold ?? this.offsidesThreshold;
+    this.shotsThreshold = d.shots_threshold ?? this.shotsThreshold;
+    this.shotsOnTargetThreshold = d.shots_on_target_threshold ?? this.shotsOnTargetThreshold;
+    this.fixedOdd = d.fixed_odd ?? undefined;
+
+    this.homeAway = d.home_away ?? '';
+    this.lastNGames = d.last_n_games ?? 0;
+    this.opponentTier = d.opponent_tier ?? '';
+    this.maxOdds = d.max_odds ?? undefined;
+    this.stake = d.stake ?? this.stake;
+    this.selectedTeamId = d.team_id ?? undefined;
+    this.loadedFromDiscovery.set(true);
+
+    this.api.listSeasons(this.selectedLeagueId!).subscribe(s => {
+      this.seasons.set(s);
+      // Temporadas que não existem mais na liga são ignoradas; sem interseção,
+      // cai no comportamento padrão (todas).
+      const wanted = (d.season_ids ?? []).filter(id => s.some(x => x.id === id));
+      this.selectedSeasonIds = wanted.length ? wanted : s.map(x => x.id);
+      this.reloadTeams();
+      this.runFilter();
     });
   }
 

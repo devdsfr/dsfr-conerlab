@@ -1,0 +1,235 @@
+<div class="max-w-6xl mx-auto space-y-6">
+  <header>
+    <h1 class="text-2xl font-semibold text-slate-100">Descobertas</h1>
+    <p class="text-sm text-slate-300 mt-1 max-w-3xl">
+      Aqui você não monta nada. O CornerLab combina automaticamente centenas de configurações de
+      filtro, executa o backtest de cada uma sobre o histórico armazenado e descarta tudo que não
+      passa nos critérios mínimos de amostra, retorno, consistência e drawdown. Sobra apenas o que
+      se sustentou nos dados — e explicado em texto, não só em números.
+    </p>
+  </header>
+
+  <!-- Controles -->
+  <section class="cl-card p-4 flex flex-wrap items-end gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="liga" class="text-xs text-slate-400">Campeonato</label>
+      <select
+        id="liga"
+        class="cl-input min-w-[220px]"
+        [value]="leagueId() ?? ''"
+        (change)="onLeagueChange($any($event.target).value)"
+      >
+        <option value="">Todos os campeonatos</option>
+        @for (l of leagues(); track l.id) {
+          <option [value]="l.id">{{ l.name }}</option>
+        }
+      </select>
+    </div>
+
+    <button mat-stroked-button class="!text-slate-200" (click)="load()" [disabled]="loading()">
+      <mat-icon aria-hidden="true">refresh</mat-icon>
+      Atualizar
+    </button>
+
+    @if (auth.isAuthenticated()) {
+      <button
+        mat-flat-button
+        color="primary"
+        (click)="run()"
+        [disabled]="running()"
+        matTooltip="Executa uma nova varredura agora. Normalmente isso roda automaticamente todos os dias — use aqui se acabou de sincronizar dados novos."
+      >
+        <!-- Cada ramo mantém um único nó na raiz para o mat-icon ser projetado no
+             slot de ícone do MatButton (NG8011); o rótulo fica fora do @if. -->
+        @if (running()) {
+          <mat-spinner diameter="18" class="mr-2"></mat-spinner>
+        } @else {
+          <mat-icon aria-hidden="true">travel_explore</mat-icon>
+        }
+        {{ running() ? 'Procurando…' : 'Procurar agora' }}
+      </button>
+    } @else {
+      <p class="text-xs text-slate-400 max-w-xs">
+        A busca por novas estratégias é atualizada automaticamente todos os dias.
+        <span class="text-slate-300">Entre na sua conta</span> para disparar uma varredura sob demanda.
+      </p>
+    }
+  </section>
+
+  @if (running()) {
+    <p class="text-xs text-slate-400">
+      Varredura em andamento: centenas de backtests estão sendo executados sobre o histórico completo.
+      Isso pode levar alguns minutos.
+    </p>
+  }
+
+  @if (error()) {
+    <div class="cl-card p-4 border border-red-500/40 text-sm text-red-300">{{ error() }}</div>
+  }
+
+  <!-- Resultado do último ciclo disparado manualmente -->
+  @if (lastRun(); as run) {
+    <section class="cl-card p-4 space-y-2">
+      <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
+      <p class="text-sm text-slate-300">{{ lastRunSummary() }}</p>
+
+      @if (rejectionEntries(run.rejections).length) {
+        <div>
+          <p class="text-xs text-slate-400 mb-1">
+            Combinações descartadas por não atenderem aos critérios mínimos:
+          </p>
+          <ul class="flex flex-wrap gap-2">
+            @for (r of rejectionEntries(run.rejections); track r.label) {
+              <li class="text-xs px-2 py-0.5 rounded border border-slate-700 text-slate-300">
+                {{ r.label }}: {{ r.count }}
+              </li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (run.errors) {
+        <p class="text-xs text-amber-400">
+          {{ run.errors }} combinação(ões) não pôde(puderam) ser avaliada(s) nesta execução.
+        </p>
+      }
+    </section>
+  }
+
+  <!-- Ranking -->
+  @if (loading()) {
+    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+  } @else if (!strategies().length) {
+    <section class="cl-card p-6 text-center space-y-2">
+      <mat-icon class="!w-10 !h-10 !text-[40px] text-slate-600" aria-hidden="true">search_off</mat-icon>
+      <h2 class="text-slate-100 font-medium">Nenhuma estratégia aprovada por aqui</h2>
+      <p class="text-sm text-slate-400 max-w-lg mx-auto">
+        Isso é um resultado legítimo, não um erro: no histórico disponível deste recorte, nenhuma
+        combinação atingiu simultaneamente amostra suficiente, retorno, consistência e controle de
+        drawdown. Publicar um padrão fraco seria pior do que não publicar nenhum.
+      </p>
+    </section>
+  } @else {
+    <section class="space-y-3">
+      <div class="flex items-baseline justify-between">
+        <h2 class="text-sm font-semibold text-slate-100">
+          {{ strategies().length }} padrão(ões) aprovado(s)
+        </h2>
+        <span class="text-xs text-slate-400">ordenado por qualidade estatística</span>
+      </div>
+
+      @for (s of strategies(); track s.id; let i = $index) {
+        <article class="cl-card p-4 space-y-3">
+          <!-- Cabeçalho -->
+          <div class="flex flex-wrap items-start gap-3">
+            <span class="text-xs text-slate-500 font-mono mt-1 w-6 shrink-0">#{{ i + 1 }}</span>
+
+            <div class="flex-1 min-w-[240px]">
+              <h3 class="text-slate-100 font-medium leading-snug">{{ s.name }}</h3>
+              <p class="text-xs text-slate-400 mt-0.5">
+                Baseado em {{ s.games }} ocorrências · atualizado em {{ s.updated_at | date: 'dd/MM/yyyy' }}
+              </p>
+            </div>
+
+            <span
+              class="text-xs px-2 py-1 rounded border shrink-0"
+              [class]="classificationClass(s.classification)"
+              [matTooltip]="classificationTooltip(s.classification)"
+            >
+              {{ s.classification }}
+            </span>
+          </div>
+
+          <!-- Métricas -->
+          <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+            <div>
+              <dt class="text-xs text-slate-400 flex items-center gap-1">
+                DSFR
+                <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-slate-500" [matTooltip]="dsfrTooltip">info</mat-icon>
+              </dt>
+              <dd class="font-semibold" [class]="scoreColor(s.dsfr_score)">{{ s.dsfr_score | number: '1.1-1' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Taxa de acerto</dt>
+              <dd class="font-semibold text-slate-100">{{ s.win_rate | number: '1.1-1' }}%</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">ROI</dt>
+              <dd class="font-semibold" [class]="s.roi >= 0 ? 'text-cornerlab-primary' : 'text-red-400'">
+                {{ signed(s.roi) }}%
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Yield</dt>
+              <dd class="font-semibold text-slate-100">{{ signed(s.yield) }}%</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400 flex items-center gap-1">
+                Drawdown
+                <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-slate-500" [matTooltip]="drawdownTooltip">info</mat-icon>
+              </dt>
+              <dd class="font-semibold text-slate-100">{{ s.drawdown | number: '1.2-2' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400 flex items-center gap-1">
+                Confiabilidade
+                <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-slate-500" [matTooltip]="confidenceTooltip">info</mat-icon>
+              </dt>
+              <dd class="font-semibold" [class]="scoreColor(s.confidence)">{{ s.confidence | number: '1.0-0' }}</dd>
+            </div>
+          </dl>
+
+          <!-- Ações -->
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button mat-button class="!text-slate-300" (click)="toggle(s.id)">
+              <mat-icon aria-hidden="true">{{ expanded() === s.id ? 'expand_less' : 'expand_more' }}</mat-icon>
+              {{ expanded() === s.id ? 'Ocultar explicação' : 'Entender este padrão' }}
+            </button>
+            <button
+              mat-button
+              class="!text-cornerlab-primary"
+              (click)="openInSimulator(s)"
+              matTooltip="Carrega esta configuração no Simulador de Filtros para você reexecutar o backtest e conferir jogo por jogo."
+            >
+              <mat-icon aria-hidden="true">tune</mat-icon>
+              Conferir no Simulador
+            </button>
+          </div>
+
+          <!-- Explicação -->
+          @if (expanded() === s.id) {
+            <div class="border-t border-slate-800 pt-3 space-y-3">
+              <p class="text-sm text-slate-300 leading-relaxed">{{ s.description }}</p>
+
+              <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <dt class="text-xs text-slate-400">Acertos / Erros</dt>
+                  <dd class="text-slate-100">{{ s.wins }} / {{ s.losses }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-400">Lucro acumulado</dt>
+                  <dd class="text-slate-100">{{ signed(s.profit) }} un.</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-400 flex items-center gap-1">
+                    Risco
+                    <mat-icon class="!text-[14px] !w-[14px] !h-[14px] text-slate-500" [matTooltip]="riskTooltip">info</mat-icon>
+                  </dt>
+                  <dd [class]="riskColor(s.risk)">{{ s.risk | number: '1.0-0' }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-400">Estágio</dt>
+                  <dd class="text-slate-100">{{ stageLabel(s.lifecycle_stage) }}</dd>
+                </div>
+              </dl>
+            </div>
+          }
+        </article>
+      }
+    </section>
+
+    @if (disclaimer()) {
+      <p class="text-xs text-slate-400 border-t border-slate-800 pt-3">{{ disclaimer() }}</p>
+    }
+  }
+</div>

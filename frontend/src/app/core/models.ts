@@ -307,6 +307,61 @@ export interface StrategyBundle {
   backtests: StrategyBacktest[];
 }
 
+// ---------------------------------------------------------------------------
+// Strategy Discovery Engine (Remodelagem F6 — doc 08): estratégias que o próprio
+// sistema encontrou minerando o histórico. O backend já entrega a linha do
+// ranking achatada (estratégia + backtest + health + scores em um objeto só),
+// para o frontend não reimplementar nenhuma regra de negócio.
+// ---------------------------------------------------------------------------
+
+export interface DiscoveredStrategy {
+  id: number;
+  name: string;
+  description: string;
+  definition: FilterRunRequest; // objeto pronto para recarregar no Simulador
+
+  games: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  roi: number;
+  yield: number;
+  ev: number;
+  profit: number;
+  drawdown: number;
+
+  dsfr_score: number;
+  /** Faixa de qualidade do doc 08: Elite | Excelente | Muito Boa | Boa | Regular. */
+  classification: string;
+  confidence: number;
+  robustness: number;
+  risk: number;
+  health_score: number;
+  lifecycle_stage: string;
+
+  updated_at: string;
+}
+
+export interface DiscoveredStrategiesResponse {
+  strategies: DiscoveredStrategy[];
+  count: number;
+  disclaimer: string;
+}
+
+/** Resumo de um ciclo de descoberta disparado manualmente. */
+export interface DiscoveryRunResult {
+  league_id?: number;
+  league_name?: string;
+  leagues?: number;
+  combinations: number;
+  approved?: number;
+  published: number;
+  deactivated: number;
+  errors: number;
+  /** Contagem por motivo de descarte (amostra_insuficiente, roi_baixo, ...). */
+  rejections?: Record<string, number>;
+}
+
 export interface StrategyEvaluation {
   backtest: StrategyBacktest;
   health: StrategyHealth;

@@ -26,6 +26,7 @@ type Handlers struct {
 	Sync            *handlers.SyncHandler
 	Overview        *handlers.OverviewHandler
 	Strategy        *handlers.StrategyHandler
+	Discovery       *handlers.DiscoveryHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
@@ -88,6 +89,12 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		// effect), diferente de POST /sync/run (autenticado, ver authGroup abaixo).
 		api.GET("/sync/status", h.Sync.Status)
 
+		// Strategy Discovery Engine (Remodelagem F6, doc 08). O ranking já está
+		// calculado no banco pelo worker noturno, então listá-lo é leitura barata e
+		// pública — mesma política do Dashboard/Comparador/Intelligence. Já o POST
+		// /discovery/run dispara centenas de backtests e fica no authGroup abaixo.
+		api.GET("/discovery/strategies", h.Discovery.ListStrategies)
+
 		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
 		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT
 		// da aplicação (a autenticidade é garantida pela assinatura HMAC do Stripe).
@@ -120,6 +127,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 			// Botão "Sincronizar agora" do painel Integrações — exige login (diferente do
 			// resto do painel, que é público) porque dispara chamadas reais à API externa.
 			authGroup.POST("/sync/run", h.Sync.Run)
+
+			// "Procurar novas estratégias agora" — exige login pelo custo do ciclo
+			// (varredura completa do histórico da liga), não por ser recurso pago.
+			authGroup.POST("/discovery/run", h.Discovery.Run)
 
 			authGroup.GET("/billing/status", h.Billing.Status)
 			authGroup.POST("/billing/checkout", h.Billing.Checkout)

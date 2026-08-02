@@ -23,6 +23,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/strategies/strategies.component').then(m => m.StrategiesComponent),
   },
   {
+    // Strategy Discovery Engine (Remodelagem F6, doc 08) — leitura pública: o
+    // ranking já vem calculado do backend, sem exigir login para consultar.
+    path: 'descobertas',
+    loadComponent: () => import('./features/discovery/discovery.component').then(m => m.DiscoveryComponent),
+  },
+  {
     path: 'banca',
     loadComponent: () => import('./features/bankroll/bankroll.component').then(m => m.BankrollComponent),
   },

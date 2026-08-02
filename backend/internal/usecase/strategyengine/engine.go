@@ -112,20 +112,30 @@ func (e *Engine) RunStrategy(ctx context.Context, s *domain.Strategy) (*Evaluati
 		return nil, err
 	}
 
-	// execução anterior ANTES de gravar a atual — base dos deltas do Health.
-	prev, err := e.repo.LastBacktests(ctx, s.ID, 1)
-	if err != nil {
-		return nil, fmt.Errorf("carregar backtest anterior: %w", err)
-	}
-
 	// Workers rodam sem cap de histórico (maxAgeDays=0) — o cap de 90 dias é um
 	// limite do plano gratuito na navegação, não do pipeline (doc 15).
 	res, err := e.filters.RunBacktest(ctx, def.LeagueID, def.SeasonIDs, def.criteria(), 0)
 	if err != nil {
 		return nil, fmt.Errorf("backtest: %w", err)
 	}
+	return e.PersistResult(ctx, s.ID, res)
+}
 
-	bt := backtestRow(s.ID, res)
+// PersistResult grava um resultado de backtest JÁ CALCULADO e deriva dele o
+// health (comparando com a execução anterior) e os scores proprietários.
+//
+// Existe separado de RunStrategy porque o Discovery Engine (F6, doc 08) executa
+// centenas de backtests para MINERAR combinações e só persiste as que passam nos
+// critérios mínimos — repetir o backtest só para gravá-lo dobraria o custo do
+// ciclo de descoberta sem produzir nenhum número novo.
+func (e *Engine) PersistResult(ctx context.Context, strategyID int64, res *usecase.BacktestResult) (*Evaluation, error) {
+	// execução anterior ANTES de gravar a atual — base dos deltas do Health.
+	prev, err := e.repo.LastBacktests(ctx, strategyID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("carregar backtest anterior: %w", err)
+	}
+
+	bt := backtestRow(strategyID, res)
 	if err := e.repo.InsertBacktest(ctx, bt); err != nil {
 		return nil, fmt.Errorf("gravar backtest: %w", err)
 	}
@@ -134,8 +144,8 @@ func (e *Engine) RunStrategy(ctx context.Context, s *domain.Strategy) (*Evaluati
 	if len(prev) > 0 {
 		prevBt = &prev[0]
 	}
-	health := healthRow(s.ID, res, prevBt)
-	scores := scoresRow(s.ID, res, health.HealthScore, derefOrZero(health.Trend))
+	health := healthRow(strategyID, res, prevBt)
+	scores := scoresRow(strategyID, res, health.HealthScore, derefOrZero(health.Trend))
 
 	if err := e.repo.UpsertHealth(ctx, health); err != nil {
 		return nil, fmt.Errorf("gravar health: %w", err)
@@ -246,6 +256,22 @@ func scoresRow(strategyID int64, r *usecase.BacktestResult, health, trend float6
 		AlgorithmVersion: formulas.Version,
 	}
 }
+
+// PreviewScores calcula os scores proprietários de um resultado de backtest SEM
+// persistir nada e SEM histórico anterior (health neutro = 50, tendência = 0).
+//
+// O Discovery Engine (F6, doc 08) precisa do DSFR Score de cada combinação ANTES
+// de decidir quais publicar — é por ele que o ranking é ordenado e o teto por
+// liga é aplicado. Usar exatamente a mesma função de pontuação da persistência
+// garante que o score exibido no ranking seja o mesmo que a estratégia recebe
+// quando é gravada.
+func PreviewScores(res *usecase.BacktestResult) *domain.StrategyScores {
+	return scoresRow(0, res, neutralHealth, 0)
+}
+
+// neutralHealth é o health de uma estratégia sem execução anterior (Catálogo 25:
+// 50 = estável).
+const neutralHealth = 50.0
 
 // WorkerResult resume um ciclo do Strategy Worker (observabilidade, doc 15).
 type WorkerResult struct {

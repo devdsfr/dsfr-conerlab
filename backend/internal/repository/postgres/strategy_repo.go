@@ -3,11 +3,13 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/repository"
 )
 
 // StrategyRepo persiste estratégias e seus artefatos calculados (backtests,
@@ -182,6 +184,189 @@ func (r *StrategyRepo) GetHealth(ctx context.Context, strategyID int64) (*domain
 		return nil, err
 	}
 	return &h, nil
+}
+
+// ---------------------------------------------------------------------------
+// Strategy Discovery Engine (Remodelagem F6, doc 08)
+// ---------------------------------------------------------------------------
+
+// UpsertDiscovered grava uma estratégia descoberta pelo sistema de forma
+// idempotente. O conflito é resolvido pelo índice único PARCIAL criado na
+// migration 012 (name WHERE origin='discovery'), por isso o ON CONFLICT repete
+// o predicado — sem ele o Postgres não consegue inferir qual índice usar.
+//
+// Um ciclo que reencontra um padrão já conhecido atualiza a descrição (os
+// números mudaram) e o reativa, em vez de criar uma segunda linha.
+func (r *StrategyRepo) UpsertDiscovered(ctx context.Context, s *domain.Strategy) error {
+	return r.db.QueryRow(ctx, `
+		INSERT INTO strategies (owner_id, name, description, definition, origin, visibility, active, favorite)
+		VALUES (NULL, $1, $2, $3::jsonb, 'discovery', 'public', TRUE, FALSE)
+		ON CONFLICT (name) WHERE origin = 'discovery' DO UPDATE SET
+			description = EXCLUDED.description,
+			definition  = EXCLUDED.definition,
+			active      = TRUE,
+			updated_at  = now()
+		RETURNING id, created_at, updated_at`,
+		s.Name, s.Description, s.Definition).
+		Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
+}
+
+// DeactivateDiscoveredExcept desativa as descobertas da liga que não sobreviveram
+// ao ciclo atual. Desativar (e não apagar) preserva o histórico em `backtests`,
+// que é auditável por definição (doc 16).
+func (r *StrategyRepo) DeactivateDiscoveredExcept(ctx context.Context, leagueID int64, keepIDs []int64) (int, error) {
+	if keepIDs == nil {
+		keepIDs = []int64{}
+	}
+	tag, err := r.db.Exec(ctx, `
+		UPDATE strategies SET active = FALSE, updated_at = now()
+		WHERE origin = 'discovery' AND active
+		  AND (definition ->> 'league_id')::BIGINT = $1
+		  AND NOT (id = ANY($2::BIGINT[]))`, leagueID, keepIDs)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// ListDiscovered monta o ranking de descobertas em uma única query: estratégia +
+// último backtest (LATERAL) + health + scores. A ordenação segue o RankingScore
+// (Catálogo 28); estratégias ainda sem score calculado caem para o fim da lista.
+func (r *StrategyRepo) ListDiscovered(ctx context.Context, leagueID *int64, limit int) ([]repository.DiscoveredStrategy, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT s.id, s.owner_id, s.name, s.description, s.definition::text, s.origin,
+		       s.visibility, s.active, s.favorite, s.created_at, s.updated_at,
+		       b.id, b.games, b.wins, b.losses, b.voids, b.roi, b.yield, b.ev,
+		       b.drawdown, b.profit, b.confidence, b.period_start, b.period_end,
+		       b.algorithm_version, b.created_at,
+		       h.strategy_id, h.health_score, h.trend, h.variation::text,
+		       h.algorithm_version, h.updated_at,
+		       sc.strategy_id, sc.dsfr_score, sc.components::text, sc.confidence,
+		       sc.robustness, sc.volatility, sc.risk, sc.ranking, sc.lifecycle_stage,
+		       sc.algorithm_version, sc.updated_at
+		FROM strategies s
+		LEFT JOIN LATERAL (
+			SELECT * FROM backtests WHERE strategy_id = s.id
+			ORDER BY created_at DESC LIMIT 1
+		) b ON TRUE
+		LEFT JOIN strategy_health h ON h.strategy_id = s.id
+		LEFT JOIN strategy_scores sc ON sc.strategy_id = s.id
+		WHERE s.origin = 'discovery' AND s.active
+		  AND ($1::BIGINT IS NULL OR (s.definition ->> 'league_id')::BIGINT = $1)
+		ORDER BY COALESCE(sc.ranking, sc.dsfr_score) DESC NULLS LAST, s.id
+		LIMIT $2`, leagueID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []repository.DiscoveredStrategy{}
+	for rows.Next() {
+		item, err := scanDiscovered(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *item)
+	}
+	return out, rows.Err()
+}
+
+// scanDiscovered lê a linha do LEFT JOIN triplo. Como todo artefato pode estar
+// ausente, cada bloco é lido em variáveis anuláveis e só vira struct se a sua
+// chave primária tiver vindo preenchida.
+func scanDiscovered(row pgx.Row) (*repository.DiscoveredStrategy, error) {
+	var s domain.Strategy
+
+	var btID *int64
+	var btGames, btWins, btLosses, btVoids *int
+	var btROI, btYield, btEV, btDrawdown, btProfit, btConfidence *float64
+	var btPeriodStart, btPeriodEnd, btCreatedAt *time.Time
+	var btVersion *string
+
+	var hID *int64
+	var hScore, hTrend *float64
+	var hVariation, hVersion *string
+	var hUpdatedAt *time.Time
+
+	var scID *int64
+	var scDSFR, scConfidence, scRobustness, scVolatility, scRisk, scRanking *float64
+	var scComponents, scLifecycle, scVersion *string
+	var scUpdatedAt *time.Time
+
+	if err := row.Scan(
+		&s.ID, &s.OwnerID, &s.Name, &s.Description, &s.Definition, &s.Origin,
+		&s.Visibility, &s.Active, &s.Favorite, &s.CreatedAt, &s.UpdatedAt,
+		&btID, &btGames, &btWins, &btLosses, &btVoids, &btROI, &btYield, &btEV,
+		&btDrawdown, &btProfit, &btConfidence, &btPeriodStart, &btPeriodEnd,
+		&btVersion, &btCreatedAt,
+		&hID, &hScore, &hTrend, &hVariation, &hVersion, &hUpdatedAt,
+		&scID, &scDSFR, &scComponents, &scConfidence, &scRobustness, &scVolatility,
+		&scRisk, &scRanking, &scLifecycle, &scVersion, &scUpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	item := &repository.DiscoveredStrategy{Strategy: s}
+
+	if btID != nil {
+		item.Backtest = &domain.Backtest{
+			ID: *btID, StrategyID: s.ID,
+			Games: derefInt(btGames), Wins: derefInt(btWins),
+			Losses: derefInt(btLosses), Voids: derefInt(btVoids),
+			ROI: btROI, Yield: btYield, EV: btEV, Drawdown: btDrawdown,
+			Profit: btProfit, Confidence: btConfidence,
+			PeriodStart: btPeriodStart, PeriodEnd: btPeriodEnd,
+			AlgorithmVersion: derefStr(btVersion), CreatedAt: derefTime(btCreatedAt),
+		}
+	}
+	if hID != nil {
+		item.Health = &domain.StrategyHealth{
+			StrategyID: *hID, HealthScore: derefFloat(hScore), Trend: hTrend,
+			Variation: derefStr(hVariation), AlgorithmVersion: derefStr(hVersion),
+			UpdatedAt: derefTime(hUpdatedAt),
+		}
+	}
+	if scID != nil {
+		item.Scores = &domain.StrategyScores{
+			StrategyID: *scID, DSFRScore: derefFloat(scDSFR),
+			Components: derefStr(scComponents), Confidence: scConfidence,
+			Robustness: scRobustness, Volatility: scVolatility, Risk: scRisk,
+			Ranking: scRanking, LifecycleStage: derefStr(scLifecycle),
+			AlgorithmVersion: derefStr(scVersion), UpdatedAt: derefTime(scUpdatedAt),
+		}
+	}
+	return item, nil
+}
+
+func derefInt(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func derefFloat(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func derefTime(p *time.Time) time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return *p
 }
 
 func (r *StrategyRepo) GetScores(ctx context.Context, strategyID int64) (*domain.StrategyScores, error) {

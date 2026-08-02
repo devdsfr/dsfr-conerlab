@@ -17,6 +17,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/usecase/bankroll"
 	"github.com/devdsfr/cornerlab/internal/usecase/billing"
 	"github.com/devdsfr/cornerlab/internal/usecase/diagnostics"
+	"github.com/devdsfr/cornerlab/internal/usecase/discovery"
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
@@ -68,6 +69,16 @@ func main() {
 	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, leagueRepo)
 	strategyRepo := postgres.NewStrategyRepo(pool)
 	strategyEngine := strategyengine.NewEngine(filterUC, strategyRepo)
+
+	// Strategy Discovery Engine (Remodelagem F6, doc 08). Recebe os repositórios
+	// crus — ele monta o próprio FilterUsecase memoizado a cada ciclo, já que roda
+	// centenas de backtests sobre as mesmas partidas (ver usecase/discovery/cache.go).
+	// IncludeTeams fica desligado na API: a varredura por equipe multiplica o custo
+	// pelo número de times e o caminho normal é o worker noturno, não o botão.
+	discoveryEngine := discovery.NewEngine(
+		matchRepo, teamRepo, leagueRepo, strategyRepo, strategyEngine,
+		discovery.Options{Criteria: discovery.DefaultCriteria()},
+	)
 	betUC := usecase.NewBetUsecase(betRepo)
 	strategyHistoryUC := usecase.NewStrategyHistoryUsecase(strategyHistoryRepo)
 	bankrollUC := bankroll.New(bankrollRepo, betRepo)
@@ -128,6 +139,7 @@ func main() {
 		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC, syncRunRepo),
 		Overview:        handlers.NewOverviewHandler(matchRepo),
 		Strategy:        handlers.NewStrategyHandler(strategyRepo, strategyEngine),
+		Discovery:       handlers.NewDiscoveryHandler(strategyRepo, discoveryEngine),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

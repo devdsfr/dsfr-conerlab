@@ -199,6 +199,17 @@ type AnalyticsRepository interface {
 	FinishWorkerRun(ctx context.Context, id int64, status string, processed, errCount int, started time.Time, details map[string]any) error
 }
 
+// DiscoveredStrategy agrega uma estratégia descoberta automaticamente com todos
+// os artefatos que o ranking do Discovery Engine precisa exibir de uma vez
+// (doc 08: Score, ROI, Yield, EV, Jogos, Lucro, Drawdown, Confiabilidade). Os
+// ponteiros são nil enquanto o Strategy Worker ainda não calculou o artefato.
+type DiscoveredStrategy struct {
+	Strategy domain.Strategy        `json:"strategy"`
+	Backtest *domain.Backtest       `json:"backtest,omitempty"`
+	Health   *domain.StrategyHealth `json:"health,omitempty"`
+	Scores   *domain.StrategyScores `json:"scores,omitempty"`
+}
+
 // StrategyRepository persiste estratégias e artefatos calculados (Remodelagem
 // F4 — docs 08/09/12; tabelas strategies/backtests/strategy_health/strategy_scores).
 type StrategyRepository interface {
@@ -215,4 +226,23 @@ type StrategyRepository interface {
 	UpsertScores(ctx context.Context, s *domain.StrategyScores) error
 	GetHealth(ctx context.Context, strategyID int64) (*domain.StrategyHealth, error)
 	GetScores(ctx context.Context, strategyID int64) (*domain.StrategyScores, error)
+
+	// --- Strategy Discovery Engine (Remodelagem F6, doc 08) -----------------
+
+	// UpsertDiscovered insere ou atualiza uma estratégia do sistema identificada
+	// pelo nome determinístico gerado a partir da definição (migration 012). É o
+	// que torna o ciclo de descoberta idempotente: reexecutar não duplica o
+	// ranking, apenas reativa/atualiza o que já existia. Preenche s.ID.
+	UpsertDiscovered(ctx context.Context, s *domain.Strategy) error
+
+	// ListDiscovered devolve o ranking de descobertas ativas, já ordenado pelo
+	// RankingScore (Catálogo 28), com backtest mais recente, health e scores.
+	// leagueID nil = todas as ligas.
+	ListDiscovered(ctx context.Context, leagueID *int64, limit int) ([]DiscoveredStrategy, error)
+
+	// DeactivateDiscoveredExcept desativa as descobertas de uma liga que não
+	// constam em keepIDs — padrões que deixaram de passar nos critérios mínimos
+	// somem do ranking sem perder o histórico de backtests já registrado.
+	// Retorna quantas foram desativadas.
+	DeactivateDiscoveredExcept(ctx context.Context, leagueID int64, keepIDs []int64) (int, error)
 }

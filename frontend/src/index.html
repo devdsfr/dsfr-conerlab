@@ -21,8 +21,84 @@
     ADSENSE_CLIENT_ID em src/app/shared/ad-slot.component.ts.
   -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4200680263621683" crossorigin="anonymous"></script>
+
+  <!--
+    Tela de carregamento inicial (antes do Angular sequer baixar/executar o
+    bundle). Puro CSS, sem dependência de JS: o conteúdo vive DENTRO de
+    <app-root>, então some sozinho no instante em que o Angular monta o
+    componente raiz e substitui o innerHTML — sem script de remoção, sem
+    risco de "flash" de conteúdo duplicado.
+  -->
+  <style>
+    .cl-boot {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #0f172a;
+    }
+    .cl-boot-ring {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+    }
+    .cl-boot-ring::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: conic-gradient(from 0deg, #22c55e 0deg, #38bdf8 130deg, transparent 200deg, transparent 360deg);
+      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+      mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #fff calc(100% - 3px));
+      animation: cl-boot-spin 1s linear infinite;
+    }
+    .cl-boot-ring svg {
+      position: relative;
+      z-index: 1;
+      animation: cl-boot-pulse 1.8s ease-in-out infinite;
+    }
+    .cl-boot-text {
+      font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      color: #94a3b8;
+    }
+    .cl-boot-text b {
+      color: #4ade80;
+      font-weight: 600;
+    }
+    @keyframes cl-boot-spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes cl-boot-pulse {
+      0%, 100% { opacity: 0.6; transform: scale(0.92); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cl-boot-ring::before, .cl-boot-ring svg { animation-duration: 0.01ms; }
+    }
+  </style>
 </head>
 <body>
-  <app-root></app-root>
+  <app-root>
+    <div class="cl-boot" role="status" aria-label="Carregando CornerLab">
+      <span class="cl-boot-ring">
+        <svg width="30" height="30" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+          <rect x="58" y="58" width="12" height="27" rx="2.5" fill="#38bdf8" />
+          <rect x="76" y="40" width="12" height="45" rx="2.5" fill="#38bdf8" />
+          <path d="M15 85 L46 85" stroke="#22c55e" stroke-width="9" stroke-linecap="round" />
+          <path d="M15 85 L15 48" stroke="#22c55e" stroke-width="9" stroke-linecap="round" />
+          <path d="M15 67 A18 18 0 0 1 33 85" stroke="#22c55e" stroke-width="9" stroke-linecap="round" fill="none" />
+        </svg>
+      </span>
+      <span class="cl-boot-text">Corner<b>Lab</b></span>
+    </div>
+  </app-root>
 </body>
 </html>

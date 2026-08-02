@@ -10,6 +10,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { AuthService } from '../../core/auth.service';
 import { BillingService } from '../../core/billing.service';
 import { PaywallComponent } from '../../shared/paywall.component';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 interface CycleStep {
   label: string;
@@ -82,6 +83,7 @@ const SCENARIOS: ScenarioConfig[] = [
     MatProgressSpinnerModule,
     MatTooltipModule,
     PaywallComponent,
+    PageLoaderComponent,
   ],
   templateUrl: './projections.component.html',
 })

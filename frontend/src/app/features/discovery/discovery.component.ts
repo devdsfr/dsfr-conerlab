@@ -10,6 +10,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { DiscoveredStrategy, DiscoveryRunResult, League } from '../../core/models';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 // Página "Descobertas" — Strategy Discovery Engine (Remodelagem F6, doc 08).
 //
@@ -30,6 +31,7 @@ import { DiscoveredStrategy, DiscoveryRunResult, League } from '../../core/model
     MatIconModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
+    PageLoaderComponent,
   ],
   templateUrl: './discovery.component.html',
 })

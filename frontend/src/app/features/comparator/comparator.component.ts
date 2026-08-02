@@ -13,6 +13,7 @@ import { ApiService } from '../../core/api.service';
 import { ComparisonResult, League, Team } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 interface ChartData {
   labels: (string | number)[];
@@ -34,6 +35,7 @@ interface ChartData {
     MatTooltipModule,
     SimpleChartComponent,
     AdSlotComponent,
+    PageLoaderComponent,
   ],
   templateUrl: './comparator.component.html',
 })

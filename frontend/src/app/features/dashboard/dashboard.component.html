@@ -52,7 +52,7 @@
   </div>
 
   @if (loading()) {
-    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+    <app-page-loader label="Carregando estatísticas" />
   }
 
   @if (error()) {

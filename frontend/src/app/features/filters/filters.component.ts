@@ -17,6 +17,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BacktestEntry, BacktestResult, FilterRunRequest, League, Season, Team } from '../../core/models';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 @Component({
   selector: 'app-filters',
@@ -36,6 +37,7 @@ import { AdSlotComponent } from '../../shared/ad-slot.component';
     MatChipsModule,
     MatTooltipModule,
     AdSlotComponent,
+    PageLoaderComponent,
   ],
   templateUrl: './filters.component.html',
 })

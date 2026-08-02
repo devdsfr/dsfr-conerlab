@@ -16,6 +16,7 @@ import { ApiService } from '../../core/api.service';
 import { DashboardResult, League, Season, Team, TeamMatchView } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 const VALID_LIMITS = [5, 10, 15, 20];
 
@@ -62,6 +63,7 @@ interface ChartData {
     MatIconModule,
     SimpleChartComponent,
     AdSlotComponent,
+    PageLoaderComponent,
   ],
   templateUrl: './dashboard.component.html',
 })

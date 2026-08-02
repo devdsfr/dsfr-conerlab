@@ -98,7 +98,7 @@
 
   <!-- Ranking -->
   @if (loading()) {
-    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+    <app-page-loader label="Carregando descobertas" />
   } @else if (!strategies().length) {
     <section class="cl-card p-6 text-center space-y-2">
       <mat-icon class="!w-10 !h-10 !text-[40px] text-slate-600" aria-hidden="true">search_off</mat-icon>

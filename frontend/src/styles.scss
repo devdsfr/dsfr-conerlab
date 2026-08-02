@@ -106,23 +106,54 @@ html, body {
   background-color: rgba(34, 197, 94, 0.18) !important;
 }
 
+// Barra de navegação: vidro fosco sobre o conteúdo que rola por baixo, com uma
+// borda inferior em degradê (verde → ciano → transparente) em vez da linha
+// sólida antiga — reforça a marca sem competir com o conteúdo da página.
+.cl-toolbar {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background-color: rgba(15, 23, 42, 0.82) !important;
+  border-bottom: 1px solid transparent;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.82)),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.55), rgba(56, 189, 248, 0.45) 45%, rgba(15, 23, 42, 0) 85%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+.cl-brand {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.cl-brand:hover {
+  opacity: 0.85;
+}
+.cl-brand:active {
+  transform: scale(0.97);
+}
+
+// Links do menu: pílula translúcida no item ativo em vez do sublinhado
+// anterior — mais silenciosa, alinhada ao resto da UI (cards/botões
+// arredondados), com uma transição macia de cor e fundo no hover/ativo.
 .cl-nav-link {
   position: relative;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  border-radius: 999px !important;
+  padding-inline: 14px !important;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+.cl-nav-link:hover {
+  background-color: rgba(148, 163, 184, 0.08) !important;
+  color: #f1f5f9 !important;
 }
 .cl-nav-active {
   color: #4ade80 !important;
-  background-color: rgba(34, 197, 94, 0.12) !important;
+  background-color: rgba(34, 197, 94, 0.13) !important;
 }
-.cl-nav-active::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 0;
-  height: 2px;
-  background-color: #22c55e;
-  border-radius: 999px 999px 0 0;
+.cl-nav-active mat-icon {
+  color: #4ade80 !important;
+}
+
+.cl-menu-toggle mat-icon {
+  transition: transform 0.2s ease;
 }
 
 .cl-mobile-menu {
@@ -137,6 +168,19 @@ html, body {
   opacity: 1;
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
+}
+
+// Itens do menu mobile entram com um leve deslize + fade escalonado (delay
+// crescente por item, definido inline no template) em vez de aparecerem
+// todos de uma vez — dá a sensação de painel "montado", não só revelado.
+.cl-mobile-item {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.22s ease, transform 0.22s ease, color 0.18s ease, background-color 0.18s ease;
+}
+.cl-mobile-menu-open .cl-mobile-item {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .cl-sort-th {

@@ -49,7 +49,7 @@
       }
     </div>
   } @else if (billing.loading()) {
-    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+    <app-page-loader label="Calculando projeções" />
   } @else if (!billing.isPremium()) {
     <app-paywall
       title="Cálculo de Projeções é um recurso Premium"

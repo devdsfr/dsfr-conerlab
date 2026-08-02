@@ -15,6 +15,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BankrollCriteria, BankrollHistoryEntry, BankrollPhase, BankrollRound, BankrollStatus } from '../../core/models';
 import { PaywallComponent } from '../../shared/paywall.component';
+import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 type Section = 'dashboard' | 'phases' | 'rounds' | 'criteria' | 'history';
 
@@ -40,6 +41,7 @@ interface PhaseDraft {
     MatTooltipModule,
     MatButtonToggleModule,
     PaywallComponent,
+    PageLoaderComponent,
   ],
   templateUrl: './bankroll.component.html',
 })

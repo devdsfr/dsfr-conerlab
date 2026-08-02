@@ -174,7 +174,7 @@
   </div>
 
   @if (loading()) {
-    <div class="flex justify-center py-10"><mat-spinner diameter="36"></mat-spinner></div>
+    <app-page-loader label="Executando backtest" />
   }
   @if (error()) {
     <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>

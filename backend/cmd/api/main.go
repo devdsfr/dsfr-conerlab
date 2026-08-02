@@ -19,6 +19,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/usecase/diagnostics"
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
+	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
 	"github.com/devdsfr/cornerlab/pkg/cache"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
@@ -65,6 +66,8 @@ func main() {
 	dashboardUC := usecase.NewDashboardUsecase(matchRepo, teamRepo)
 	comparatorUC := usecase.NewComparatorUsecase(matchRepo, teamRepo)
 	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, leagueRepo)
+	strategyRepo := postgres.NewStrategyRepo(pool)
+	strategyEngine := strategyengine.NewEngine(filterUC, strategyRepo)
 	betUC := usecase.NewBetUsecase(betRepo)
 	strategyHistoryUC := usecase.NewStrategyHistoryUsecase(strategyHistoryRepo)
 	bankrollUC := bankroll.New(bankrollRepo, betRepo)
@@ -124,6 +127,7 @@ func main() {
 		Billing:         handlers.NewBillingHandler(billingUC),
 		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC, syncRunRepo),
 		Overview:        handlers.NewOverviewHandler(matchRepo),
+		Strategy:        handlers.NewStrategyHandler(strategyRepo, strategyEngine),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

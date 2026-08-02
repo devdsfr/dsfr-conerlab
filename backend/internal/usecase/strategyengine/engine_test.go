@@ -1,0 +1,100 @@
+package strategyengine
+
+import (
+	"math"
+	"testing"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/formulas"
+	"github.com/devdsfr/cornerlab/internal/usecase"
+)
+
+func result(games, hits int, roi, yield, dd float64) *usecase.BacktestResult {
+	hitRate := 0.0
+	if games > 0 {
+		hitRate = float64(hits) / float64(games) * 100
+	}
+	return &usecase.BacktestResult{
+		MatchCount: games, Hits: hits, Misses: games - hits,
+		HitRate: hitRate, ROI: roi, Yield: yield, MaxDrawdown: dd,
+	}
+}
+
+func TestParseDefinition(t *testing.T) {
+	ok := `{"league_id":18,"season_ids":[26],"metric":"corners","corners_threshold":8}`
+	d, err := ParseDefinition(ok)
+	if err != nil || d.LeagueID != 18 || d.Metric != "corners" {
+		t.Fatalf("definition válida falhou: %v %+v", err, d)
+	}
+	for _, bad := range []string{``, `{`, `{"metric":"corners"}`} {
+		if _, err := ParseDefinition(bad); err == nil {
+			t.Errorf("definition %q deveria falhar", bad)
+		}
+	}
+}
+
+func TestBacktestRow(t *testing.T) {
+	r := result(40, 30, 12.5, 8.0, 4.0) // 75% acerto
+	bt := backtestRow(7, r)
+	if bt.StrategyID != 7 || bt.Games != 40 || bt.Wins != 30 || bt.Losses != 10 {
+		t.Errorf("linha básica errada: %+v", bt)
+	}
+	if *bt.ROI != 12.5 || *bt.Yield != 8.0 || *bt.Drawdown != 4.0 {
+		t.Errorf("métricas financeiras erradas")
+	}
+	if bt.Confidence == nil || *bt.Confidence <= 0 || *bt.Confidence > 100 {
+		t.Errorf("confidence fora da escala: %v", bt.Confidence)
+	}
+	if bt.AlgorithmVersion != formulas.Version {
+		t.Errorf("algorithm_version deveria ser %s", formulas.Version)
+	}
+}
+
+func TestHealthRowFirstRun(t *testing.T) {
+	h := healthRow(1, result(40, 30, 10, 5, 3), nil)
+	if math.Abs(h.HealthScore-50) > 0.01 {
+		t.Errorf("primeira execução deveria ser estável (50): %v", h.HealthScore)
+	}
+}
+
+func TestHealthRowImprovingAndDeclining(t *testing.T) {
+	prevROI, prevYield, prevDD := 5.0, 3.0, 5.0
+	prev := &domain.Backtest{Games: 40, Wins: 24, ROI: &prevROI, Yield: &prevYield, Drawdown: &prevDD} // 60%
+
+	up := healthRow(1, result(40, 30, 15, 9, 3), prev) // tudo melhorou
+	if up.HealthScore <= 50 {
+		t.Errorf("melhora deveria dar health > 50: %v", up.HealthScore)
+	}
+	down := healthRow(1, result(40, 18, -5, -3, 8), prev) // tudo piorou
+	if down.HealthScore >= 50 {
+		t.Errorf("piora deveria dar health < 50: %v", down.HealthScore)
+	}
+}
+
+func TestScoresRow(t *testing.T) {
+	strong := scoresRow(1, result(50, 40, 20, 15, 1), 75, 0.3) // estratégia forte
+	weak := scoresRow(2, result(50, 20, -10, -8, 9), 30, -0.3) // estratégia fraca
+
+	if strong.DSFRScore <= weak.DSFRScore {
+		t.Errorf("DSFR: forte (%v) deveria superar fraca (%v)", strong.DSFRScore, weak.DSFRScore)
+	}
+	if *strong.Risk >= *weak.Risk {
+		t.Errorf("Risk: forte (%v) deveria ser menor que fraca (%v)", *strong.Risk, *weak.Risk)
+	}
+	if *strong.Ranking <= *weak.Ranking {
+		t.Errorf("Ranking: forte deveria ranquear acima")
+	}
+	for _, v := range []float64{strong.DSFRScore, *strong.Confidence, *strong.Robustness, *strong.Volatility, *strong.Risk, *strong.Ranking} {
+		if v < 0 || v > 100 {
+			t.Errorf("score fora de 0..100: %v", v)
+		}
+	}
+	if strong.LifecycleStage == "" || weak.LifecycleStage == "" {
+		t.Error("lifecycle vazio")
+	}
+	// amostra pequena → nascimento, independente da força
+	baby := scoresRow(3, result(10, 8, 20, 15, 1), 75, 0.3)
+	if baby.LifecycleStage != string(formulas.StageBirth) {
+		t.Errorf("amostra 10 deveria ser nascimento: %s", baby.LifecycleStage)
+	}
+}

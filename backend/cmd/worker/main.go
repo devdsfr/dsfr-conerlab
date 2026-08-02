@@ -39,8 +39,10 @@ import (
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider/sofascore"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
 	"github.com/devdsfr/cornerlab/internal/usagelog"
+	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/internal/usecase/analytics"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
+	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
 	"github.com/devdsfr/cornerlab/pkg/logger"
@@ -86,7 +88,15 @@ func main() {
 	// Analytics Worker (Remodelagem F3, doc 15): pré-calcula team_metrics após
 	// cada ciclo de sincronização — "o usuário consulta, workers calculam".
 	analyticsRepo := postgres.NewAnalyticsRepo(pool)
-	analyticsWorker := analytics.NewWorker(postgres.NewMatchRepo(pool), postgres.NewTeamRepo(pool), analyticsRepo)
+	matchRepo := postgres.NewMatchRepo(pool)
+	teamRepo := postgres.NewTeamRepo(pool)
+	analyticsWorker := analytics.NewWorker(matchRepo, teamRepo, analyticsRepo)
+
+	// Strategy Worker (Remodelagem F4, Workers 04/05/07 do doc 15): reexecuta o
+	// backtest de todas as estratégias ativas e recalcula health + scores.
+	strategyRepo := postgres.NewStrategyRepo(pool)
+	filterUC := usecase.NewFilterUsecase(matchRepo, teamRepo, postgres.NewLeagueRepo(pool))
+	strategyEngine := strategyengine.NewEngine(filterUC, strategyRepo)
 
 	appLog.Info("CornerLab worker de sincronização iniciando", "provider", provider.Name(),
 		"discovery_interval", discoveryInterval.String(), "update_interval", updateInterval.String(),
@@ -100,6 +110,7 @@ func main() {
 	updateResult := runUpdate(ctx, updateUC)
 	recordRun(ctx, syncRunRepo, discoveryResult, updateResult, time.Since(cycleStart).Milliseconds())
 	runAnalytics(ctx, analyticsWorker, analyticsRepo)
+	runStrategies(ctx, strategyEngine, analyticsRepo)
 
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
@@ -128,6 +139,7 @@ func main() {
 		case <-updateTicker.C:
 			runUpdate(ctx, updateUC)
 			runAnalytics(ctx, analyticsWorker, analyticsRepo)
+			runStrategies(ctx, strategyEngine, analyticsRepo)
 		case <-healthTicker.C:
 			runHealthCheck(ctx, healthUC)
 		}
@@ -221,6 +233,32 @@ func runAnalytics(ctx context.Context, w *analytics.Worker, repo *postgres.Analy
 		}
 		if err := repo.FinishWorkerRun(ctx, runID, status, result.MetricsSaved, result.Errors, start, details); err != nil {
 			slog.Error("falha ao registrar worker_run de analytics", "error", err)
+		}
+	}
+}
+
+// runStrategies roda o Strategy Worker (Remodelagem F4): backtest + health +
+// scores de todas as estratégias ativas, com observabilidade em worker_runs.
+func runStrategies(ctx context.Context, e *strategyengine.Engine, repo *postgres.AnalyticsRepo) {
+	defer recoverAndLog("strategy engine")
+	start := time.Now()
+	runID, idErr := repo.StartWorkerRun(ctx, "strategy")
+	result, err := e.RunAll(ctx)
+	fields := []any{
+		"duration_ms", time.Since(start).Milliseconds(),
+		"strategies", result.Strategies, "evaluated", result.Evaluated, "errors", result.Errors,
+	}
+	status := "ok"
+	if err != nil {
+		status = "error"
+		slog.Error("ciclo do strategy engine falhou", append(fields, "error", err)...)
+	} else {
+		slog.Info("ciclo do strategy engine concluído", fields...)
+	}
+	if idErr == nil {
+		details := map[string]any{"strategies": result.Strategies, "evaluated": result.Evaluated}
+		if err := repo.FinishWorkerRun(ctx, runID, status, result.Evaluated, result.Errors, start, details); err != nil {
+			slog.Error("falha ao registrar worker_run do strategy engine", "error", err)
 		}
 	}
 }

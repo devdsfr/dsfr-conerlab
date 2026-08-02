@@ -198,3 +198,21 @@ type AnalyticsRepository interface {
 	StartWorkerRun(ctx context.Context, worker string) (int64, error)
 	FinishWorkerRun(ctx context.Context, id int64, status string, processed, errCount int, started time.Time, details map[string]any) error
 }
+
+// StrategyRepository persiste estratégias e artefatos calculados (Remodelagem
+// F4 — docs 08/09/12; tabelas strategies/backtests/strategy_health/strategy_scores).
+type StrategyRepository interface {
+	Create(ctx context.Context, s *domain.Strategy) error
+	ListForUser(ctx context.Context, userID int64) ([]domain.Strategy, error)
+	ListActive(ctx context.Context) ([]domain.Strategy, error)
+	GetByID(ctx context.Context, id int64) (*domain.Strategy, error)
+	SetFlags(ctx context.Context, id int64, active, favorite bool) error
+	Delete(ctx context.Context, id, ownerID int64) error
+
+	InsertBacktest(ctx context.Context, b *domain.Backtest) error
+	LastBacktests(ctx context.Context, strategyID int64, limit int) ([]domain.Backtest, error)
+	UpsertHealth(ctx context.Context, h *domain.StrategyHealth) error
+	UpsertScores(ctx context.Context, s *domain.StrategyScores) error
+	GetHealth(ctx context.Context, strategyID int64) (*domain.StrategyHealth, error)
+	GetScores(ctx context.Context, strategyID int64) (*domain.StrategyScores, error)
+}

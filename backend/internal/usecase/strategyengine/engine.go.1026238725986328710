@@ -1,0 +1,322 @@
+// Package strategyengine implementa a Fase 4 da Remodelagem: Strategy Engine +
+// Backtesting Worker + Health Engine + Score Engine (Remodelagem docs 06, 08,
+// 09, 12 e Workers 04/05/07 do doc 15).
+//
+// O engine reaproveita o motor de backtest existente (usecase.FilterUsecase):
+// uma Strategy é uma definição de filtro persistida (JSONB, mesmo formato do
+// Simulador de Filtros). Cada execução: roda o backtest completo, grava o
+// resultado em `backtests` (histórico auditável), calcula Health comparando com
+// a execução anterior, calcula os scores proprietários (DSFR, Confidence,
+// Robustness, Volatility, Risk, Ranking, Lifecycle) via Formula Catalog e
+// persiste em strategy_health/strategy_scores.
+package strategyengine
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/formulas"
+	"github.com/devdsfr/cornerlab/internal/repository"
+	"github.com/devdsfr/cornerlab/internal/usecase"
+)
+
+// Normalizadores dos componentes de score (documentados para auditoria — mudar
+// qualquer um exige nova versão no Formula Catalog):
+//
+//	ROI:      teto em ±20%  (ROI ≥ 20% conta como componente cheio)
+//	Yield/EV: teto em 15%   (EV por aposta ≈ yield; sem odds reais é simulado)
+//	Drawdown: teto em 10 stakes (dd ≥ 10 unidades zera o componente)
+//	Amostra:  teto em 50 jogos  (critério do doc 09: amostra robusta)
+const (
+	roiCapPct      = 20.0
+	yieldCapPct    = 15.0
+	drawdownCapStk = 10.0
+	sampleCap      = 50.0
+	lifecycleMinN  = 30 // amostra mínima para sair de "nascimento" (Catálogo 27)
+)
+
+// Definition é o formato JSONB persistido em strategies.definition — espelho do
+// payload do Simulador de Filtros (dto.FilterRunRequest).
+type Definition struct {
+	LeagueID               int64   `json:"league_id"`
+	SeasonIDs              []int64 `json:"season_ids"`
+	TeamID                 *int64  `json:"team_id,omitempty"`
+	LastNGames             int     `json:"last_n_games,omitempty"`
+	HomeAway               string  `json:"home_away,omitempty"`
+	CornersThreshold       int     `json:"corners_threshold,omitempty"`
+	OpponentTier           string  `json:"opponent_tier,omitempty"`
+	MaxOdds                float64 `json:"max_odds,omitempty"`
+	Stake                  float64 `json:"stake,omitempty"`
+	Metric                 string  `json:"metric,omitempty"`
+	GoalsThreshold         int     `json:"goals_threshold,omitempty"`
+	OffsidesThreshold      int     `json:"offsides_threshold,omitempty"`
+	ShotsThreshold         int     `json:"shots_threshold,omitempty"`
+	ShotsOnTargetThreshold int     `json:"shots_on_target_threshold,omitempty"`
+	FixedOdd               float64 `json:"fixed_odd,omitempty"`
+}
+
+// ParseDefinition valida e converte o JSONB de uma estratégia.
+func ParseDefinition(raw string) (*Definition, error) {
+	var d Definition
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		return nil, fmt.Errorf("definition inválida: %w", err)
+	}
+	if d.LeagueID == 0 {
+		return nil, fmt.Errorf("definition sem league_id")
+	}
+	return &d, nil
+}
+
+func (d *Definition) criteria() usecase.FilterCriteria {
+	return usecase.FilterCriteria{
+		TeamID:                 d.TeamID,
+		LastNGames:             d.LastNGames,
+		HomeAway:               d.HomeAway,
+		CornersThreshold:       d.CornersThreshold,
+		OpponentTier:           d.OpponentTier,
+		MaxOdds:                d.MaxOdds,
+		Stake:                  d.Stake,
+		Metric:                 d.Metric,
+		GoalsThreshold:         d.GoalsThreshold,
+		OffsidesThreshold:      d.OffsidesThreshold,
+		ShotsThreshold:         d.ShotsThreshold,
+		ShotsOnTargetThreshold: d.ShotsOnTargetThreshold,
+		FixedOdd:               d.FixedOdd,
+	}
+}
+
+type Engine struct {
+	filters *usecase.FilterUsecase
+	repo    repository.StrategyRepository
+}
+
+func NewEngine(filters *usecase.FilterUsecase, repo repository.StrategyRepository) *Engine {
+	return &Engine{filters: filters, repo: repo}
+}
+
+// Evaluation agrupa tudo que uma execução produz (para a API devolver de uma vez).
+type Evaluation struct {
+	Backtest *domain.Backtest       `json:"backtest"`
+	Health   *domain.StrategyHealth `json:"health"`
+	Scores   *domain.StrategyScores `json:"scores"`
+	Raw      *usecase.BacktestResult `json:"raw,omitempty"`
+}
+
+// RunStrategy executa o ciclo completo de uma estratégia: backtest → histórico
+// → health (vs execução anterior) → scores → persistência.
+func (e *Engine) RunStrategy(ctx context.Context, s *domain.Strategy) (*Evaluation, error) {
+	def, err := ParseDefinition(s.Definition)
+	if err != nil {
+		return nil, err
+	}
+
+	// execução anterior ANTES de gravar a atual — base dos deltas do Health.
+	prev, err := e.repo.LastBacktests(ctx, s.ID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("carregar backtest anterior: %w", err)
+	}
+
+	// Workers rodam sem cap de histórico (maxAgeDays=0) — o cap de 90 dias é um
+	// limite do plano gratuito na navegação, não do pipeline (doc 15).
+	res, err := e.filters.RunBacktest(ctx, def.LeagueID, def.SeasonIDs, def.criteria(), 0)
+	if err != nil {
+		return nil, fmt.Errorf("backtest: %w", err)
+	}
+
+	bt := backtestRow(s.ID, res)
+	if err := e.repo.InsertBacktest(ctx, bt); err != nil {
+		return nil, fmt.Errorf("gravar backtest: %w", err)
+	}
+
+	var prevBt *domain.Backtest
+	if len(prev) > 0 {
+		prevBt = &prev[0]
+	}
+	health := healthRow(s.ID, res, prevBt)
+	scores := scoresRow(s.ID, res, health.HealthScore, derefOrZero(health.Trend))
+
+	if err := e.repo.UpsertHealth(ctx, health); err != nil {
+		return nil, fmt.Errorf("gravar health: %w", err)
+	}
+	if err := e.repo.UpsertScores(ctx, scores); err != nil {
+		return nil, fmt.Errorf("gravar scores: %w", err)
+	}
+	return &Evaluation{Backtest: bt, Health: health, Scores: scores, Raw: res}, nil
+}
+
+// backtestRow converte o resultado do motor de filtros na linha persistida.
+func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
+	winRate := r.HitRate / 100
+	sampleNorm := clamp01(float64(r.MatchCount) / sampleCap)
+	invVar := 1 - 4*winRate*(1-winRate) // variância Bernoulli normalizada (p=0.5 → 0)
+	invDD := 1 - clamp01(r.MaxDrawdown/drawdownCapStk)
+	consistency := formulas.ConsistencyIndex(winRate, invVar, invDD, sampleNorm)
+	confidence := formulas.ConfidenceScore(sampleNorm, consistency/100, invVar, sampleNorm)
+
+	return &domain.Backtest{
+		StrategyID:       strategyID,
+		Games:            r.MatchCount,
+		Wins:             r.Hits,
+		Losses:           r.Misses,
+		ROI:              ptr(r.ROI),
+		Yield:            ptr(r.Yield),
+		EV:               ptr(r.Yield), // EV por aposta ≈ yield (sem odds reais é simulado)
+		Drawdown:         ptr(r.MaxDrawdown),
+		Profit:           ptr(r.Profit),
+		Confidence:       ptr(round2(confidence)),
+		AlgorithmVersion: formulas.Version,
+	}
+}
+
+// healthRow calcula o Health Score (Catálogo 25) comparando com o backtest
+// anterior. Sem anterior: 50 (estável) e tendência 0.
+func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtest) *domain.StrategyHealth {
+	var dROI, dEV, dDD, dCons float64
+	if prev != nil {
+		winRate := r.HitRate / 100
+		dROI = clampD((r.ROI - deref(prev.ROI)) / roiCapPct)
+		dEV = clampD((r.Yield - deref(prev.Yield)) / yieldCapPct)
+		dDD = clampD((r.MaxDrawdown - deref(prev.Drawdown)) / drawdownCapStk)
+		prevWinRate := 0.0
+		if prev.Games > 0 {
+			prevWinRate = float64(prev.Wins) / float64(prev.Games)
+		}
+		dCons = clampD(winRate - prevWinRate)
+	}
+	score := formulas.HealthScore(dROI, dEV, dDD, dCons)
+	trend := formulas.TrendScore(dROI, dROI, dROI) // sem janelas históricas ainda: delta atual
+
+	variation, _ := json.Marshal(map[string]float64{
+		"roi": round3(dROI), "ev": round3(dEV), "drawdown": round3(dDD), "consistency": round3(dCons),
+	})
+	return &domain.StrategyHealth{
+		StrategyID:       strategyID,
+		HealthScore:      round2(score),
+		Trend:            ptr(round3(trend)),
+		Variation:        string(variation),
+		AlgorithmVersion: formulas.Version,
+	}
+}
+
+// scoresRow calcula os scores proprietários (Catálogo 23, 24, 26–32).
+func scoresRow(strategyID int64, r *usecase.BacktestResult, health, trend float64) *domain.StrategyScores {
+	winRate := r.HitRate / 100
+	roiNorm := clamp01(r.ROI / roiCapPct)
+	yieldNorm := clamp01(r.Yield / yieldCapPct)
+	invDD := 1 - clamp01(r.MaxDrawdown/drawdownCapStk)
+	sampleNorm := clamp01(float64(r.MatchCount) / sampleCap)
+	invVar := 1 - 4*winRate*(1-winRate)
+	consistency := formulas.ConsistencyIndex(winRate, invVar, invDD, sampleNorm)
+
+	dsfr := formulas.DSFRScore(formulas.DSFRInputs{
+		ROI:         roiNorm,
+		EV:          yieldNorm,
+		WinRate:     winRate,
+		Yield:       yieldNorm,
+		InvDrawdown: invDD,
+		SampleSize:  sampleNorm,
+		Consistency: consistency / 100,
+		InvVariance: invVar,
+	})
+	confidence := formulas.ConfidenceScore(sampleNorm, consistency/100, invVar, sampleNorm)
+	robustness := formulas.RobustnessScore(sampleNorm, consistency/100, invVar, roiNorm, sampleNorm)
+	volatility := formulas.VolatilityScore(1-invVar, absF(trend), absF(trend))
+	risk := formulas.RiskScore(1-invDD, 1-invVar, volatility/100, 1-winRate)
+	ranking := formulas.RankingScore(dsfr, health, roiNorm, yieldNorm, confidence)
+	stage := formulas.LifecycleStage(r.MatchCount, lifecycleMinN, health, trend)
+
+	components, _ := json.Marshal(map[string]float64{
+		"roi": round3(roiNorm), "ev": round3(yieldNorm), "win_rate": round3(winRate),
+		"yield": round3(yieldNorm), "inv_drawdown": round3(invDD),
+		"sample": round3(sampleNorm), "consistency": round3(consistency / 100),
+		"inv_variance": round3(invVar),
+	})
+	return &domain.StrategyScores{
+		StrategyID:       strategyID,
+		DSFRScore:        round2(dsfr),
+		Components:       string(components),
+		Confidence:       ptr(round2(confidence)),
+		Robustness:       ptr(round2(robustness)),
+		Volatility:       ptr(round2(volatility)),
+		Risk:             ptr(round2(risk)),
+		Ranking:          ptr(round2(ranking)),
+		LifecycleStage:   string(stage),
+		AlgorithmVersion: formulas.Version,
+	}
+}
+
+// WorkerResult resume um ciclo do Strategy Worker (observabilidade, doc 15).
+type WorkerResult struct {
+	Strategies int
+	Evaluated  int
+	Errors     int
+}
+
+// RunAll executa todas as estratégias ativas (Worker 04/05 do doc 15). Erros
+// por estratégia são contados sem interromper o ciclo.
+func (e *Engine) RunAll(ctx context.Context) (WorkerResult, error) {
+	var res WorkerResult
+	list, err := e.repo.ListActive(ctx)
+	if err != nil {
+		return res, fmt.Errorf("listar estratégias ativas: %w", err)
+	}
+	res.Strategies = len(list)
+	for i := range list {
+		if _, err := e.RunStrategy(ctx, &list[i]); err != nil {
+			res.Errors++
+			continue
+		}
+		res.Evaluated++
+	}
+	return res, nil
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func clampD(v float64) float64 {
+	if v < -1 {
+		return -1
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func absF(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func ptr(v float64) *float64 { return &v }
+
+func deref(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func derefOrZero(p *float64) float64 { return deref(p) }
+
+func round2(v float64) float64 { return float64(int(v*100+sign(v)*0.5)) / 100 }
+func round3(v float64) float64 { return float64(int(v*1000+sign(v)*0.5)) / 1000 }
+
+func sign(v float64) float64 {
+	if v < 0 {
+		return -1
+	}
+	return 1
+}

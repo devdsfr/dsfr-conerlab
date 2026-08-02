@@ -1,0 +1,1081 @@
+Perfeito. Na minha opinião, esse será o documento mais importante de todo o CornerLab, porque ele será a **fonte única da verdade (Single Source of Truth)** para todos os cálculos matemáticos da plataforma.
+
+Sempre que um desenvolvedor (ou uma IA) precisar implementar uma fórmula, ele deverá consultar este documento primeiro.
+
+---
+
+```markdown
+# Formula Catalog
+## DSFR CornerLab
+
+Versão: 1.0
+
+Status: Documento Oficial
+
+---
+
+# Objetivo
+
+Este documento centraliza todas as fórmulas matemáticas utilizadas pelo CornerLab.
+
+Nenhum cálculo poderá ser implementado utilizando fórmulas diferentes das especificadas aqui.
+
+Toda alteração deverá gerar:
+
+- Nova versão
+- Testes automatizados
+- Atualização da documentação
+
+---
+
+# Estrutura
+
+Cada fórmula deverá conter:
+
+- Objetivo
+- Definição
+- Fórmula
+- Variáveis
+- Exemplo
+- Caso de Teste
+- Implementação Go
+- Critérios de Aceite
+
+---
+
+# Índice
+
+01 Probabilidade
+
+02 Probabilidade Implícita
+
+03 Fair Odds
+
+04 Break Even
+
+05 Edge
+
+06 Expected Value (EV)
+
+07 ROI
+
+08 Yield
+
+09 Win Rate
+
+10 Loss Rate
+
+11 Push Rate
+
+12 Drawdown
+
+13 Profit Factor
+
+14 Kelly Criterion
+
+15 Stake Percentual
+
+16 Stake Fixa
+
+17 Reinvestimento
+
+18 Juros Compostos
+
+19 Monte Carlo
+
+20 Variância
+
+21 Desvio Padrão
+
+22 Consistência
+
+23 Confidence Score
+
+24 DSFR Score
+
+25 Health Score
+
+26 Opportunity Score
+
+27 Lifecycle Score
+
+28 Ranking Score
+
+29 Trend Score
+
+30 Robustness Score
+
+31 Volatility Score
+
+32 Risk Score
+
+33 Recovery Factor
+
+34 Sharpe Adaptado
+
+35 Calmar Adaptado
+
+36 Expectancy
+
+37 Expectancy %
+
+38 CAGR da banca
+
+39 Max Consecutive Losses
+
+40 Max Consecutive Wins
+
+```
+
+---
+
+# 01 — Probabilidade
+
+```markdown
+## Objetivo
+
+Representar a chance de ocorrência de um evento.
+
+## Fórmula
+
+P = Eventos Favoráveis / Eventos Possíveis
+
+## Exemplo
+
+8 sucessos
+
+10 jogos
+
+P = 8 / 10
+
+P = 0.80
+
+80%
+
+## Implementação
+
+float64(success) / float64(total)
+
+## Critério
+
+Resultado entre
+
+0
+
+e
+
+1
+```
+
+---
+
+# 02 — Probabilidade Implícita
+
+```markdown
+## Objetivo
+
+Transformar uma odd em probabilidade.
+
+## Fórmula
+
+P = 1 / Odd
+
+## Exemplo
+
+Odd
+
+1.50
+
+P = 1 / 1.50
+
+66.67%
+
+## Go
+
+probability := 1 / odd
+
+## Teste
+
+Odd
+
+2.00
+
+Resultado
+
+50%
+```
+
+---
+
+# 03 — Fair Odds
+
+```markdown
+## Objetivo
+
+Calcular a odd justa.
+
+## Fórmula
+
+Odd Justa
+
+=
+
+1
+
+/
+
+Probabilidade
+
+## Exemplo
+
+Probabilidade
+
+80%
+
+Odd
+
+1.25
+
+## Critério
+
+Nunca inferior
+
+1.01
+```
+
+---
+
+# 04 — Break Even
+
+```markdown
+## Objetivo
+
+Taxa mínima necessária para não perder dinheiro.
+
+## Fórmula
+
+1 / Odd
+
+## Exemplo
+
+Odd
+
+1.60
+
+Break Even
+
+62.50%
+```
+
+---
+
+# 05 — Edge
+
+```markdown
+## Objetivo
+
+Calcular vantagem matemática.
+
+## Fórmula
+
+Edge
+
+=
+
+Probabilidade Real
+
+-
+
+Probabilidade Implícita
+
+## Exemplo
+
+80%
+
+-
+
+66%
+
+=
+
+14%
+```
+
+---
+
+# 06 — Expected Value
+
+```markdown
+## Objetivo
+
+Lucro médio esperado.
+
+## Fórmula
+
+EV
+
+=
+
+(Pwin × Lucro)
+
+-
+
+(Ploss × Perda)
+
+Onde
+
+Lucro
+
+Stake × (Odd-1)
+
+## Exemplo
+
+Stake
+
+100
+
+Odd
+
+1.60
+
+Win
+
+75%
+
+EV
+
+20
+
+## Teste
+
+Esperado
+
+20
+```
+
+---
+
+# 07 — ROI
+
+```markdown
+## Objetivo
+
+Retorno sobre investimento.
+
+## Fórmula
+
+ROI
+
+=
+
+Lucro
+
+/
+
+Investimento
+
+×
+
+100
+
+## Exemplo
+
+Lucro
+
+500
+
+Investimento
+
+2000
+
+ROI
+
+25%
+```
+
+---
+
+# 08 — Yield
+
+```markdown
+## Objetivo
+
+Eficiência das apostas.
+
+## Fórmula
+
+Yield
+
+=
+
+Lucro
+
+/
+
+Volume Apostado
+
+×
+
+100
+```
+
+---
+
+# 09 — Win Rate
+
+```markdown
+Wins
+
+/
+
+Total
+
+×
+
+100
+```
+
+---
+
+# 10 — Loss Rate
+
+```markdown
+Losses
+
+/
+
+Total
+
+×
+
+100
+```
+
+---
+
+# 11 — Push Rate
+
+```markdown
+Push
+
+/
+
+Total
+
+×
+
+100
+```
+
+---
+
+# 12 — Drawdown
+
+```markdown
+## Objetivo
+
+Maior perda acumulada.
+
+## Fórmula
+
+(Pico
+
+-
+
+Vale)
+
+/
+
+Pico
+
+```
+
+---
+
+# 13 — Profit Factor
+
+```markdown
+Lucro Bruto
+
+/
+
+Prejuízo Bruto
+```
+
+---
+
+# 14 — Kelly Criterion
+
+```markdown
+Kelly
+
+=
+
+(bp-q)
+
+/
+
+b
+
+Onde
+
+b
+
+Odd-1
+
+p
+
+Win Rate
+
+q
+
+Loss Rate
+```
+
+---
+
+# 15 — Stake Percentual
+
+```markdown
+Stake
+
+=
+
+Banca
+
+×
+
+Percentual
+```
+
+---
+
+# 16 — Stake Fixa
+
+```markdown
+Stake
+
+Sempre igual.
+```
+
+---
+
+# 17 — Reinvestimento
+
+```markdown
+Nova Stake
+
+=
+
+Stake
+
++
+
+Lucro
+```
+
+---
+
+# 18 — Juros Compostos
+
+```markdown
+Capital Final
+
+=
+
+Capital Inicial
+
+×
+
+(1+r)^n
+```
+
+---
+
+# 19 — Monte Carlo
+
+```markdown
+Executar
+
+10000+
+
+simulações.
+
+Retornar
+
+Média
+
+Percentis
+
+Drawdown
+
+Distribuição
+```
+
+---
+
+# 20 — Variância
+
+```markdown
+σ²
+
+=
+
+Σ(x-μ)²
+
+/
+
+N
+```
+
+---
+
+# 21 — Desvio Padrão
+
+```markdown
+σ
+
+=
+
+√Variância
+```
+
+---
+
+# 22 — Consistência
+
+Aqui eu faria diferente.
+
+Não utilizaria apenas Win Rate.
+
+Criaria um índice.
+
+```
+Consistency
+
+=
+
+40%
+
+Win Rate
+
++
+
+20%
+
+Variância
+
++
+
+20%
+
+Drawdown
+
++
+
+20%
+
+Robustez
+```
+
+---
+
+# 23 — Confidence Score
+
+```
+Quantidade Jogos
+
++
+
+Consistência
+
++
+
+Variância
+
++
+
+Robustez Temporal
+
+=
+
+Confidence
+```
+
+Escala
+
+0
+
+↓
+
+100
+
+---
+
+# 24 — DSFR Score
+
+```
+20%
+
+ROI
+
+20%
+
+EV
+
+15%
+
+Win Rate
+
+10%
+
+Yield
+
+10%
+
+Drawdown
+
+10%
+
+Jogos
+
+10%
+
+Consistência
+
+5%
+
+Variância
+```
+
+---
+
+# 25 — Health Score
+
+```
+ΔROI
+
++
+
+ΔEV
+
++
+
+ΔDrawdown
+
++
+
+ΔConsistency
+```
+
+---
+
+# 26 — Opportunity Score
+
+```
+30%
+
+Health
+
+25%
+
+Score
+
+20%
+
+ROI
+
+15%
+
+Win Rate
+
+10%
+
+Consistência
+```
+
+---
+
+# 27 — Lifecycle Score
+
+```
+Nascimento
+
+↓
+
+Crescimento
+
+↓
+
+Maturidade
+
+↓
+
+Declínio
+
+↓
+
+Obsoleta
+```
+
+---
+
+# 28 — Ranking Score
+
+Ordenação baseada em
+
+```
+DSFR
+
+↓
+
+Health
+
+↓
+
+ROI
+
+↓
+
+Yield
+
+↓
+
+Confidence
+```
+
+---
+
+# 29 — Trend Score
+
+```
+Últimos 5
+
+↓
+
+Últimos 10
+
+↓
+
+Últimos 20
+
+↓
+
+Inclinação
+
+↓
+
+Trend
+```
+
+---
+
+# 30 — Robustness Score
+
+```
+Jogos
+
++
+
+Consistência
+
++
+
+Baixa Variância
+
++
+
+ROI
+
++
+
+Histórico Temporal
+```
+
+---
+
+# 31 — Volatility Score
+
+```
+Desvio Padrão
+
++
+
+Oscilação ROI
+
++
+
+Oscilação EV
+```
+
+---
+
+# 32 — Risk Score
+
+```
+Drawdown
+
++
+
+Variância
+
++
+
+Volatilidade
+
++
+
+Loss Rate
+```
+
+---
+
+# 33 — Recovery Factor
+
+```
+Lucro Líquido
+
+/
+
+Drawdown Máximo
+```
+
+---
+
+# 34 — Sharpe Adaptado
+
+```
+ROI Médio
+
+-
+
+ROI Livre de Risco
+
+/
+
+Desvio Padrão
+```
+
+Como não existe uma taxa livre de risco equivalente para estratégias esportivas, ela poderá ser configurável ou omitida, deixando claro que se trata de uma adaptação.
+
+---
+
+# 35 — Calmar Adaptado
+
+```
+ROI
+
+/
+
+Drawdown Máximo
+```
+
+---
+
+# 36 — Expectancy
+
+```
+Expectancy
+
+=
+
+(WinRate × Win Médio)
+
+-
+
+(LossRate × Loss Médio)
+```
+
+---
+
+# 37 — Expectancy %
+
+```
+Expectancy
+
+/
+
+Stake Média
+```
+
+---
+
+# 38 — CAGR da Banca
+
+```
+CAGR
+
+=
+
+(Capital Final
+
+/
+
+Capital Inicial)^(1/anos)
+
+-
+
+1
+```
+
+---
+
+# 39 — Max Consecutive Losses
+
+Maior sequência de derrotas consecutivas observada no histórico ou nas simulações.
+
+---
+
+# 40 — Max Consecutive Wins
+
+Maior sequência de vitórias consecutivas observada no histórico ou nas simulações.
+
+---
+
+# Casos de Teste Obrigatórios
+
+Cada fórmula deverá possuir:
+
+* Pelo menos **10 casos de teste válidos**.
+* Casos de borda (0%, 100%, odd 1.01, odd alta).
+* Casos inválidos (odd ≤ 1, divisão por zero, valores negativos quando não permitidos).
+* Comparação com cálculo manual.
+* Precisão mínima de **4 casas decimais**.
+* Resultado reproduzível.
+
+---
+
+# Versionamento
+
+Toda fórmula deverá possuir:
+
+* Nome
+* Versão
+* Data de criação
+* Última alteração
+* Autor
+* Referência bibliográfica (quando aplicável)
+* Testes relacionados
+* Algoritmo utilizado
+* Changelog
+
+---
+
+# Regra de Ouro
+
+> **Nenhum indicador do CornerLab poderá existir sem estar documentado neste catálogo.**
+
+Toda nova métrica deverá primeiro ser adicionada ao **Formula Catalog**, revisada, testada e aprovada. Somente depois poderá ser implementada no código.
+
+```
+
+---
+
+## ⭐ Minha última melhoria
+
+Depois de toda a documentação, eu faria esse documento ainda mais valioso.
+
+Eu acrescentaria um **Apêndice A** com **implementações oficiais em Go** de todas as fórmulas (uma função por fórmula), um **Apêndice B** com implementações equivalentes em TypeScript (para o Angular validar cálculos no cliente quando necessário) e um **Apêndice C** com uma coleção de aproximadamente **200 cenários de teste**.
+
+Assim, esse documento deixaria de ser apenas documentação e passaria a ser o **manual oficial de matemática do CornerLab**, servindo como referência para qualquer desenvolvedor, qualquer IA e até para auditorias futuras do sistema. Na minha opinião, esse será um dos ativos técnicos mais importantes do projeto.
+```

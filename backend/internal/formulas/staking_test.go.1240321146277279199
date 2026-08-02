@@ -1,0 +1,141 @@
+package formulas
+
+import "testing"
+
+func TestKelly(t *testing.T) {
+	cases := []struct{ odd, wr, want float64 }{
+		{2.00, 0.50, 0},      // jogo justo → Kelly 0
+		{2.00, 0.60, 0.20},   // clássico: b=1, p=0.6 → 20%
+		{2.00, 0.40, -0.20},  // sem edge → negativo
+		{1.60, 0.75, 0.3333}, // exemplo do EV do catálogo
+		{3.00, 0.40, 0.10},
+		{1.50, 0.6667, 0.0001},
+		{5.00, 0.25, 0.0625},
+		{1.25, 0.90, 0.50},
+		{10.0, 0.10, 0},
+		{2.50, 0.50, 0.1667},
+	}
+	for _, c := range cases {
+		got, err := Kelly(c.odd, c.wr)
+		noErr(t, err, "Kelly")
+		approx(t, got, c.want, "Kelly")
+	}
+	if _, err := Kelly(1.0, 0.5); err == nil {
+		t.Error("odd 1.0 deveria falhar")
+	}
+	if _, err := Kelly(2.0, 1.2); err == nil {
+		t.Error("winRate>1 deveria falhar")
+	}
+}
+
+func TestStakePercentAndFixed(t *testing.T) {
+	cases := []struct{ bank, pct, want float64 }{
+		{1000, 0.02, 20},
+		{1000, 0.05, 50},
+		{500, 0.10, 50},
+		{0, 0.05, 0},     // banca zero
+		{1000, 0, 0},     // percentual zero
+		{1000, 1, 1000},  // borda: 100% da banca
+		{250, 0.04, 10},
+		{10000, 0.015, 150},
+		{333, 0.03, 9.99},
+		{100, 0.5, 50},
+	}
+	for _, c := range cases {
+		got, err := StakePercent(c.bank, c.pct)
+		noErr(t, err, "StakePercent")
+		approx(t, got, c.want, "StakePercent")
+	}
+	if _, err := StakePercent(-100, 0.05); err == nil {
+		t.Error("banca negativa deveria falhar")
+	}
+	if _, err := StakePercent(100, 1.5); err == nil {
+		t.Error("percentual > 100% deveria falhar")
+	}
+
+	got, err := StakeFixed(25)
+	noErr(t, err, "StakeFixed")
+	approx(t, got, 25, "StakeFixed")
+	if _, err := StakeFixed(-1); err == nil {
+		t.Error("stake negativa deveria falhar")
+	}
+}
+
+func TestReinvest(t *testing.T) {
+	cases := []struct{ stake, profit, want float64 }{
+		{10, 5, 15},
+		{10, 0, 10},
+		{10, -4, 6},
+		{10, -15, 0}, // nunca abaixo de zero
+		{100, 60, 160},
+		{50, -50, 0},
+		{20, 12, 32},
+		{5, 2.5, 7.5},
+		{1000, -999, 1},
+		{10, 10, 20},
+	}
+	for _, c := range cases {
+		got, err := Reinvest(c.stake, c.profit)
+		noErr(t, err, "Reinvest")
+		approx(t, got, c.want, "Reinvest")
+	}
+	if _, err := Reinvest(-10, 5); err == nil {
+		t.Error("stake negativa deveria falhar")
+	}
+}
+
+func TestCompoundInterest(t *testing.T) {
+	cases := []struct {
+		principal, rate float64
+		periods         int
+		want            float64
+	}{
+		{1000, 0.10, 1, 1100},
+		{1000, 0.10, 2, 1210},
+		{1000, 0.10, 0, 1000},   // zero períodos
+		{1000, 0, 12, 1000},     // taxa zero
+		{100, 0.05, 10, 162.8895},
+		{1000, -0.10, 1, 900},   // taxa negativa (perda composta)
+		{500, 0.02, 24, 804.2186},
+		{1, 1.0, 10, 1024},      // dobra por período
+		{2000, 0.01, 1, 2020},
+		{100, 0.5, 2, 225},
+	}
+	for _, c := range cases {
+		got, err := CompoundInterest(c.principal, c.rate, c.periods)
+		noErr(t, err, "CompoundInterest")
+		approx(t, got, c.want, "CompoundInterest")
+	}
+	if _, err := CompoundInterest(-100, 0.1, 1); err == nil {
+		t.Error("principal negativo deveria falhar")
+	}
+	if _, err := CompoundInterest(100, 0.1, -1); err == nil {
+		t.Error("períodos negativos deveriam falhar")
+	}
+}
+
+func TestCAGR(t *testing.T) {
+	cases := []struct{ final, initial, years, want float64 }{
+		{2000, 1000, 1, 1.0},      // dobrou em 1 ano = 100%
+		{1210, 1000, 2, 0.10},     // 10% a.a.
+		{1000, 1000, 3, 0},        // estável
+		{500, 1000, 1, -0.50},     // caiu pela metade
+		{1331, 1000, 3, 0.10},
+		{4000, 1000, 2, 1.0},      // 4x em 2 anos = 100% a.a.
+		{1500, 1000, 1, 0.50},
+		{1102.5, 1000, 2, 0.05},
+		{8000, 1000, 3, 1.0},
+		{1050, 1000, 0.5, 0.1025}, // meio ano
+	}
+	for _, c := range cases {
+		got, err := CAGR(c.final, c.initial, c.years)
+		noErr(t, err, "CAGR")
+		approx(t, got, c.want, "CAGR")
+	}
+	if _, err := CAGR(1000, 0, 1); err == nil {
+		t.Error("capital inicial 0 deveria falhar")
+	}
+	if _, err := CAGR(1000, 1000, 0); err == nil {
+		t.Error("anos 0 deveria falhar")
+	}
+}

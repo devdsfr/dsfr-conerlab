@@ -22,6 +22,9 @@ import {
   SyncStatusResponse,
   BillingStatus,
   UpcomingMatch,
+  Strategy,
+  StrategyBundle,
+  StrategyEvaluation,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -102,6 +105,31 @@ export class ApiService {
   // Módulo 3
   runFilter(req: FilterRunRequest): Observable<BacktestResult> {
     return this.http.post<BacktestResult>(`${this.base}/filters/run`, req);
+  }
+
+  // Strategy Engine (Remodelagem F5) — CRUD + execução de estratégias.
+  listStrategies(): Observable<Strategy[]> {
+    return this.http.get<Strategy[]>(`${this.base}/strategies`);
+  }
+
+  createStrategy(payload: { name: string; description?: string; definition: string; favorite?: boolean }): Observable<Strategy> {
+    return this.http.post<Strategy>(`${this.base}/strategies`, payload);
+  }
+
+  getStrategy(id: number): Observable<StrategyBundle> {
+    return this.http.get<StrategyBundle>(`${this.base}/strategies/${id}`);
+  }
+
+  runStrategy(id: number): Observable<StrategyEvaluation> {
+    return this.http.post<StrategyEvaluation>(`${this.base}/strategies/${id}/run`, {});
+  }
+
+  updateStrategyFlags(id: number, flags: { active?: boolean; favorite?: boolean }): Observable<Strategy> {
+    return this.http.patch<Strategy>(`${this.base}/strategies/${id}`, flags);
+  }
+
+  deleteStrategy(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/strategies/${id}`);
   }
 
   // Painel "Integrações" — status/consumo das APIs externas

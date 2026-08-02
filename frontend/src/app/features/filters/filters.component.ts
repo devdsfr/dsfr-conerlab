@@ -14,6 +14,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { BacktestEntry, BacktestResult, League, Season, Team } from '../../core/models';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 
@@ -169,7 +170,56 @@ export class FiltersComponent implements OnInit {
   readonly consistencyTooltip =
     'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo.';
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, public auth: AuthService) {}
+
+  // ---- Salvar como estratégia (Strategy Workspace, Remodelagem F5) ----------
+  strategyName = '';
+  savingStrategy = signal(false);
+  strategySaved = signal(false);
+  strategyError = signal<string | null>(null);
+
+  // Monta a definition persistida — mesmo payload do backtest atual.
+  private buildDefinition(): string {
+    return JSON.stringify({
+      league_id: this.selectedLeagueId,
+      season_ids: this.selectedSeasonIds,
+      team_id: this.selectedTeamId ?? undefined,
+      last_n_games: this.lastNGames || undefined,
+      home_away: this.homeAway || undefined,
+      corners_threshold: this.cornersThreshold,
+      opponent_tier: this.opponentTier || undefined,
+      max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
+      stake: this.stake || undefined,
+      metric: this.metric,
+      goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
+      offsides_threshold: this.isOffsides ? this.offsidesThreshold : undefined,
+      shots_threshold: this.isShots ? this.shotsThreshold : undefined,
+      shots_on_target_threshold: this.isShotsOnTarget ? this.shotsOnTargetThreshold : undefined,
+      fixed_odd: this.usesFixedOdd ? (this.fixedOdd || undefined) : undefined,
+    });
+  }
+
+  saveAsStrategy(): void {
+    if (!this.selectedLeagueId || !this.strategyName.trim()) return;
+    this.savingStrategy.set(true);
+    this.strategyError.set(null);
+    this.api.createStrategy({
+      name: this.strategyName.trim(),
+      description: `Criada a partir do Simulador de Filtros (${this.label()})`,
+      definition: this.buildDefinition(),
+    }).subscribe({
+      next: () => {
+        this.savingStrategy.set(false);
+        this.strategySaved.set(true);
+        this.strategyName = '';
+        setTimeout(() => this.strategySaved.set(false), 6000);
+      },
+      error: err => {
+        this.strategyError.set(err?.error?.error ?? 'Erro ao salvar estratégia');
+        this.savingStrategy.set(false);
+      },
+    });
+  }
 
   ngOnInit(): void {
     this.api.listLeagues().subscribe(leagues => {

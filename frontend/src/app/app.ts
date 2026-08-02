@@ -36,6 +36,7 @@ export class App {
     { label: 'Dashboard', route: '/dashboard', icon: 'query_stats' },
     { label: 'Comparador', route: '/comparador', icon: 'compare_arrows' },
     { label: 'Simulador de Filtros', route: '/filtros', icon: 'tune' },
+    { label: 'Estratégias', route: '/estrategias', icon: 'insights' },
     { label: 'Gestão de Banca', route: '/banca', icon: 'account_balance_wallet' },
     { label: 'Projeções', route: '/projecoes', icon: 'trending_up' },
     { label: 'Assinatura', route: '/assinatura', icon: 'workspace_premium' },

@@ -139,6 +139,29 @@
         Executar backtest
       </button>
     </div>
+
+    <!-- Salvar como estratégia (Strategy Workspace) — os critérios atuais viram
+         uma estratégia monitorada: o motor reexecuta o backtest e recalcula
+         health/scores automaticamente a cada ciclo. -->
+    @if (auth.isAuthenticated()) {
+      <div class="flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
+        <mat-form-field appearance="outline" class="w-72">
+          <mat-label>Salvar como estratégia</mat-label>
+          <input matInput [(ngModel)]="strategyName" name="strategy-name" placeholder="ex.: Cruzeiro over 8 cantos…" />
+        </mat-form-field>
+        <button mat-stroked-button (click)="saveAsStrategy()" [disabled]="!strategyName.trim() || !selectedLeagueId || savingStrategy()">
+          @if (savingStrategy()) { <mat-spinner diameter="16"></mat-spinner> } @else { Salvar }
+        </button>
+        @if (strategySaved()) {
+          <span class="text-sm text-cornerlab-primary" role="status">
+            Estratégia salva! Acompanhe em <a routerLink="/estrategias" class="underline">Estratégias</a>.
+          </span>
+        }
+        @if (strategyError()) {
+          <span role="alert" class="text-sm text-red-400">{{ strategyError() }}</span>
+        }
+      </div>
+    }
   </div>
 
   @if (loading()) {

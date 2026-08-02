@@ -244,6 +244,76 @@ export interface BacktestResult {
   history_cap_days?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Strategy Engine (Remodelagem F4/F5) — estratégias persistidas com backtest,
+// health e scores proprietários calculados pelo backend (Formula Catalog).
+// ---------------------------------------------------------------------------
+
+export interface Strategy {
+  id: number;
+  owner_id?: number | null;
+  name: string;
+  description: string;
+  definition: string; // JSON no formato do Simulador (FilterRunRequest)
+  origin: string; // 'user' | 'discovery'
+  visibility: string;
+  active: boolean;
+  favorite: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyBacktest {
+  id: number;
+  strategy_id: number;
+  games: number;
+  wins: number;
+  losses: number;
+  voids: number;
+  roi?: number | null;
+  yield?: number | null;
+  ev?: number | null;
+  drawdown?: number | null;
+  profit?: number | null;
+  confidence?: number | null;
+  created_at: string;
+}
+
+export interface StrategyHealth {
+  strategy_id: number;
+  health_score: number; // 0..100 (50 = estável)
+  trend?: number | null; // -1..1
+  variation: string; // JSON dos deltas
+  updated_at: string;
+}
+
+export interface StrategyScores {
+  strategy_id: number;
+  dsfr_score: number;
+  components: string; // JSON dos componentes normalizados
+  confidence?: number | null;
+  robustness?: number | null;
+  volatility?: number | null;
+  risk?: number | null;
+  ranking?: number | null;
+  lifecycle_stage: string; // nascimento|crescimento|maturidade|declinio|obsoleta
+  updated_at: string;
+}
+
+export interface StrategyBundle {
+  strategy: Strategy;
+  health?: StrategyHealth | null;
+  scores?: StrategyScores | null;
+  backtests: StrategyBacktest[];
+}
+
+export interface StrategyEvaluation {
+  backtest: StrategyBacktest;
+  health: StrategyHealth;
+  scores: StrategyScores;
+  raw?: BacktestResult;
+}
+
 // Painel "Integrações" — status/consumo das APIs externas (OpenAI, API-Football, SportMonks)
 export interface DailyCount {
   date: string;

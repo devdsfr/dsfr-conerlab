@@ -1,0 +1,214 @@
+<div class="max-w-6xl mx-auto flex flex-col gap-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Estratégias</h1>
+    <p class="text-sm text-slate-400 mt-1">
+      Suas estratégias monitoradas pelo motor de análise: backtest, saúde e scores recalculados
+      automaticamente. A plataforma nunca recomenda apostas — apenas mede desempenho histórico.
+    </p>
+  </div>
+
+  @if (!auth.isAuthenticated()) {
+    <div class="cl-card p-6 text-sm text-slate-300">
+      Entre na sua conta para criar e acompanhar estratégias.
+      <a routerLink="/assinatura" class="text-cornerlab-primary underline ml-1">Fazer login</a>
+    </div>
+  } @else {
+    @if (error()) {
+      <div role="alert" class="cl-card p-4 text-red-400 text-sm">{{ error() }}</div>
+    }
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <!-- Lista -->
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm text-slate-400">Minhas estratégias ({{ strategies().length }})</h2>
+          @if (loadingList()) { <mat-spinner diameter="16"></mat-spinner> }
+        </div>
+
+        @if (!loadingList() && strategies().length === 0) {
+          <div class="cl-card p-4 text-sm text-slate-400">
+            Nenhuma estratégia ainda. Monte um filtro no
+            <a routerLink="/filtros" class="text-cornerlab-primary underline">Simulador de Filtros</a>
+            e use "Salvar como estratégia".
+          </div>
+        }
+
+        @for (s of strategies(); track s.id) {
+          <button
+            type="button"
+            class="cl-card p-4 text-left w-full cursor-pointer transition-colors hover:border-cornerlab-primary"
+            [class.!border-cornerlab-primary]="selected()?.strategy?.id === s.id"
+            (click)="select(s)"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-100 truncate">{{ s.name }}</div>
+                <div class="text-xs text-slate-400 mt-0.5 truncate">{{ definitionSummary(s) }}</div>
+              </div>
+              <button
+                mat-icon-button
+                class="!w-8 !h-8 shrink-0"
+                (click)="toggleFavorite(s, $event)"
+                [attr.aria-label]="s.favorite ? 'Remover dos favoritos' : 'Favoritar'"
+              >
+                <mat-icon aria-hidden="true" class="!text-[18px]" [class.text-amber-400]="s.favorite" [class.text-slate-500]="!s.favorite">
+                  {{ s.favorite ? 'star' : 'star_border' }}
+                </mat-icon>
+              </button>
+            </div>
+            <div class="flex gap-2 mt-2">
+              @if (!s.active) {
+                <span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Pausada</span>
+              }
+              @if (s.origin === 'discovery') {
+                <span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300">Descoberta</span>
+              }
+            </div>
+          </button>
+        }
+      </div>
+
+      <!-- Detalhe -->
+      <div class="lg:col-span-2 flex flex-col gap-4">
+        @if (loadingDetail()) {
+          <div class="cl-card p-8 flex justify-center"><mat-spinner diameter="28"></mat-spinner></div>
+        } @else if (selected(); as b) {
+          <div class="cl-card p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 class="text-lg font-semibold text-slate-100">{{ b.strategy.name }}</h2>
+                @if (b.strategy.description) {
+                  <p class="text-sm text-slate-400 mt-0.5">{{ b.strategy.description }}</p>
+                }
+              </div>
+              <div class="flex gap-2">
+                <button mat-flat-button color="primary" (click)="run()" [disabled]="running()">
+                  @if (running()) { <mat-spinner diameter="16"></mat-spinner> } @else { Executar agora }
+                </button>
+                @if (isOwner(b.strategy)) {
+                  <button mat-stroked-button (click)="toggleActive()">
+                    {{ b.strategy.active ? 'Pausar' : 'Reativar' }}
+                  </button>
+                  <button mat-icon-button (click)="remove()" aria-label="Excluir estratégia">
+                    <mat-icon aria-hidden="true" class="text-red-400">delete</mat-icon>
+                  </button>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Scores -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">DSFR Score <span class="cl-help" tabindex="0" [matTooltip]="dsfrTooltip">?</span></div>
+              <div class="text-3xl font-semibold" [class]="scoreColor(b.scores?.dsfr_score)">
+                {{ b.scores?.dsfr_score ?? '—' }}
+              </div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Health <span class="cl-help" tabindex="0" [matTooltip]="healthTooltip">?</span></div>
+              <div class="text-3xl font-semibold" [class]="healthColor(b.health?.health_score)">
+                {{ b.health?.health_score ?? '—' }}
+              </div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Ciclo de vida</div>
+              <div class="text-xl font-semibold text-slate-100 mt-1">{{ stageLabel(b.scores?.lifecycle_stage) }}</div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Confiança</div>
+              <div class="text-3xl font-semibold" [class]="scoreColor(b.scores?.confidence)">
+                {{ b.scores?.confidence ?? '—' }}
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Robustez</div>
+              <div class="text-xl font-semibold" [class]="scoreColor(b.scores?.robustness)">{{ b.scores?.robustness ?? '—' }}</div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Volatilidade</div>
+              <div class="text-xl font-semibold text-slate-200">{{ b.scores?.volatility ?? '—' }}</div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Risco</div>
+              <div class="text-xl font-semibold" [class.text-red-400]="(b.scores?.risk ?? 0) >= 55">{{ b.scores?.risk ?? '—' }}</div>
+            </div>
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400">Ranking</div>
+              <div class="text-xl font-semibold text-slate-200">{{ b.scores?.ranking ?? '—' }}</div>
+            </div>
+          </div>
+
+          <!-- Variação (health explicado) -->
+          @if (variationEntries(b.health?.variation).length) {
+            <div class="cl-card p-4">
+              <div class="text-xs text-slate-400 mb-2">O que mudou desde a execução anterior</div>
+              <div class="flex flex-wrap gap-4">
+                @for (v of variationEntries(b.health?.variation); track v.label) {
+                  <div class="text-sm">
+                    <span class="text-slate-400">{{ v.label }}:</span>
+                    <span class="font-semibold ml-1"
+                      [class.text-cornerlab-primary]="(v.label === 'Drawdown') ? v.value < 0 : v.value > 0"
+                      [class.text-red-400]="(v.label === 'Drawdown') ? v.value > 0 : v.value < 0">
+                      {{ v.value > 0 ? '+' : '' }}{{ v.value }}
+                    </span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Backtests -->
+          <div class="cl-card p-4">
+            <div class="text-xs text-slate-400 mb-3">Histórico de execuções ({{ b.backtests.length }})</div>
+            @if (b.backtests.length === 0) {
+              <div class="text-sm text-slate-500">
+                Nenhuma execução ainda — clique em "Executar agora" ou aguarde o próximo ciclo automático.
+              </div>
+            } @else {
+              <div class="overflow-auto">
+                <table class="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr class="text-left text-xs text-slate-400 border-b border-slate-800">
+                      <th class="py-2 pr-3">Data</th>
+                      <th class="py-2 pr-3">Jogos</th>
+                      <th class="py-2 pr-3">Acertos</th>
+                      <th class="py-2 pr-3">Taxa</th>
+                      <th class="py-2 pr-3">ROI</th>
+                      <th class="py-2 pr-3">Yield</th>
+                      <th class="py-2 pr-3">Drawdown</th>
+                      <th class="py-2">Confiança</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (bt of b.backtests; track bt.id) {
+                      <tr class="border-b border-slate-800/60">
+                        <td class="py-2 pr-3 text-slate-300">{{ bt.created_at | date:'dd/MM HH:mm' }}</td>
+                        <td class="py-2 pr-3">{{ bt.games }}</td>
+                        <td class="py-2 pr-3">{{ bt.wins }}/{{ bt.games }}</td>
+                        <td class="py-2 pr-3">{{ winRate(bt) }}</td>
+                        <td class="py-2 pr-3" [class.text-cornerlab-primary]="(bt.roi ?? 0) >= 0" [class.text-red-400]="(bt.roi ?? 0) < 0">{{ bt.roi ?? '—' }}%</td>
+                        <td class="py-2 pr-3">{{ bt.yield ?? '—' }}%</td>
+                        <td class="py-2 pr-3 text-red-400">{{ bt.drawdown ?? '—' }}</td>
+                        <td class="py-2">{{ bt.confidence ?? '—' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        } @else if (!loadingList() && strategies().length) {
+          <div class="cl-card p-6 text-sm text-slate-400">Selecione uma estratégia ao lado.</div>
+        }
+      </div>
+    </div>
+  }
+
+  <p class="cl-disclaimer">
+    Resultado baseado em dados históricos. Não constitui recomendação de aposta nem previsão de resultados futuros.
+  </p>
+</div>

@@ -1,9 +1,6 @@
 <div class="max-w-6xl mx-auto flex flex-col gap-6">
   <h1 class="text-xl font-semibold text-slate-100">Dashboard Principal</h1>
 
-  <!-- Anúncio contextual (plano gratuito) — ver ESTRATEGIA-MONETIZACAO.md -->
-  <app-ad-slot slot="6619664066"></app-ad-slot>
-
   <div class="cl-card p-4 flex flex-wrap items-end gap-4">
     <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
       <mat-label>{{ leaguesLoading() ? 'Carregando campeonatos…' : 'Campeonato' }}</mat-label>
@@ -82,6 +79,11 @@
         </mat-button-toggle-group>
       </div>
     </div>
+
+    <!-- Anúncio contextual (plano gratuito) — só aparece com resultado real na tela
+         (política AdSense: sem anúncio em tela vazia/sem conteúdo do editor). Ver
+         ESTRATEGIA-MONETIZACAO.md. -->
+    <app-ad-slot slot="6619664066"></app-ad-slot>
 
     @if (view(); as v) {
     @if (v.noData) {

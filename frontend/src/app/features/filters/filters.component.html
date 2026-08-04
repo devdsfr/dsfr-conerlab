@@ -11,9 +11,6 @@
     </div>
   }
 
-  <!-- Anúncio contextual (plano gratuito) — ver ESTRATEGIA-MONETIZACAO.md -->
-  <app-ad-slot slot="7250099317"></app-ad-slot>
-
   <div class="cl-card p-4 flex flex-col gap-4">
     <div class="flex flex-wrap items-end gap-4">
       <mat-form-field appearance="outline" class="w-72" [title]="selectedLeagueName()">
@@ -242,6 +239,11 @@
         <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
       </div>
     </div>
+
+    <!-- Anúncio contextual (plano gratuito) — só aparece com resultado real na tela
+         (política AdSense: sem anúncio em tela vazia/sem conteúdo do editor). Ver
+         ESTRATEGIA-MONETIZACAO.md. -->
+    <app-ad-slot slot="7250099317"></app-ad-slot>
 
     <div class="cl-card p-4">
       <h3 class="text-sm text-slate-400 mb-1">Análise de valor (odd)</h3>

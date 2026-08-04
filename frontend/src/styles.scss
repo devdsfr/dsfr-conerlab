@@ -130,6 +130,76 @@ html, body {
 .cl-brand:active {
   transform: scale(0.97);
 }
+// Centralizada na barra mobile (hamburger fica fixo à esquerda, a marca
+// ocupa o centro absoluto da barra independente da largura do botão).
+.cl-brand-mobile {
+  z-index: 1;
+}
+
+// Menu lateral (desktop): fixo à esquerda, vidro fosco com a mesma borda em
+// degradê verde → ciano do topo mobile, só que correndo na borda direita.
+.cl-sidebar {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 50;
+  width: 232px;
+  padding: 28px 14px 18px;
+  overflow-y: auto;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border-right: 1px solid transparent;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.9), rgba(15, 23, 42, 0.9)),
+    linear-gradient(180deg, rgba(34, 197, 94, 0.55), rgba(56, 189, 248, 0.4) 55%, rgba(15, 23, 42, 0) 92%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+// Marca centralizada no topo da sidebar — logo, nome e tagline empilhados e
+// alinhados ao centro, separados do restante da navegação por uma linha sutil.
+.cl-sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  text-decoration: none;
+  padding-bottom: 20px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  transition: opacity 0.15s ease;
+}
+.cl-sidebar-brand:hover {
+  opacity: 0.85;
+}
+.cl-sidebar-wordmark {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-size: 17px;
+  color: #f1f5f9;
+}
+.cl-sidebar-tagline {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #64748b;
+  max-width: 156px;
+}
+
+.cl-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+// Mesma pílula ativa/hover do .cl-nav-link, só que ocupando a largura toda
+// e com o rótulo alinhado à esquerda em vez de centralizado — lista, não pílula solta.
+.cl-sidebar-link {
+  width: 100%;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+}
 
 // Links do menu: pílula translúcida no item ativo em vez do sublinhado
 // anterior — mais silenciosa, alinhada ao resto da UI (cards/botões

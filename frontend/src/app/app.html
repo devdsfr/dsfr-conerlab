@@ -1,19 +1,20 @@
 <a class="cl-skip-link" href="#conteudo-principal">Pular para o conteúdo</a>
-<mat-toolbar class="cl-toolbar sticky top-0 z-50 !bg-transparent !text-slate-100">
-  <a routerLink="/visao-geral" class="cl-brand flex items-center gap-2 no-underline">
-    <app-logo-mark [size]="30" />
-    <span class="font-semibold tracking-tight text-lg text-slate-100">Corner<span class="text-cornerlab-primary">Lab</span></span>
-  </a>
-  <span class="ml-2 text-xs text-slate-400 hidden lg:inline">inteligência estatística para escanteios</span>
-  <span class="flex-1"></span>
 
-  <nav class="hidden md:flex items-center gap-1">
+<!-- Menu lateral (desktop): fixo à esquerda, marca centralizada no topo. -->
+<aside class="cl-sidebar hidden md:flex md:flex-col">
+  <a routerLink="/visao-geral" class="cl-sidebar-brand">
+    <app-logo-mark [size]="34" />
+    <span class="cl-sidebar-wordmark">Corner<span class="text-cornerlab-primary">Lab</span></span>
+    <span class="cl-sidebar-tagline">inteligência estatística para escanteios</span>
+  </a>
+
+  <nav class="cl-sidebar-nav">
     @for (item of navItems; track item.route) {
       <a
         mat-button
         [routerLink]="item.route"
         routerLinkActive="cl-nav-active"
-        class="cl-nav-link !text-slate-300 !flex !items-center !gap-1.5"
+        class="cl-nav-link cl-sidebar-link !text-slate-300"
       >
         <mat-icon aria-hidden="true" class="!text-[18px] !w-[18px] !h-[18px] !leading-[18px]">{{ item.icon }}</mat-icon>
         <span>{{ item.label }}</span>
@@ -21,22 +22,28 @@
     }
   </nav>
 
+  <span class="flex-1"></span>
+
   @if (auth.isAuthenticated()) {
     <button
       mat-button
-      class="cl-nav-link hidden md:inline-flex !text-slate-300 !items-center !gap-1.5 ml-1"
+      class="cl-nav-link cl-sidebar-link !text-slate-300"
       (click)="logout()"
       [matTooltip]="'Sair de ' + (auth.user()?.name ?? 'sua conta')"
+      matTooltipPosition="right"
       aria-label="Sair da conta"
     >
       <mat-icon aria-hidden="true" class="!text-[18px] !w-[18px] !h-[18px] !leading-[18px]">logout</mat-icon>
-      Sair
+      <span>Sair</span>
     </button>
   }
+</aside>
 
+<!-- Barra superior (mobile): hamburger + marca centralizada. -->
+<mat-toolbar class="cl-toolbar md:hidden sticky top-0 z-50 !bg-transparent !text-slate-100">
   <button
     mat-icon-button
-    class="cl-menu-toggle md:hidden !text-slate-200"
+    class="cl-menu-toggle !text-slate-200"
     (click)="toggleMenu()"
     [attr.aria-expanded]="menuOpen()"
     aria-controls="menu-mobile"
@@ -44,6 +51,11 @@
   >
     <mat-icon aria-hidden="true">{{ menuOpen() ? 'close' : 'menu' }}</mat-icon>
   </button>
+
+  <a routerLink="/visao-geral" class="cl-brand cl-brand-mobile flex items-center gap-2 no-underline absolute left-1/2 -translate-x-1/2">
+    <app-logo-mark [size]="26" />
+    <span class="font-semibold tracking-tight text-base text-slate-100">Corner<span class="text-cornerlab-primary">Lab</span></span>
+  </a>
 </mat-toolbar>
 
 <nav
@@ -80,7 +92,7 @@
   }
 </nav>
 
-<main id="conteudo-principal" class="min-h-screen bg-cornerlab-bg px-4 py-6 sm:px-8">
+<main id="conteudo-principal" class="cl-main min-h-screen bg-cornerlab-bg px-4 py-6 sm:px-8 md:ml-[232px]">
   <router-outlet></router-outlet>
   <footer class="max-w-6xl mx-auto mt-10 text-xs text-slate-300 border-t border-slate-800 pt-4">
     CornerLab organiza dados históricos, calcula estatísticas e simula cenários. A plataforma nunca recomenda apostas.

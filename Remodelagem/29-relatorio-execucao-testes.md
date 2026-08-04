@@ -51,6 +51,40 @@ Nenhum item abaixo foi marcado como aprovado sem eu ter rodado alguma coisa de v
 
 ---
 
+## ⚠️ Achado crítico — smoke test ao vivo (Chrome reconectado após a 1ª rodada)
+
+Quando a extensão Chrome voltou, completei o que tinha ficado pendente: naveguei pelo
+site em produção (Visão Geral, Dashboard, Descobertas, Simulador de Filtros,
+Estratégias) e rodei uma verificação read-only direta no banco de produção (Neon).
+
+**O que funciona de ponta a ponta, confirmado ao vivo:**
+- Site no ar, zero erros de console em todas as páginas visitadas.
+- Sidebar nova e telas de carregamento já em produção, renderizando corretamente.
+- `POST /filters/run` executado de verdade contra produção: 200 partidas, 88% de
+  acerto, ROI -12%, retornou em ~2s. `GET /discovery/strategies` e `GET /leagues`
+  responderam 200. Página Estratégias mostra 5 estratégias reais do usuário com
+  Health/DSFR/Ranking calculados.
+- 12/12 tabelas da camada ANALYTICS existem, zero foreign key sem validar.
+- Camada NORMALIZADA saudável: 3.547 partidas, 338 times.
+
+**Problema real encontrado:** a tabela `worker_runs` está **vazia (0 registros)**, e
+`team_metrics`/`raw_fixtures` também estão em **zero**. Isso indica que o processo
+`cmd/worker` — o worker automático que deveria rodar Import → Statistics → Analytics →
+Strategy Engine → Discovery em ciclo, sozinho, sem intervenção — **nunca terminou um
+ciclo com sucesso em produção**, ou não está implantado/rodando como serviço contínuo
+no Render. As 5 estratégias e os 10 backtests que existem no banco têm timestamps que
+batem exatamente com ações manuais feitas nesta sessão (cliques em "Executar agora" e
+"Procurar agora", chamadas autenticadas `POST /discovery/run` e
+`POST /strategies/:id/run`), não com um ciclo automático.
+
+Na prática: o site funciona muito bem quando alguém aciona manualmente, mas a promessa
+central da Remodelagem — "workers calculam, usuário só lê" (doc 15) — **não está
+acontecendo sozinha em produção** hoje. Vale conferir no painel do Render se existe um
+serviço rodando o binário `cmd/worker` (separado da API) e se ele está de fato ativo;
+esse diagnóstico eu não consigo fazer daqui, só via banco.
+
+---
+
 ## 1. Infraestrutura
 
 **Banco (Postgres/Neon):** migrations 011 e 012 já aplicadas e verificadas em turnos

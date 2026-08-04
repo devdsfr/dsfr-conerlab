@@ -181,9 +181,9 @@ type Metrics struct {
 	NetProfit          float64 `json:"net_profit"`
 	CompletedCycles    int     `json:"completed_cycles"`
 	DaysInPhase        int     `json:"days_in_phase"`
-	MaxDrawdown        float64 `json:"max_drawdown"`         // em unidades de stake
-	MaxDrawdownPct     float64 `json:"max_drawdown_pct"`     // % do total apostado na fase
-	MonthlyConsistency float64 `json:"monthly_consistency"`  // 0-1: fração de meses com lucro positivo
+	MaxDrawdown        float64 `json:"max_drawdown"`        // em unidades de stake
+	MaxDrawdownPct     float64 `json:"max_drawdown_pct"`    // % do total apostado na fase
+	MonthlyConsistency float64 `json:"monthly_consistency"` // 0-1: fração de meses com lucro positivo
 }
 
 type ChecklistItem struct {

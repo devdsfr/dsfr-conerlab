@@ -92,14 +92,14 @@ func (h *BankrollHandler) GetCriteria(c *gin.Context) {
 }
 
 type setCriteriaRequest struct {
-	MinDays                int     `json:"min_days"`
-	MinBets                int     `json:"min_bets"`
-	MinWinRate             float64 `json:"min_win_rate"`
-	MinROI                 float64 `json:"min_roi"`
-	MinYield               float64 `json:"min_yield"`
-	RequirePositiveProfit  bool    `json:"require_positive_profit"`
-	MinCompletedCycles     int     `json:"min_completed_cycles"`
-	CycleWinStreak         int     `json:"cycle_win_streak"`
+	MinDays               int     `json:"min_days"`
+	MinBets               int     `json:"min_bets"`
+	MinWinRate            float64 `json:"min_win_rate"`
+	MinROI                float64 `json:"min_roi"`
+	MinYield              float64 `json:"min_yield"`
+	RequirePositiveProfit bool    `json:"require_positive_profit"`
+	MinCompletedCycles    int     `json:"min_completed_cycles"`
+	CycleWinStreak        int     `json:"cycle_win_streak"`
 }
 
 // SetCriteria godoc

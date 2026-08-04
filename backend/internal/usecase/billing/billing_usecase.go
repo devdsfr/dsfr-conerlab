@@ -222,4 +222,3 @@ func (u *Usecase) syncSubscription(ctx context.Context, sub stripe.Subscription)
 
 	return u.users.UpdateSubscriptionByCustomerID(ctx, sub.Customer.ID, sub.ID, status, plan, trialEndsAt, currentPeriodEnd)
 }
-

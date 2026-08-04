@@ -86,7 +86,7 @@ func Summarize(values []int) StatSummary {
 			maxFreq = freq[v]
 		}
 	}
-	mode := []int{} // nunca nil — ver comentário no caso n==0 acima
+	mode := []int{}  // nunca nil — ver comentário no caso n==0 acima
 	if maxFreq > 1 { // só existe "moda" clássica se algum valor se repete
 		for v, f := range freq {
 			if f == maxFreq {

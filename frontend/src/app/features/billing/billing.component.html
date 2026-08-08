@@ -1,8 +1,76 @@
 <div class="max-w-3xl mx-auto flex flex-col gap-6">
+  <!-- Apresentação da plataforma. Fica no topo da Assinatura porque esta é a página
+       que um visitante novo costuma abrir antes de decidir se vale a pena: precisa
+       explicar o que o CornerLab faz antes de pedir dinheiro. -->
   <div>
-    <h1 class="text-xl font-semibold text-slate-100">Assinatura Premium</h1>
+    <h1 class="text-2xl font-semibold text-slate-100">O que é o CornerLab</h1>
+    <p class="text-base text-slate-300 mt-3 leading-relaxed">
+      O CornerLab transforma o histórico de jogos de futebol em estatística organizada sobre
+      <strong class="text-slate-100">escanteios, gols, chutes e impedimentos</strong>. Em vez de você
+      abrir dez abas e montar planilha à mão, a plataforma já traz o número pronto — e mostra
+      exatamente de onde ele veio.
+    </p>
+  </div>
+
+  <div class="grid gap-3 sm:grid-cols-2">
+    <div class="cl-card p-4">
+      <div class="flex items-center gap-2 mb-1">
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary">query_stats</mat-icon>
+        <span class="text-sm font-medium text-slate-100">Estatísticas por equipe</span>
+      </div>
+      <p class="text-sm text-slate-400">
+        Média, mediana, desvio padrão, consistência e frequência por faixa — em casa, fora e nos
+        últimos 5, 10, 15 ou 20 jogos.
+      </p>
+    </div>
+    <div class="cl-card p-4">
+      <div class="flex items-center gap-2 mb-1">
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary">tune</mat-icon>
+        <span class="text-sm font-medium text-slate-100">Simulador de filtros</span>
+      </div>
+      <p class="text-sm text-slate-400">
+        Monte um critério ("acima de 8 escanteios, fora de casa, contra o G6") e veja como ele teria
+        se comportado no histórico, jogo por jogo.
+      </p>
+    </div>
+    <div class="cl-card p-4">
+      <div class="flex items-center gap-2 mb-1">
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary">travel_explore</mat-icon>
+        <span class="text-sm font-medium text-slate-100">Descobertas automáticas</span>
+      </div>
+      <p class="text-sm text-slate-400">
+        O sistema testa centenas de combinações sozinho e publica só os padrões que passam em
+        critérios de amostra, retorno, consistência e drawdown.
+      </p>
+    </div>
+    <div class="cl-card p-4">
+      <div class="flex items-center gap-2 mb-1">
+        <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-cornerlab-primary">compare_arrows</mat-icon>
+        <span class="text-sm font-medium text-slate-100">Comparador e calendário</span>
+      </div>
+      <p class="text-sm text-slate-400">
+        Compare duas equipes lado a lado e acompanhe o calendário dos próximos jogos já mapeados
+        pela plataforma.
+      </p>
+    </div>
+  </div>
+
+  <div class="cl-card p-4 border border-slate-700">
+    <div class="flex items-center gap-2 mb-1">
+      <mat-icon aria-hidden="true" class="!text-base !w-4 !h-4 text-slate-400">gavel</mat-icon>
+      <span class="text-sm font-medium text-slate-100">O que o CornerLab não faz</span>
+    </div>
+    <p class="text-sm text-slate-400">
+      Não damos palpite, não recomendamos aposta e não prevemos resultado. Tudo aqui é leitura de
+      dado histórico — o que já aconteceu, com a amostra e o período sempre à vista. A análise e a
+      decisão são inteiramente suas.
+    </p>
+  </div>
+
+  <div class="border-t border-slate-800 pt-6">
+    <h2 class="text-xl font-semibold text-slate-100">Assinatura Premium</h2>
     <p class="text-sm text-slate-400 mt-1">
-      Desbloqueie a Gestão Evolutiva de Banca, o Cálculo de Projeções, histórico completo e mais — por R$ 29,90/mês, com 7 dias grátis.
+      O uso básico é gratuito. O Premium desbloqueia a Gestão Evolutiva de Banca, o Cálculo de Projeções, histórico completo e mais — por R$ 29,90/mês, com 7 dias grátis.
     </p>
   </div>
 

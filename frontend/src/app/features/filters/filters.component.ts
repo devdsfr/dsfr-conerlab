@@ -268,7 +268,12 @@ export class FiltersComponent implements OnInit {
     this.selectedTeamId = d.team_id ?? undefined;
     this.loadedFromDiscovery.set(true);
 
-    this.api.listSeasons(this.selectedLeagueId!).subscribe(s => {
+    // includeAll=true: uma descoberta pode agregar várias temporadas (ex.: 2024+2025+
+    // 2026). Se usássemos a lista já filtrada pra "temporadas recentes" aqui, o
+    // intersect abaixo descartaria as temporadas antigas em silêncio, sobrando só a
+    // atual — que sozinha pode não ter jogo nenhum batendo com o padrão, dando
+    // "0 partidas encontradas" mesmo pra uma descoberta com 100+ ocorrências.
+    this.api.listSeasons(this.selectedLeagueId!, true).subscribe(s => {
       this.seasons.set(s);
       // Temporadas que não existem mais na liga são ignoradas; sem interseção,
       // cai no comportamento padrão (todas).

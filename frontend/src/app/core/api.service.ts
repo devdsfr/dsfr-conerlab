@@ -60,7 +60,14 @@ export class ApiService {
     return this.http.get<League[]>(`${this.base}/leagues`);
   }
 
-  listSeasons(leagueId: number): Observable<Season[]> {
+  /**
+   * includeAll=true pula o filtro de "temporadas recentes" abaixo — necessário quando
+   * vamos RESTAURAR uma seleção existente de temporadas (ex.: estratégia descoberta
+   * que agrega várias temporadas), porque intersectar season_ids reais contra a lista
+   * já filtrada descartaria silenciosamente as temporadas antigas que faziam parte do
+   * cálculo original. Ver FiltersComponent.applyDefinition.
+   */
+  listSeasons(leagueId: number, includeAll = false): Observable<Season[]> {
     // Mostra só temporadas do ano corrente pra frente — temporadas antigas (ex: 2024)
     // poluíam os seletores e traziam times já rebaixados. É filtro de interface: o
     // dado continua no banco. Fallback: se nada sobrar (liga só com histórico antigo),
@@ -68,6 +75,7 @@ export class ApiService {
     const currentYear = new Date().getFullYear();
     return this.http.get<Season[]>(`${this.base}/leagues/${leagueId}/seasons`).pipe(
       map(seasons => {
+        if (includeAll) return seasons;
         const recent = seasons.filter(s => s.year >= currentYear);
         return recent.length ? recent : seasons;
       }),

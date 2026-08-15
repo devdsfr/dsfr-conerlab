@@ -1,1 +1,5 @@
 *.fuse_hidden*
+
+# Obsidian local workspace state
+Remodelagem/.obsidian/workspace.json
+Remodelagem/.obsidian/workspace-mobile.json

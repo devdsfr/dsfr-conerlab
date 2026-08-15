@@ -1,0 +1,112 @@
+# Render Blueprint — CornerLab
+#
+# Declara a infraestrutura do projeto como código. O ponto crítico aqui são os dois
+# Cron Jobs: sem eles, o banco para no tempo (foi exatamente o que aconteceu — a
+# última sincronização ficou parada em 01/08 e a tabela worker_runs ficou vazia,
+# porque nada disparava o cmd/worker automaticamente).
+#
+# Por que Cron Job e não Background Worker: o binário cmd/worker aceita
+# SYNC_RUN_ONCE=true, que roda um ciclo completo e sai — encaixa no Cron Job do
+# Render (~US$1/mês) em vez de um processo 24h (a partir de US$7/mês). Ver o
+# comentário de cabeçalho em backend/cmd/worker/main.go.
+#
+# COMO APLICAR: no painel do Render, "New +" → "Blueprint" → aponte para este
+# repositório. O Render lê este arquivo e cria/atualiza os serviços. Serviços que já
+# existem e não estão aqui não são apagados.
+#
+# ATENÇÃO às variáveis marcadas com sync:false — elas NÃO vêm deste arquivo (segredos
+# nunca devem ser versionados). O Render vai pedir o valor de cada uma na primeira
+# aplicação do blueprint; use os mesmos valores que já estão configurados hoje no
+# serviço da API.
+
+services:
+  # API HTTP. Já existe hoje no Render; está declarada aqui para o blueprint ficar
+  # completo e reproduzível.
+  - type: web
+    name: cornerlab-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        value: https://dsfrcornerlab.com.br
+
+cronJobs:
+  # ---------------------------------------------------------------------------
+  # 1) Ciclo curto de sincronização — de hora em hora.
+  #
+  # Cada execução: health check do provedor → descobre jogos novos → finaliza jogos
+  # cuja data já passou → recalcula team_metrics (Analytics Worker) → reexecuta as
+  # estratégias ativas (backtest + health + DSFR). Grava tudo em worker_runs, que é
+  # como a tela de Integrações sabe informar "última sincronização".
+  #
+  # DISCOVERY_RUN não é definida aqui de propósito: a varredura completa de
+  # descobertas é cara e diária, e roda no segundo cron abaixo.
+  # ---------------------------------------------------------------------------
+  - type: cron
+    name: cornerlab-sync
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "0 * * * *" # a cada hora, no minuto 0 (UTC)
+    dockerCommand: /app/worker
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SYNC_RUN_ONCE
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: STATISTICS_PROVIDER
+        value: api_football
+
+  # ---------------------------------------------------------------------------
+  # 2) Discovery Engine — uma vez por dia, de madrugada.
+  #
+  # DISCOVERY_RUN=true liga a varredura combinatória completa (centenas de backtests
+  # por liga) que publica as estratégias da página "Descobertas". Roda às 06:00 UTC
+  # (03:00 em Brasília), depois que os jogos da noite anterior já foram finalizados
+  # pelo cron acima.
+  # ---------------------------------------------------------------------------
+  - type: cron
+    name: cornerlab-discovery
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    schedule: "0 6 * * *" # todo dia às 06:00 UTC = 03:00 BRT
+    dockerCommand: /app/worker
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SYNC_RUN_ONCE
+        value: "true"
+      - key: DISCOVERY_RUN
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: STATISTICS_PROVIDER
+        value: api_football

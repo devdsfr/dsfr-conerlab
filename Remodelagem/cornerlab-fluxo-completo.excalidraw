@@ -1,0 +1,438 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "appState": {
+    "gridSize": null,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {},
+  "elements": [
+    {
+      "type": "text",
+      "id": "title",
+      "x": 260, "y": -110, "width": 700, "height": 35,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 101, "version": 1, "versionNonce": 101, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 28, "fontFamily": 2, "textAlign": "left", "verticalAlign": "top",
+      "containerId": null, "lineHeight": 1.25,
+      "text": "CornerLab — o que acontece, passo a passo",
+      "originalText": "CornerLab — o que acontece, passo a passo"
+    },
+    {
+      "type": "text",
+      "id": "legend",
+      "x": 260, "y": -62, "width": 760, "height": 40,
+      "angle": 0, "strokeColor": "#5c5f66", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 102, "version": 1, "versionNonce": 102, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 14, "fontFamily": 2, "textAlign": "left", "verticalAlign": "top",
+      "containerId": null, "lineHeight": 1.25,
+      "text": "Verde = processo automático (roda sozinho)   ·   Azul = banco de dados   ·   Roxo = regras de cálculo   ·   Laranja = o que você vê",
+      "originalText": "Verde = processo automático (roda sozinho)   ·   Azul = banco de dados   ·   Roxo = regras de cálculo   ·   Laranja = o que você vê"
+    },
+
+    {
+      "type": "rectangle", "id": "r1",
+      "x": 260, "y": 0, "width": 460, "height": 90,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 1, "version": 1, "versionNonce": 1, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t1"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t1",
+      "x": 275, "y": 15, "width": 430, "height": 60,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 2, "version": 1, "versionNonce": 2, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r1", "lineHeight": 1.25,
+      "text": "1 · PROVEDORES EXTERNOS\nAPI-Football (ativo) · SportMonks · Sofascore\nde onde vêm jogos, placares e estatísticas",
+      "originalText": "1 · PROVEDORES EXTERNOS\nAPI-Football (ativo) · SportMonks · Sofascore\nde onde vêm jogos, placares e estatísticas"
+    },
+    {
+      "type": "arrow", "id": "a1",
+      "x": 490, "y": 92, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 3, "version": 1, "versionNonce": 3, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r2",
+      "x": 260, "y": 150, "width": 460, "height": 130,
+      "angle": 0, "strokeColor": "#2f9e44", "backgroundColor": "#b2f2bb",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 4, "version": 1, "versionNonce": 4, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t2"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t2",
+      "x": 275, "y": 165, "width": 430, "height": 100,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 5, "version": 1, "versionNonce": 5, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r2", "lineHeight": 1.25,
+      "text": "2 · SINCRONIZAÇÃO — de hora em hora\nconfere se o provedor está de pé\ndescobre jogos novos (ainda agendados)\nfinaliza os jogos cuja data já passou\nregistra a execução em worker_runs",
+      "originalText": "2 · SINCRONIZAÇÃO — de hora em hora\nconfere se o provedor está de pé\ndescobre jogos novos (ainda agendados)\nfinaliza os jogos cuja data já passou\nregistra a execução em worker_runs"
+    },
+    {
+      "type": "arrow", "id": "a2",
+      "x": 490, "y": 282, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 6, "version": 1, "versionNonce": 6, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r3",
+      "x": 260, "y": 340, "width": 460, "height": 110,
+      "angle": 0, "strokeColor": "#1971c2", "backgroundColor": "#a5d8ff",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 7, "version": 1, "versionNonce": 7, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t3"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t3",
+      "x": 275, "y": 355, "width": 430, "height": 80,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 8, "version": 1, "versionNonce": 8, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r3", "lineHeight": 1.25,
+      "text": "3 · BANCO POSTGRES (Neon)\nRAW: resposta bruta do provedor, nunca alterada\nNORMALIZADO: jogos, times, ligas, temporadas\nhoje no ar: 3.547 jogos · 338 times",
+      "originalText": "3 · BANCO POSTGRES (Neon)\nRAW: resposta bruta do provedor, nunca alterada\nNORMALIZADO: jogos, times, ligas, temporadas\nhoje no ar: 3.547 jogos · 338 times"
+    },
+    {
+      "type": "arrow", "id": "a3",
+      "x": 490, "y": 452, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 9, "version": 1, "versionNonce": 9, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r4",
+      "x": 260, "y": 510, "width": 460, "height": 110,
+      "angle": 0, "strokeColor": "#2f9e44", "backgroundColor": "#b2f2bb",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 10, "version": 1, "versionNonce": 10, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t4"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t4",
+      "x": 275, "y": 525, "width": 430, "height": 80,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 11, "version": 1, "versionNonce": 11, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r4", "lineHeight": 1.25,
+      "text": "4 · ANALYTICS WORKER\nmédia, últimos 5/10/20, variância, desvio padrão,\nconsistência, tendência, frequência por faixa\nresultado gravado em team_metrics",
+      "originalText": "4 · ANALYTICS WORKER\nmédia, últimos 5/10/20, variância, desvio padrão,\nconsistência, tendência, frequência por faixa\nresultado gravado em team_metrics"
+    },
+    {
+      "type": "arrow", "id": "a4",
+      "x": 490, "y": 622, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 12, "version": 1, "versionNonce": 12, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r5",
+      "x": 260, "y": 680, "width": 460, "height": 130,
+      "angle": 0, "strokeColor": "#2f9e44", "backgroundColor": "#b2f2bb",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 13, "version": 1, "versionNonce": 13, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t5"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t5",
+      "x": 275, "y": 695, "width": 430, "height": 100,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 14, "version": 1, "versionNonce": 14, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r5", "lineHeight": 1.25,
+      "text": "5 · STRATEGY ENGINE\npega cada estratégia ativa e roda o backtest dela\ncalcula Health Score, DSFR, ciclo de vida, confiança\ncompara com a execução anterior (melhorou? piorou?)\ngrava em backtests, strategy_health, strategy_scores",
+      "originalText": "5 · STRATEGY ENGINE\npega cada estratégia ativa e roda o backtest dela\ncalcula Health Score, DSFR, ciclo de vida, confiança\ncompara com a execução anterior (melhorou? piorou?)\ngrava em backtests, strategy_health, strategy_scores"
+    },
+    {
+      "type": "arrow", "id": "a5",
+      "x": 490, "y": 812, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 15, "version": 1, "versionNonce": 15, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r6",
+      "x": 260, "y": 870, "width": 460, "height": 130,
+      "angle": 0, "strokeColor": "#2f9e44", "backgroundColor": "#b2f2bb",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 16, "version": 1, "versionNonce": 16, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t6"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t6",
+      "x": 275, "y": 885, "width": 430, "height": 100,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 17, "version": 1, "versionNonce": 17, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r6", "lineHeight": 1.25,
+      "text": "6 · DISCOVERY ENGINE — 1x por dia\ncombina liga × time × janela × mando × linha × odd\nroda um backtest em CADA combinação (centenas)\ndescarta o que não passa nos critérios mínimos\npublica o que sobrou na página Descobertas",
+      "originalText": "6 · DISCOVERY ENGINE — 1x por dia\ncombina liga × time × janela × mando × linha × odd\nroda um backtest em CADA combinação (centenas)\ndescarta o que não passa nos critérios mínimos\npublica o que sobrou na página Descobertas"
+    },
+    {
+      "type": "arrow", "id": "a6",
+      "x": 490, "y": 1002, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 18, "version": 1, "versionNonce": 18, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r7",
+      "x": 260, "y": 1060, "width": 460, "height": 90,
+      "angle": 0, "strokeColor": "#1971c2", "backgroundColor": "#a5d8ff",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 19, "version": 1, "versionNonce": 19, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t7"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t7",
+      "x": 275, "y": 1075, "width": 430, "height": 60,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 20, "version": 1, "versionNonce": 20, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r7", "lineHeight": 1.25,
+      "text": "7 · CAMADA ANALYTICS\ntudo já calculado, esperando parado no banco\nnada é recalculado quando você abre a tela",
+      "originalText": "7 · CAMADA ANALYTICS\ntudo já calculado, esperando parado no banco\nnada é recalculado quando você abre a tela"
+    },
+    {
+      "type": "arrow", "id": "a7",
+      "x": 490, "y": 1152, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 21, "version": 1, "versionNonce": 21, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r8",
+      "x": 260, "y": 1210, "width": 460, "height": 90,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 22, "version": 1, "versionNonce": 22, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t8"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t8",
+      "x": 275, "y": 1225, "width": 430, "height": 60,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 23, "version": 1, "versionNonce": 23, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r8", "lineHeight": 1.25,
+      "text": "8 · API REST\nsó lê do banco e devolve o número pronto\n51 endpoints · login exigido nas rotas privadas",
+      "originalText": "8 · API REST\nsó lê do banco e devolve o número pronto\n51 endpoints · login exigido nas rotas privadas"
+    },
+    {
+      "type": "arrow", "id": "a8",
+      "x": 490, "y": 1302, "width": 0, "height": 52,
+      "points": [[0, 0], [0, 52]],
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 24, "version": 1, "versionNonce": 24, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": "arrow"
+    },
+
+    {
+      "type": "rectangle", "id": "r9",
+      "x": 260, "y": 1360, "width": 460, "height": 110,
+      "angle": 0, "strokeColor": "#e8590c", "backgroundColor": "#ffec99",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 25, "version": 1, "versionNonce": 25, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "t9"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "t9",
+      "x": 275, "y": 1375, "width": 430, "height": 80,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 26, "version": 1, "versionNonce": 26, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "r9", "lineHeight": 1.25,
+      "text": "9 · O QUE VOCÊ VÊ\nVisão Geral · Dashboard · Comparador\nSimulador · Descobertas · Estratégias\nGestão de Banca · Projeções",
+      "originalText": "9 · O QUE VOCÊ VÊ\nVisão Geral · Dashboard · Comparador\nSimulador · Descobertas · Estratégias\nGestão de Banca · Projeções"
+    },
+
+    {
+      "type": "rectangle", "id": "rail",
+      "x": 790, "y": 510, "width": 270, "height": 490,
+      "angle": 0, "strokeColor": "#6741d9", "backgroundColor": "#e5dbff",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 27, "version": 1, "versionNonce": 27, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "trail"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "trail",
+      "x": 805, "y": 560, "width": 240, "height": 390,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 28, "version": 1, "versionNonce": 28, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 16, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "rail", "lineHeight": 1.25,
+      "text": "CATÁLOGO DE FÓRMULAS v1.0\n\nProbabilidade · Odd justa\nEdge · Break-even · EV\nROI · Yield · Kelly\nDrawdown · Monte Carlo\nSharpe · Calmar\nHealth Score · DSFR Score\nCiclo de vida · Ranking\n\nToda conta do sistema sai\ndaqui. É isso que faz o\nmesmo número aparecer\nigual em qualquer tela.",
+      "originalText": "CATÁLOGO DE FÓRMULAS v1.0\n\nProbabilidade · Odd justa\nEdge · Break-even · EV\nROI · Yield · Kelly\nDrawdown · Monte Carlo\nSharpe · Calmar\nHealth Score · DSFR Score\nCiclo de vida · Ranking\n\nToda conta do sistema sai\ndaqui. É isso que faz o\nmesmo número aparecer\nigual em qualquer tela."
+    },
+
+    {
+      "type": "line", "id": "c1",
+      "x": 720, "y": 565, "width": 68, "height": 0,
+      "points": [[0, 0], [68, 0]],
+      "angle": 0, "strokeColor": "#6741d9", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 29, "version": 1, "versionNonce": 29, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "type": "line", "id": "c2",
+      "x": 720, "y": 745, "width": 68, "height": 0,
+      "points": [[0, 0], [68, 0]],
+      "angle": 0, "strokeColor": "#6741d9", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 30, "version": 1, "versionNonce": 30, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "type": "line", "id": "c3",
+      "x": 720, "y": 935, "width": 68, "height": 0,
+      "points": [[0, 0], [68, 0]],
+      "angle": 0, "strokeColor": "#6741d9", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 2},
+      "seed": 31, "version": 1, "versionNonce": 31, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "startBinding": null, "endBinding": null, "startArrowhead": null, "endArrowhead": null
+    },
+
+    {
+      "type": "rectangle", "id": "nt1",
+      "x": 260, "y": 1540, "width": 460, "height": 100,
+      "angle": 0, "strokeColor": "#e8590c", "backgroundColor": "#fff9db",
+      "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 32, "version": 1, "versionNonce": 32, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "tnt1"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "tnt1",
+      "x": 275, "y": 1560, "width": 430, "height": 60,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 33, "version": 1, "versionNonce": 33, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 15, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "nt1", "lineHeight": 1.25,
+      "text": "EXCEÇÃO À REGRA\nO Simulador de Filtros e os botões \"Procurar agora\" e\n\"Executar agora\" calculam na hora, sob demanda —\nsão os únicos lugares onde você espera a conta rodar.",
+      "originalText": "EXCEÇÃO À REGRA\nO Simulador de Filtros e os botões \"Procurar agora\" e\n\"Executar agora\" calculam na hora, sob demanda —\nsão os únicos lugares onde você espera a conta rodar."
+    },
+
+    {
+      "type": "rectangle", "id": "nt2",
+      "x": 260, "y": 1680, "width": 460, "height": 110,
+      "angle": 0, "strokeColor": "#c92a2a", "backgroundColor": "#ffe3e3",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": {"type": 3},
+      "seed": 34, "version": 1, "versionNonce": 34, "isDeleted": false,
+      "boundElements": [{"type": "text", "id": "tnt2"}], "updated": 1, "link": null, "locked": false
+    },
+    {
+      "type": "text", "id": "tnt2",
+      "x": 275, "y": 1700, "width": 430, "height": 70,
+      "angle": 0, "strokeColor": "#1e1e1e", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid", "roughness": 1,
+      "opacity": 100, "groupIds": [], "frameId": null, "roundness": null,
+      "seed": 35, "version": 1, "versionNonce": 35, "isDeleted": false,
+      "boundElements": [], "updated": 1, "link": null, "locked": false,
+      "fontSize": 15, "fontFamily": 2, "textAlign": "center", "verticalAlign": "middle",
+      "containerId": "nt2", "lineHeight": 1.25,
+      "text": "ESTADO ATUAL — o que está quebrado\nOs passos 2, 4, 5 e 6 NÃO rodam sozinhos em produção.\nCausa: o Dockerfile não compilava o binário do worker.\nJá corrigido no repositório — falta criar os Cron Jobs\nno painel do Render (ver render.yaml).",
+      "originalText": "ESTADO ATUAL — o que está quebrado\nOs passos 2, 4, 5 e 6 NÃO rodam sozinhos em produção.\nCausa: o Dockerfile não compilava o binário do worker.\nJá corrigido no repositório — falta criar os Cron Jobs\nno painel do Render (ver render.yaml)."
+    }
+  ]
+}

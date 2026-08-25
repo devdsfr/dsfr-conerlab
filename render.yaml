@@ -53,45 +53,28 @@ services:
 
 cronJobs:
   # ---------------------------------------------------------------------------
-  # 1) Ciclo curto de sincronização — de hora em hora.
+  # Ciclo completo — UMA VEZ POR DIA, de madrugada.
   #
-  # Cada execução: health check do provedor → descobre jogos novos → finaliza jogos
-  # cuja data já passou → recalcula team_metrics (Analytics Worker) → reexecuta as
-  # estratégias ativas (backtest + health + DSFR). Grava tudo em worker_runs, que é
-  # como a tela de Integrações sabe informar "última sincronização".
+  # Um único disparo faz tudo, na ordem: health check do provedor → descobre jogos
+  # novos → finaliza os jogos cuja data já passou → recalcula team_metrics
+  # (Analytics Worker) → reexecuta as estratégias ativas (backtest + health + DSFR)
+  # → roda a varredura do Discovery Engine (DISCOVERY_RUN=true). Tudo fica
+  # registrado em worker_runs, que alimenta o "última sincronização" da tela de
+  # Integrações.
   #
-  # DISCOVERY_RUN não é definida aqui de propósito: a varredura completa de
-  # descobertas é cara e diária, e roda no segundo cron abaixo.
+  # Por que uma vez por dia e não de hora em hora:
+  #  1. O plano gratuito da API-Football tem cota diária E limite por minuto. Rodar
+  #     de hora em hora queimava a cota e devolvia 429 (ver o throttle em
+  #     internal/integration/sportsdata/apifootball/client.go).
+  #  2. Jogo de futebol não muda de placar a cada hora. Um ciclo diário, depois que
+  #     as partidas da noite terminaram, já deixa o banco em dia.
+  #  3. Menos execução = menos custo de cron no Render.
+  #
+  # 06:00 UTC = 03:00 em Brasília: horário em que qualquer jogo da véspera
+  # (inclusive os das 21h45) já terminou e teve estatística publicada.
   # ---------------------------------------------------------------------------
   - type: cron
-    name: cornerlab-sync
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    schedule: "0 * * * *" # a cada hora, no minuto 0 (UTC)
-    dockerCommand: /app/worker
-    envVars:
-      - key: ENVIRONMENT
-        value: production
-      - key: SYNC_RUN_ONCE
-        value: "true"
-      - key: DATABASE_URL
-        sync: false
-      - key: API_FOOTBALL_KEY
-        sync: false
-      - key: STATISTICS_PROVIDER
-        value: api_football
-
-  # ---------------------------------------------------------------------------
-  # 2) Discovery Engine — uma vez por dia, de madrugada.
-  #
-  # DISCOVERY_RUN=true liga a varredura combinatória completa (centenas de backtests
-  # por liga) que publica as estratégias da página "Descobertas". Roda às 06:00 UTC
-  # (03:00 em Brasília), depois que os jogos da noite anterior já foram finalizados
-  # pelo cron acima.
-  # ---------------------------------------------------------------------------
-  - type: cron
-    name: cornerlab-discovery
+    name: cornerlab-worker
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
@@ -100,8 +83,12 @@ cronJobs:
     envVars:
       - key: ENVIRONMENT
         value: production
+      # Roda um ciclo completo e encerra o processo (modo Cron Job, não Background
+      # Worker) — ver o cabeçalho de backend/cmd/worker/main.go.
       - key: SYNC_RUN_ONCE
         value: "true"
+      # Liga a varredura de descobertas no mesmo disparo, já que agora só existe
+      # uma execução por dia.
       - key: DISCOVERY_RUN
         value: "true"
       - key: DATABASE_URL

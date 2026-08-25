@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata"
@@ -21,18 +22,58 @@ import (
 
 const baseURL = "https://v3.football.api-sports.io"
 
+// minRequestInterval espaça as chamadas à API-Football. O plano gratuito limita
+// requisições POR MINUTO (além da cota diária) e responde 429 quando o worker
+// dispara em rajada — foi exatamente o que aconteceu em produção: um ciclo
+// verificou 50 partidas em 13 segundos (~4 req/s) e a API cortou com
+// "status 429 para /fixtures". 6,5s entre chamadas mantém o ritmo em ~9 por
+// minuto, abaixo do teto de 10/min do plano gratuito.
+//
+// Se um dia o plano for atualizado, basta reduzir esta constante — nenhum outro
+// ponto do código precisa mudar.
+const minRequestInterval = 6500 * time.Millisecond
+
+// maxRetriesOn429 define quantas vezes uma chamada é repetida quando a API
+// responde 429. O intervalo dobra a cada tentativa (backoff exponencial),
+// começando em minRequestInterval.
+const maxRetriesOn429 = 3
+
 var ErrNotConfigured = errors.New("API_FOOTBALL_KEY não configurada")
 
 type Client struct {
 	apiKey     string
 	httpClient *http.Client
 	recorder   usagelog.Recorder
+
+	// throttle serializa as chamadas e garante o espaçamento mínimo entre elas.
+	// Um mutex (em vez de um ticker global) mantém o cliente utilizável tanto
+	// pelo worker quanto por um handler HTTP sem vazar goroutine.
+	throttle sync.Mutex
+	lastCall time.Time
 }
 
 // New cria o cliente. recorder pode ser nil (nenhum uso é registrado) ou um
 // usagelog.Recorder (ex: internal/repository/postgres.UsageRepo).
 func New(apiKey string, recorder usagelog.Recorder) *Client {
 	return &Client{apiKey: apiKey, httpClient: &http.Client{Timeout: 20 * time.Second}, recorder: recorder}
+}
+
+// wait bloqueia até que o intervalo mínimo desde a última chamada tenha passado.
+// Respeita o cancelamento do contexto: se o ciclo do worker for interrompido, a
+// espera é abortada em vez de segurar o processo.
+func (c *Client) wait(ctx context.Context) error {
+	c.throttle.Lock()
+	defer c.throttle.Unlock()
+
+	if elapsed := time.Since(c.lastCall); !c.lastCall.IsZero() && elapsed < minRequestInterval {
+		select {
+		case <-time.After(minRequestInterval - elapsed):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c.lastCall = time.Now()
+	return nil
 }
 
 func (c *Client) Name() string { return "api-football" }
@@ -61,34 +102,70 @@ func (c *Client) doGet(ctx context.Context, path string, query map[string]string
 		return nil, ErrNotConfigured
 	}
 
-	req, err := c.newRequest(ctx, path, query)
-	if err != nil {
-		c.record(endpointLabel, false, nil, err.Error(), time.Since(start))
-		return nil, err
+	backoff := minRequestInterval
+	var lastErr error
+
+	// Tentativa 0 é a chamada normal; as seguintes só acontecem em caso de 429.
+	for attempt := 0; attempt <= maxRetriesOn429; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				c.record(endpointLabel, false, nil, ctx.Err().Error(), time.Since(start))
+				return nil, ctx.Err()
+			}
+			backoff *= 2
+		}
+
+		// Espaçamento mínimo entre chamadas — ver minRequestInterval.
+		if err := c.wait(ctx); err != nil {
+			c.record(endpointLabel, false, nil, err.Error(), time.Since(start))
+			return nil, err
+		}
+
+		req, err := c.newRequest(ctx, path, query)
+		if err != nil {
+			c.record(endpointLabel, false, nil, err.Error(), time.Since(start))
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			wrapped := fmt.Errorf("falha ao chamar a API-Football (%s): %w", endpointLabel, err)
+			c.record(endpointLabel, false, nil, wrapped.Error(), time.Since(start))
+			return nil, wrapped
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		status := resp.StatusCode
+		resp.Body.Close()
+
+		if readErr != nil {
+			c.record(endpointLabel, false, &status, readErr.Error(), time.Since(start))
+			return nil, readErr
+		}
+
+		// 429 = cota/ritmo estourado. Vale repetir depois de esperar; qualquer
+		// outro status de erro é definitivo (chave inválida, endpoint errado...).
+		if status == http.StatusTooManyRequests {
+			lastErr = fmt.Errorf("API-Football retornou status 429 para %s (limite de requisições)", path)
+			continue
+		}
+
+		if status != http.StatusOK {
+			errMsg := fmt.Sprintf("API-Football retornou status %d para %s", status, path)
+			c.record(endpointLabel, false, &status, errMsg, time.Since(start))
+			return nil, errors.New(errMsg)
+		}
+
+		c.record(endpointLabel, true, &status, "", time.Since(start))
+		return body, nil
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		wrapped := fmt.Errorf("falha ao chamar a API-Football (%s): %w", endpointLabel, err)
-		c.record(endpointLabel, false, nil, wrapped.Error(), time.Since(start))
-		return nil, wrapped
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.record(endpointLabel, false, &resp.StatusCode, err.Error(), time.Since(start))
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		errMsg := fmt.Sprintf("API-Football retornou status %d para %s", resp.StatusCode, path)
-		c.record(endpointLabel, false, &resp.StatusCode, errMsg, time.Since(start))
-		return nil, errors.New(errMsg)
-	}
-
-	c.record(endpointLabel, true, &resp.StatusCode, "", time.Since(start))
-	return body, nil
+	// Esgotou as tentativas sempre recebendo 429.
+	status := http.StatusTooManyRequests
+	c.record(endpointLabel, false, &status, lastErr.Error(), time.Since(start))
+	return nil, lastErr
 }
 
 func (c *Client) record(endpoint string, success bool, statusCode *int, errMsg string, dur time.Duration) {

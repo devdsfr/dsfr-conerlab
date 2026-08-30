@@ -390,8 +390,29 @@ export interface ProviderSummary {
   daily_calls: DailyCount[];
 }
 
+export interface TableSize {
+  name: string;
+  bytes: number;
+  pretty: string;
+  rows: number;
+}
+
+/** Consumo de armazenamento do banco — acompanha o crescimento sem precisar abrir
+ *  o console do Neon. Opcional: se a consulta falhar, o backend omite o campo e a
+ *  tela simplesmente não mostra o card. */
+export interface StorageUsage {
+  total_bytes: number;
+  total_pretty: string;
+  quota_bytes: number;
+  quota_pretty: string;
+  used_percent: number;
+  retention_days: number;
+  tables: TableSize[];
+}
+
 export interface UsageSummaryResponse {
   providers: ProviderSummary[];
+  storage?: StorageUsage;
 }
 
 export interface TestConnectionResult {

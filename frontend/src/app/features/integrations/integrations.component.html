@@ -162,6 +162,71 @@
       }
     </div>
 
+    <!-- Armazenamento do banco. Existe para acompanhar o crescimento sem abrir o
+         console do Neon — a preocupação com "o banco vai crescer" só vira decisão
+         quando dá pra ver o número. -->
+    @if (storage(); as s) {
+      <div class="cl-card p-4">
+        <div class="flex items-baseline justify-between flex-wrap gap-2">
+          <h2 class="text-sm font-medium text-slate-100">Armazenamento do banco</h2>
+          <span class="text-xs text-slate-400">
+            retenção do histórico de chamadas: {{ s.retention_days }} dias
+          </span>
+        </div>
+
+        <div class="flex items-baseline gap-2 mt-2">
+          <span class="text-2xl font-semibold text-slate-100">{{ s.total_pretty }}</span>
+          <span class="text-sm text-slate-400">de {{ s.quota_pretty }}</span>
+          <span
+            class="text-sm font-medium"
+            [class.text-cornerlab-primary]="s.used_percent < 70"
+            [class.text-amber-400]="s.used_percent >= 70 && s.used_percent < 90"
+            [class.text-red-400]="s.used_percent >= 90"
+          >{{ s.used_percent | number:'1.1-1' }}%</span>
+        </div>
+
+        <!-- Barra de uso: role="img" com aria-label porque a informação é visual;
+             o número exato já está no texto acima, então não repetimos para leitor de tela. -->
+        <div
+          class="h-2 w-full rounded-full bg-slate-800 mt-3 overflow-hidden"
+          role="img"
+          [attr.aria-label]="'Uso do armazenamento: ' + (s.used_percent | number:'1.1-1') + ' por cento da cota'"
+        >
+          <div
+            class="h-full rounded-full transition-all"
+            [class.bg-cornerlab-primary]="s.used_percent < 70"
+            [class.bg-amber-400]="s.used_percent >= 70 && s.used_percent < 90"
+            [class.bg-red-400]="s.used_percent >= 90"
+            [style.width.%]="s.used_percent < 1 ? 1 : s.used_percent"
+          ></div>
+        </div>
+
+        @if (s.tables?.length) {
+          <div class="mt-4">
+            <div class="text-xs text-slate-400 mb-2">Maiores tabelas</div>
+            <table class="w-full text-sm">
+              <thead class="text-slate-400 text-left">
+                <tr>
+                  <th class="font-normal">Tabela</th>
+                  <th class="font-normal">Tamanho</th>
+                  <th class="font-normal">Linhas</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (t of s.tables; track t.name) {
+                  <tr class="border-t border-slate-800">
+                    <td class="py-1 font-mono text-xs">{{ t.name }}</td>
+                    <td>{{ t.pretty }}</td>
+                    <td>{{ t.rows | number }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+
     <div class="cl-card p-4">
       <button mat-button color="primary" (click)="toggleHistory()">
         {{ showHistory() ? 'Ocultar histórico' : 'Ver histórico recente' }}

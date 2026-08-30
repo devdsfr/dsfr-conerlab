@@ -27,7 +27,15 @@ func (h *DiagnosticsHandler) Usage(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"providers": summary})
+
+	// O armazenamento é informativo: se a consulta falhar (ex: permissão negada em
+	// pg_stat_user_tables), o painel continua funcionando sem o card em vez de
+	// devolver 500 e derrubar a tela inteira.
+	resp := gin.H{"providers": summary}
+	if storage, err := h.diag.Storage(c.Request.Context()); err == nil {
+		resp["storage"] = storage
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Recent godoc

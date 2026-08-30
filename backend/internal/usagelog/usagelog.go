@@ -45,6 +45,25 @@ type DailyCount struct {
 	Count int    `json:"count"`
 }
 
+// TableSize é o consumo de uma tabela do banco (maiores primeiro), exibido no card
+// de armazenamento do painel Integrações.
+type TableSize struct {
+	Name   string `json:"name"`
+	Bytes  int64  `json:"bytes"`
+	Pretty string `json:"pretty"`
+	Rows   int64  `json:"rows"`
+}
+
+// StorageStats descreve o consumo de armazenamento do banco. Serve para acompanhar
+// o crescimento sem precisar abrir o console do Neon — a cota do plano gratuito é
+// de 500 MB.
+type StorageStats struct {
+	TotalBytes    int64       `json:"total_bytes"`
+	TotalPretty   string      `json:"total_pretty"`
+	RetentionDays int         `json:"retention_days"`
+	Tables        []TableSize `json:"tables"`
+}
+
 // ProviderStats agrega o histórico de uso de um provedor específico.
 type ProviderStats struct {
 	Provider         Provider

@@ -10,7 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { ProviderSummary, SyncRun, SyncRunResult, UsageEntry } from '../../core/models';
+import { ProviderSummary, StorageUsage, SyncRun, SyncRunResult, UsageEntry } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 
 interface ProviderView extends ProviderSummary {
@@ -48,6 +48,10 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   private slowLoadTimer?: ReturnType<typeof setTimeout>;
   error = signal<string | null>(null);
   providers = signal<ProviderView[]>([]);
+
+  // Consumo do banco. Opcional no payload: se o backend não conseguir consultar
+  // (ex: permissão negada em pg_stat_user_tables), o card simplesmente não aparece.
+  storage = signal<StorageUsage | null>(null);
 
   recentEntries = signal<UsageEntry[]>([]);
   showHistory = signal(false);
@@ -145,6 +149,7 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     this.api.getUsageSummary().subscribe({
       next: res => {
         this.providers.set(res.providers.map(p => this.toView(p)));
+        this.storage.set(res.storage ?? null);
         this.loading.set(false);
         this.loadingSlow.set(false);
         clearTimeout(this.slowLoadTimer);

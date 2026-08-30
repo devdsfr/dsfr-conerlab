@@ -138,6 +138,10 @@ func main() {
 		runStrategyDiscovery(ctx, discoveryEngine, analyticsRepo)
 	}
 
+	// Manutenção: api_usage_log é a única tabela que cresce sem teto (uma linha por
+	// chamada externa). Roda no fim do ciclo, quando nada mais depende dela.
+	purgeUsageLog(ctx, usageRepo)
+
 	// SYNC_RUN_ONCE=true faz este mesmo binário rodar um único ciclo e sair — é o
 	// "Command" usado pelo Render Cron Job (barato, roda periodicamente em vez de um
 	// processo 24h). Sem essa variável, comportamento original: loop infinito com
@@ -172,7 +176,25 @@ func main() {
 			runHealthCheck(ctx, healthUC)
 		case <-strategyDiscoveryTicker.C:
 			runStrategyDiscovery(ctx, discoveryEngine, analyticsRepo)
+			purgeUsageLog(ctx, usageRepo)
 		}
+	}
+}
+
+// purgeUsageLog apaga o histórico de chamadas mais antigo que a janela de retenção
+// (ver postgres.UsageLogRetentionDays). Nunca derruba o ciclo: falhar em limpar log
+// é irrelevante perto de falhar em sincronizar dados, então o erro só é registrado.
+func purgeUsageLog(ctx context.Context, repo *postgres.UsageRepo) {
+	defer recoverAndLog("limpeza do histórico de uso")
+
+	removidos, err := repo.PurgeOldUsage(ctx)
+	if err != nil {
+		slog.Warn("nao foi possivel limpar o historico de uso", "error", err)
+		return
+	}
+	if removidos > 0 {
+		slog.Info("historico de uso limpo", "registros_removidos", removidos,
+			"retencao_dias", postgres.UsageLogRetentionDays)
 	}
 }
 

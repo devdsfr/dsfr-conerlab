@@ -84,6 +84,67 @@ func (r *UsageRepo) Stats(ctx context.Context, provider usagelog.Provider) (usag
 	return stats, rows.Err()
 }
 
+// UsageLogRetentionDays define por quanto tempo o histórico de chamadas é mantido.
+//
+// api_usage_log é a ÚNICA tabela do sistema que cresce sem teto: uma linha por
+// chamada externa, ~400 bytes cada, e nada nunca a limpa. As demais crescem com o
+// calendário (uma linha por partida) e são pequenas — o banco inteiro tem 14 MB.
+// Com o worker diário são ~65 registros/dia, ou ~10 MB/ano, então 90 dias mantêm o
+// gráfico de 7 dias e a auditoria recente sem deixar a tabela virar um problema
+// daqui a alguns anos.
+const UsageLogRetentionDays = 90
+
+// PurgeOldUsage apaga registros de uso mais antigos que UsageLogRetentionDays e
+// devolve quantas linhas saíram. Seguro rodar a qualquer momento: o painel
+// "Integrações" só consulta os últimos 7 dias, e o histórico recente é limitado a
+// 200 registros.
+func (r *UsageRepo) PurgeOldUsage(ctx context.Context) (int64, error) {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM api_usage_log
+		WHERE created_at < now() - make_interval(days => $1)`, UsageLogRetentionDays)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// Storage descreve o consumo de armazenamento do banco, para o card de
+// "Armazenamento" do painel Integrações.
+func (r *UsageRepo) Storage(ctx context.Context) (usagelog.StorageStats, error) {
+	var s usagelog.StorageStats
+	s.RetentionDays = UsageLogRetentionDays
+
+	if err := r.db.QueryRow(ctx, `
+		SELECT pg_database_size(current_database()),
+		       pg_size_pretty(pg_database_size(current_database()))`).
+		Scan(&s.TotalBytes, &s.TotalPretty); err != nil {
+		return s, err
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT relname,
+		       pg_total_relation_size(relid),
+		       pg_size_pretty(pg_total_relation_size(relid)),
+		       n_live_tup
+		FROM pg_stat_user_tables
+		ORDER BY pg_total_relation_size(relid) DESC
+		LIMIT 5`)
+	if err != nil {
+		return s, err
+	}
+	defer rows.Close()
+
+	s.Tables = []usagelog.TableSize{}
+	for rows.Next() {
+		var t usagelog.TableSize
+		if err := rows.Scan(&t.Name, &t.Bytes, &t.Pretty, &t.Rows); err != nil {
+			return s, err
+		}
+		s.Tables = append(s.Tables, t)
+	}
+	return s, rows.Err()
+}
+
 // Recent retorna os registros mais recentes, opcionalmente filtrados por provedor.
 func (r *UsageRepo) Recent(ctx context.Context, provider *usagelog.Provider, limit int) ([]usagelog.Entry, error) {
 	if limit <= 0 || limit > 200 {

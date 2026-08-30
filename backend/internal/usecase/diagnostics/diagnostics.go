@@ -20,6 +20,22 @@ import (
 type UsageRepo interface {
 	Stats(ctx context.Context, provider usagelog.Provider) (usagelog.ProviderStats, error)
 	Recent(ctx context.Context, provider *usagelog.Provider, limit int) ([]usagelog.Entry, error)
+	Storage(ctx context.Context) (usagelog.StorageStats, error)
+}
+
+// StorageQuotaBytes é a cota do plano gratuito do Neon (500 MB). Usada só para
+// calcular o percentual exibido na tela — se o plano mudar, é só ajustar aqui.
+const StorageQuotaBytes int64 = 500 * 1024 * 1024
+
+// StorageView é o retorno do card "Armazenamento" do painel Integrações.
+type StorageView struct {
+	TotalBytes    int64                `json:"total_bytes"`
+	TotalPretty   string               `json:"total_pretty"`
+	QuotaBytes    int64                `json:"quota_bytes"`
+	QuotaPretty   string               `json:"quota_pretty"`
+	UsedPercent   float64              `json:"used_percent"`
+	RetentionDays int                  `json:"retention_days"`
+	Tables        []usagelog.TableSize `json:"tables"`
 }
 
 // ProviderSummary é o retorno JSON-friendly de um provedor no painel "Integrações".
@@ -127,6 +143,28 @@ func (u *Usecase) Summary(ctx context.Context) ([]ProviderSummary, error) {
 		})
 	}
 	return summaries, nil
+}
+
+// Storage devolve o consumo de armazenamento do banco já com o percentual da cota
+// calculado, para o card de acompanhamento do painel Integrações.
+func (u *Usecase) Storage(ctx context.Context) (StorageView, error) {
+	s, err := u.usage.Storage(ctx)
+	if err != nil {
+		return StorageView{}, err
+	}
+	pct := 0.0
+	if StorageQuotaBytes > 0 {
+		pct = float64(s.TotalBytes) / float64(StorageQuotaBytes) * 100
+	}
+	return StorageView{
+		TotalBytes:    s.TotalBytes,
+		TotalPretty:   s.TotalPretty,
+		QuotaBytes:    StorageQuotaBytes,
+		QuotaPretty:   "500 MB",
+		UsedPercent:   pct,
+		RetentionDays: s.RetentionDays,
+		Tables:        s.Tables,
+	}, nil
 }
 
 // Recent retorna o histórico recente de chamadas, opcionalmente filtrado por provedor.

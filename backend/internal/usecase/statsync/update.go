@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider"
@@ -19,10 +20,23 @@ type UpdateUsecase struct {
 	provider  statsprovider.StatisticsProvider
 	repo      *postgres.StatSyncRepo
 	incidents *postgres.ProviderIncidentRepo
+
+	// report acompanha o andamento para a barra de progresso (ver progress.go).
+	report reporter
 }
 
 func NewUpdateUsecase(provider statsprovider.StatisticsProvider, repo *postgres.StatSyncRepo, incidents *postgres.ProviderIncidentRepo) *UpdateUsecase {
-	return &UpdateUsecase{provider: provider, repo: repo, incidents: incidents}
+	return &UpdateUsecase{provider: provider, repo: repo, incidents: incidents, report: noopReporter{}}
+}
+
+// WithProgress liga o acompanhamento de andamento a este usecase.
+func (u *UpdateUsecase) WithProgress(r reporter) *UpdateUsecase {
+	if r == nil {
+		r = noopReporter{}
+	}
+	clone := *u
+	clone.report = r
+	return &clone
 }
 
 // dueBuffer evita buscar o resultado de uma partida que talvez ainda esteja em
@@ -61,8 +75,10 @@ func (u *UpdateUsecase) Run(ctx context.Context) (UpdateResult, error) {
 		return result, fmt.Errorf("erro ao listar partidas pendentes: %w", err)
 	}
 	result.Checked = len(due)
+	u.report.Phase(PhaseUpdate, "Buscando resultados das partidas", len(due))
 
-	for _, d := range due {
+	for i, d := range due {
+		u.report.Step("partida " + strconv.Itoa(i+1) + " de " + strconv.Itoa(len(due)))
 		stats, err := u.provider.SyncFixtureStatistics(ctx, d.ExternalID)
 		if err != nil {
 			result.Errors++

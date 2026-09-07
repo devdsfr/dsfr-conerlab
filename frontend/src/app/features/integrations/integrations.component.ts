@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -10,7 +11,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { ProviderSummary, StorageUsage, SyncRun, SyncRunResult, UsageEntry } from '../../core/models';
+import { ProviderSummary, StorageUsage, SyncProgress, SyncRun, SyncRunResult, UsageEntry } from '../../core/models';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 
 interface ProviderView extends ProviderSummary {
@@ -26,6 +27,10 @@ interface ProviderView extends ProviderSummary {
 // indeterminado (ver template).
 const SLOW_LOAD_TIMEOUT_MS = 8000;
 
+// Intervalo do polling da barra de progresso. 2s dá movimento perceptível sem
+// martelar o servidor: cada passo do ciclo leva ~6,5s por causa do throttle.
+const POLL_MS = 2000;
+
 @Component({
   selector: 'app-integrations',
   standalone: true,
@@ -34,6 +39,7 @@ const SLOW_LOAD_TIMEOUT_MS = 8000;
     MatCardModule,
     MatButtonModule,
     MatProgressSpinnerModule,
+    MatProgressBarModule,
     MatTableModule,
     MatChipsModule,
     MatTooltipModule,
@@ -68,6 +74,10 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   syncResult = signal<SyncRunResult | null>(null);
   syncError = signal<string | null>(null);
 
+  // Andamento do ciclo, consultado por polling enquanto ele roda.
+  progress = signal<SyncProgress | null>(null);
+  private pollTimer?: ReturnType<typeof setInterval>;
+
   // Status rápido "API-Football está de pé?" — independente do painel completo de
   // consumo (que pode demorar mais, ver load()), pra decidir antes de clicar em
   // "Sincronizar agora".
@@ -86,6 +96,19 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     this.load();
     this.checkApiFootball();
     this.loadSyncStatus();
+
+    // Se um ciclo já estiver rodando (disparado em outra aba, ou a página foi
+    // recarregada no meio), a barra reaparece sozinha em vez de sumir.
+    this.api.getSyncProgress().subscribe({
+      next: p => {
+        if (p.running) {
+          this.progress.set(p);
+          this.syncLoading.set(true);
+          this.startPolling();
+        }
+      },
+      error: () => {},
+    });
   }
 
   loadSyncStatus(): void {
@@ -137,6 +160,9 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     clearTimeout(this.slowLoadTimer);
+    // Sair da tela não cancela o ciclo (ele roda no servidor), mas o polling
+    // precisa parar, senão fica um setInterval órfão batendo na API.
+    clearInterval(this.pollTimer);
   }
 
   load(): void {
@@ -210,6 +236,9 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     }
   }
 
+  // O ciclo roda em segundo plano no backend (POST responde 202 na hora) porque,
+  // com o throttle da API-Football, ele leva minutos. Aqui só disparamos e passamos
+  // a perguntar o andamento a cada POLL_MS para desenhar a barra.
   runSync(): void {
     if (!this.auth.isAuthenticated()) {
       this.syncError.set('Faça login (aba Assinatura) para sincronizar manualmente.');
@@ -218,18 +247,78 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     this.syncLoading.set(true);
     this.syncError.set(null);
     this.syncResult.set(null);
+
     this.api.syncRun().subscribe({
       next: res => {
-        this.syncLoading.set(false);
-        this.syncResult.set(res);
-        this.load();
-        this.loadSyncStatus();
+        this.progress.set(res.progress ?? null);
+        this.startPolling();
       },
       error: err => {
+        // 409 = já existe um ciclo rodando (outra aba, ou o cron). Em vez de tratar
+        // como falha, entra no modo de acompanhamento do ciclo que já está em curso.
+        if (err?.status === 409) {
+          this.progress.set(err?.error?.progress ?? null);
+          this.startPolling();
+          return;
+        }
         this.syncLoading.set(false);
         this.syncError.set(err?.error?.error ?? 'Não foi possível sincronizar agora');
       },
     });
+  }
+
+  private startPolling(): void {
+    clearInterval(this.pollTimer);
+    this.pollTimer = setInterval(() => this.pollProgress(), POLL_MS);
+    this.pollProgress();
+  }
+
+  private pollProgress(): void {
+    this.api.getSyncProgress().subscribe({
+      next: p => {
+        this.progress.set(p);
+        if (p.running) return;
+
+        // Terminou: para o polling e recarrega o painel com os números novos.
+        this.stopPolling();
+        if (p.phase === 'erro') {
+          this.syncError.set(p.error || 'A sincronização falhou');
+        } else if (p.phase === 'concluido') {
+          this.syncResult.set({
+            discovery: {
+              Targets: p.discovery?.Targets ?? 0,
+              FixturesFound: p.discovery?.FixturesFound ?? 0,
+              FixturesUpserted: p.discovery?.FixturesUpserted ?? 0,
+              Errors: p.discovery?.Errors ?? 0,
+            },
+            update: {
+              Checked: p.update?.Checked ?? 0,
+              Finalized: p.update?.Finalized ?? 0,
+              StillOpen: p.update?.StillOpen ?? 0,
+              Errors: p.update?.Errors ?? 0,
+            },
+            duration_ms: p.duration_ms,
+          });
+          this.load();
+          this.loadSyncStatus();
+        }
+      },
+      // Falha pontual no polling não cancela o acompanhamento: o ciclo segue
+      // rodando no servidor e a próxima tentativa provavelmente responde.
+      error: () => {},
+    });
+  }
+
+  private stopPolling(): void {
+    clearInterval(this.pollTimer);
+    this.pollTimer = undefined;
+    this.syncLoading.set(false);
+  }
+
+  /** Rótulo curto do que está acontecendo agora, para acompanhar a barra. */
+  progressLabel(p: SyncProgress): string {
+    if (p.total > 0) return `${p.phase_label} — ${p.current} de ${p.total}`;
+    return p.phase_label;
   }
 
   statusLabel(p: ProviderView): string {

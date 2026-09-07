@@ -390,6 +390,31 @@ export interface ProviderSummary {
   daily_calls: DailyCount[];
 }
 
+/** Andamento do ciclo de sincronização (GET /sync/progress). O ciclo leva minutos
+ *  por causa do throttle da API-Football, então a tela acompanha por polling em vez
+ *  de segurar a requisição aberta. */
+export interface SyncProgress {
+  running: boolean;
+  phase: 'idle' | 'descoberta' | 'atualizacao' | 'concluido' | 'erro';
+  phase_label: string;
+  current: number;
+  total: number;
+  percent: number;
+  message: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  error: string;
+  discovery: { Targets: number; FixturesFound: number; FixturesUpserted: number; Errors: number } | null;
+  update: { Checked: number; Finalized: number; StillOpen: number; Errors: number } | null;
+}
+
+export interface SyncStartResponse {
+  started: boolean;
+  message: string;
+  progress: SyncProgress;
+}
+
 export interface TableSize {
   name: string;
   bytes: number;

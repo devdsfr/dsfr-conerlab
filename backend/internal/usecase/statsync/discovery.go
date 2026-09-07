@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
@@ -21,10 +22,25 @@ type DiscoveryUsecase struct {
 	provider  statsprovider.StatisticsProvider
 	repo      *postgres.StatSyncRepo
 	incidents *postgres.ProviderIncidentRepo
+
+	// report acompanha o andamento para a barra de progresso do painel. Nunca é
+	// nil (noopReporter por padrão), então o laço abaixo não precisa checar.
+	report reporter
 }
 
 func NewDiscoveryUsecase(provider statsprovider.StatisticsProvider, repo *postgres.StatSyncRepo, incidents *postgres.ProviderIncidentRepo) *DiscoveryUsecase {
-	return &DiscoveryUsecase{provider: provider, repo: repo, incidents: incidents}
+	return &DiscoveryUsecase{provider: provider, repo: repo, incidents: incidents, report: noopReporter{}}
+}
+
+// WithProgress liga o acompanhamento de andamento a este usecase. Usado pelo
+// disparo manual ("Sincronizar agora"); o ciclo do cron roda sem acompanhar.
+func (u *DiscoveryUsecase) WithProgress(r reporter) *DiscoveryUsecase {
+	if r == nil {
+		r = noopReporter{}
+	}
+	clone := *u
+	clone.report = r
+	return &clone
 }
 
 type DiscoveryResult struct {
@@ -51,6 +67,7 @@ func (u *DiscoveryUsecase) Run(ctx context.Context) (DiscoveryResult, error) {
 		return result, fmt.Errorf("erro ao listar campeonatos observados: %w", err)
 	}
 	result.Targets = len(targets)
+	u.report.Phase(PhaseDiscovery, "Procurando jogos novos", len(targets))
 
 	teamIDCache := map[string]int64{}
 	resolveTeam := func(externalID, name, country string) (int64, error) {
@@ -67,6 +84,7 @@ func (u *DiscoveryUsecase) Run(ctx context.Context) (DiscoveryResult, error) {
 	}
 
 	for _, t := range targets {
+		u.report.Step(t.LeagueName + " · " + strconv.Itoa(t.SeasonYear))
 		fixtures, err := u.provider.SyncFixtures(ctx, t.LeagueExternalID, t.SeasonYear)
 		if err != nil {
 			// Falha em um campeonato não pode travar os demais — registra e segue.

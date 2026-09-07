@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,11 +24,18 @@ type SyncHandler struct {
 	discovery *statsync.DiscoveryUsecase
 	update    *statsync.UpdateUsecase
 	runs      repository.SyncRunRepository
+	progress  *statsync.Tracker
 }
 
 func NewSyncHandler(discovery *statsync.DiscoveryUsecase, update *statsync.UpdateUsecase, runs repository.SyncRunRepository) *SyncHandler {
-	return &SyncHandler{discovery: discovery, update: update, runs: runs}
+	return &SyncHandler{discovery: discovery, update: update, runs: runs, progress: statsync.NewTracker()}
 }
+
+// syncTimeout limita o ciclo disparado em segundo plano. Com o throttle da
+// API-Football (~9 req/min) um ciclo cheio — até 50 partidas mais os campeonatos —
+// leva perto de 7 minutos; 20 minutos dá folga larga sem deixar uma goroutine presa
+// para sempre caso o provedor pendure a conexão.
+const syncTimeout = 20 * time.Minute
 
 type syncRunResponse struct {
 	Discovery  statsync.DiscoveryResult `json:"discovery"`
@@ -39,27 +47,61 @@ type syncRunResponse struct {
 // @Summary Disparar manualmente um ciclo de sincronização (descoberta + atualização)
 // @Tags sync
 // @Router /api/v1/sync/run [post]
+// O ciclo roda em SEGUNDO PLANO e a resposta volta na hora (202 Accepted). Antes
+// isso era síncrono, o que virou um problema quando o cliente da API-Football ganhou
+// throttle para não tomar 429: o ciclo passou de ~13s para ~6min, tempo suficiente
+// para proxy ou navegador cortarem a conexão, e o usuário ficava olhando um spinner
+// sem saber quanto faltava. Agora o acompanhamento é por GET /sync/progress.
 func (h *SyncHandler) Run(c *gin.Context) {
-	ctx := c.Request.Context()
-	start := time.Now()
-
-	discoveryResult, err := h.discovery.Run(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "descoberta falhou: " + err.Error()})
-		return
-	}
-	updateResult, err := h.update.Run(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":     "atualização falhou: " + err.Error(),
-			"discovery": discoveryResult,
+	if !h.progress.Start() {
+		// 409: já existe um ciclo rodando. Impede que dois cliques seguidos
+		// dobrem o consumo da cota da API externa.
+		c.JSON(http.StatusConflict, gin.H{
+			"error":    "já existe uma sincronização em andamento",
+			"progress": h.progress.Snapshot(),
 		})
 		return
 	}
-	durationMs := time.Since(start).Milliseconds()
 
-	h.recordRun(ctx, "manual", discoveryResult, updateResult, durationMs)
-	c.JSON(http.StatusOK, syncRunResponse{Discovery: discoveryResult, Update: updateResult, DurationMs: durationMs})
+	// Contexto próprio: o contexto da requisição morre assim que respondemos,
+	// e o trabalho precisa sobreviver a isso.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		start := time.Now()
+
+		discoveryResult, err := h.discovery.WithProgress(h.progress).Run(ctx)
+		if err != nil {
+			slog.Error("descoberta falhou no ciclo manual", "error", err)
+			h.progress.Finish(fmt.Errorf("descoberta falhou: %w", err), nil, nil)
+			return
+		}
+
+		updateResult, err := h.update.WithProgress(h.progress).Run(ctx)
+		if err != nil {
+			slog.Error("atualização falhou no ciclo manual", "error", err)
+			h.progress.Finish(fmt.Errorf("atualização falhou: %w", err), &discoveryResult, nil)
+			return
+		}
+
+		durationMs := time.Since(start).Milliseconds()
+		h.recordRun(ctx, "manual", discoveryResult, updateResult, durationMs)
+		h.progress.Finish(nil, &discoveryResult, &updateResult)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"started":  true,
+		"message":  "sincronização iniciada — acompanhe em /sync/progress",
+		"progress": h.progress.Snapshot(),
+	})
+}
+
+// Progress godoc
+// @Summary Andamento do ciclo de sincronização em execução (para a barra de progresso)
+// @Tags sync
+// @Router /api/v1/sync/progress [get]
+func (h *SyncHandler) Progress(c *gin.Context) {
+	c.JSON(http.StatusOK, h.progress.Snapshot())
 }
 
 // Status godoc

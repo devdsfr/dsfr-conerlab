@@ -88,6 +88,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		// Última sincronização registrada — leitura pública (sem custo, sem side
 		// effect), diferente de POST /sync/run (autenticado, ver authGroup abaixo).
 		api.GET("/sync/status", h.Sync.Status)
+		// Progresso é leitura pura do estado em memória — público como o status,
+		// para a barra continuar atualizando mesmo se o token expirar no meio do
+		// ciclo (que agora leva minutos).
+		api.GET("/sync/progress", h.Sync.Progress)
 
 		// Strategy Discovery Engine (Remodelagem F6, doc 08). O ranking já está
 		// calculado no banco pelo worker noturno, então listá-lo é leitura barata e

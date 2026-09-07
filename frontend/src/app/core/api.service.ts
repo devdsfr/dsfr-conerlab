@@ -19,6 +19,8 @@ import {
   BankrollHistoryEntry,
   BankrollRound,
   SyncRunResult,
+  SyncStartResponse,
+  SyncProgress,
   SyncStatusResponse,
   BillingStatus,
   UpcomingMatch,
@@ -172,9 +174,17 @@ export class ApiService {
     return this.http.post<TestConnectionResult>(`${this.base}/diagnostics/test/${provider}`, {});
   }
 
-  /** Botão "Sincronizar agora" — exige login (ver router.go, grupo authGroup). */
-  syncRun(): Observable<SyncRunResult> {
-    return this.http.post<SyncRunResult>(`${this.base}/sync/run`, {});
+  /** Botão "Sincronizar agora" — exige login (ver router.go, grupo authGroup).
+   *  Responde 202 na hora: o ciclo roda em segundo plano e o andamento é lido por
+   *  getSyncProgress(). Responde 409 se já houver um ciclo em execução. */
+  syncRun(): Observable<SyncStartResponse> {
+    return this.http.post<SyncStartResponse>(`${this.base}/sync/run`, {});
+  }
+
+  /** Andamento do ciclo em execução — alimenta a barra de progresso. Leitura
+   *  pública: continua funcionando mesmo se o token expirar durante o ciclo. */
+  getSyncProgress(): Observable<SyncProgress> {
+    return this.http.get<SyncProgress>(`${this.base}/sync/progress`);
   }
 
   /** Última sincronização registrada (manual ou via Cron Job) — leitura pública. */

@@ -98,6 +98,9 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		// pública — mesma política do Dashboard/Comparador/Intelligence. Já o POST
 		// /discovery/run dispara centenas de backtests e fica no authGroup abaixo.
 		api.GET("/discovery/strategies", h.Discovery.ListStrategies)
+		// Progresso da varredura: leitura pura do estado em memória, público como
+		// o ranking — a barra segue atualizando mesmo se o token expirar no meio.
+		api.GET("/discovery/progress", h.Discovery.Progress)
 
 		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
 		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT

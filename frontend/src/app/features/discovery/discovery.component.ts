@@ -1,15 +1,16 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { DiscoveredStrategy, DiscoveryRunResult, League } from '../../core/models';
+import { DiscoveredStrategy, DiscoveryProgress, DiscoveryRunResult, League } from '../../core/models';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
 
 // Página "Descobertas" — Strategy Discovery Engine (Remodelagem F6, doc 08).
@@ -21,6 +22,9 @@ import { PageLoaderComponent } from '../../shared/page-loader.component';
 //
 // Nenhum número desta tela é calculado no frontend: o backend entrega a linha do
 // ranking pronta (inclusive a classificação). O componente só formata e explica.
+// Intervalo do polling da barra. 2s dá movimento perceptível sem martelar a API.
+const POLL_MS = 2000;
+
 @Component({
   selector: 'app-discovery',
   standalone: true,
@@ -30,12 +34,13 @@ import { PageLoaderComponent } from '../../shared/page-loader.component';
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatProgressBarModule,
     MatTooltipModule,
     PageLoaderComponent,
   ],
   templateUrl: './discovery.component.html',
 })
-export class DiscoveryComponent implements OnInit {
+export class DiscoveryComponent implements OnInit, OnDestroy {
   leagues = signal<League[]>([]);
   leagueId = signal<number | null>(null);
 
@@ -47,6 +52,10 @@ export class DiscoveryComponent implements OnInit {
   running = signal(false);
   error = signal<string | null>(null);
   lastRun = signal<DiscoveryRunResult | null>(null);
+
+  // Andamento da varredura, consultado por polling enquanto ela roda.
+  progress = signal<DiscoveryProgress | null>(null);
+  private pollTimer?: ReturnType<typeof setInterval>;
 
   /** Faixas do doc 08, para explicar a classificação exibida em cada card. */
   readonly classificationTooltips: Record<string, string> = {
@@ -100,6 +109,19 @@ export class DiscoveryComponent implements OnInit {
       next: list => this.leagues.set(list ?? []),
     });
     this.load();
+
+    // Se uma varredura já estiver rodando (outra aba, ou a página foi recarregada
+    // no meio), a barra reaparece sozinha em vez de sumir.
+    this.api.getDiscoveryProgress().subscribe({
+      next: p => {
+        if (p.running) {
+          this.progress.set(p);
+          this.running.set(true);
+          this.startPolling();
+        }
+      },
+      error: () => {},
+    });
   }
 
   load(): void {
@@ -128,20 +150,72 @@ export class DiscoveryComponent implements OnInit {
    * "Procurar agora": só faz sentido quando há uma liga escolhida — varrer todas
    * de uma vez pode levar minutos e o usuário ficaria sem retorno na tela.
    */
+  // A varredura roda em segundo plano no backend (POST responde 202 na hora):
+  // são milhares de backtests, tempo demais para segurar uma requisição HTTP.
+  // Aqui só disparamos e passamos a perguntar o andamento para desenhar a barra.
   run(): void {
     this.running.set(true);
     this.error.set(null);
     this.api.runDiscovery(this.leagueId() ?? undefined).subscribe({
-      next: result => {
-        this.lastRun.set(result);
-        this.running.set(false);
-        this.load();
+      next: res => {
+        this.progress.set(res.progress ?? null);
+        this.startPolling();
       },
       error: err => {
+        // 409 = já existe uma varredura rodando (outra aba, ou o worker noturno).
+        // Em vez de erro, acompanha o ciclo que já está em curso.
+        if (err?.status === 409) {
+          this.progress.set(err?.error?.progress ?? null);
+          this.startPolling();
+          return;
+        }
         this.error.set(err?.error?.error ?? 'Erro ao executar a busca por estratégias');
         this.running.set(false);
       },
     });
+  }
+
+  private startPolling(): void {
+    clearInterval(this.pollTimer);
+    this.pollTimer = setInterval(() => this.pollProgress(), POLL_MS);
+    this.pollProgress();
+  }
+
+  private pollProgress(): void {
+    this.api.getDiscoveryProgress().subscribe({
+      next: p => {
+        this.progress.set(p);
+        if (p.running) return;
+
+        clearInterval(this.pollTimer);
+        this.pollTimer = undefined;
+        this.running.set(false);
+
+        if (p.phase === 'erro') {
+          this.error.set(p.error || 'A varredura falhou');
+          return;
+        }
+        if (p.phase === 'concluido') {
+          this.lastRun.set((p.result ?? null) as DiscoveryRunResult | null);
+          this.load();
+        }
+      },
+      // Falha pontual no polling não cancela o acompanhamento — a varredura segue
+      // no servidor e a próxima tentativa provavelmente responde.
+      error: () => {},
+    });
+  }
+
+  /** Rótulo curto do que está sendo varrido agora, ao lado da barra. */
+  progressLabel(p: DiscoveryProgress): string {
+    if (p.total > 0) return `${p.phase_label} — campeonato ${p.current} de ${p.total}`;
+    return p.phase_label;
+  }
+
+  ngOnDestroy(): void {
+    // Sair da tela não cancela a varredura (ela roda no servidor), mas o polling
+    // precisa parar, senão fica um setInterval órfão batendo na API.
+    clearInterval(this.pollTimer);
   }
 
   toggle(id: number): void {

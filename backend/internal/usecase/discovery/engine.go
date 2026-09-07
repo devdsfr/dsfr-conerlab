@@ -21,8 +21,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/progress"
 	"github.com/devdsfr/cornerlab/internal/repository"
 	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
@@ -52,6 +54,10 @@ type Engine struct {
 	strategies repository.StrategyRepository
 	persister  ResultPersister
 	opts       Options
+
+	// report acompanha o andamento para a barra de progresso. Nunca é nil
+	// (progress.Noop por padrão), então os laços não precisam checar.
+	report progress.Reporter
 }
 
 func NewEngine(
@@ -66,8 +72,12 @@ func NewEngine(
 	return &Engine{
 		matches: matches, teams: teams, leagues: leagues,
 		strategies: strategies, persister: persister, opts: opts,
+		report: progress.Noop{},
 	}
 }
+
+// PhaseScan é a fase reportada durante a varredura (ver internal/progress).
+const PhaseScan = "varredura"
 
 // LeagueResult resume a descoberta de uma liga (observabilidade do doc 15).
 type LeagueResult struct {
@@ -92,6 +102,17 @@ type Result struct {
 	ByLeague     []LeagueResult `json:"by_league"`
 }
 
+// WithProgress liga o acompanhamento de andamento a este motor, para a barra de
+// progresso do botão "Procurar agora". O ciclo do cron roda sem acompanhar.
+func (e *Engine) WithProgress(r progress.Reporter) *Engine {
+	if r == nil {
+		r = progress.Noop{}
+	}
+	clone := *e
+	clone.report = r
+	return &clone
+}
+
 // RunAll roda a descoberta em todas as ligas cadastradas. Uma liga que falha não
 // interrompe as demais (mesma resiliência dos outros workers do pipeline).
 func (e *Engine) RunAll(ctx context.Context) (Result, error) {
@@ -102,7 +123,13 @@ func (e *Engine) RunAll(ctx context.Context) (Result, error) {
 		return out, fmt.Errorf("listar ligas: %w", err)
 	}
 
+	// A barra anda de campeonato em campeonato: é o único total conhecido antes de
+	// começar (a quantidade de combinações só existe depois de carregar os times de
+	// cada liga). O texto abaixo da barra mostra o progresso fino, dentro da liga.
+	e.report.Phase(PhaseScan, "Minerando combinações", len(leagues))
+
 	for _, l := range leagues {
+		e.report.Step(l.Name)
 		lr, err := e.RunLeague(ctx, l.ID, nil)
 		if err != nil {
 			out.Errors++
@@ -199,9 +226,18 @@ func (e *Engine) mine(
 	crit := e.opts.Criteria
 	var approved []candidate
 
-	for _, c := range combos {
+	// Reporta a cada 25 combinações: dá movimento visível no texto sem travar o
+	// laço pegando o mutex do tracker milhares de vezes.
+	const detalheACada = 25
+
+	for i, c := range combos {
 		if ctx.Err() != nil {
 			return approved // shutdown pedido: devolve o que já foi minerado
+		}
+
+		if i%detalheACada == 0 {
+			e.report.Detail(res.LeagueName + " — " +
+				strconv.Itoa(i) + " de " + strconv.Itoa(len(combos)) + " combinações testadas")
 		}
 
 		criteria := usecase.FilterCriteria{

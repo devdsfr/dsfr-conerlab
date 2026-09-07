@@ -284,18 +284,19 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
         if (p.phase === 'erro') {
           this.syncError.set(p.error || 'A sincronização falhou');
         } else if (p.phase === 'concluido') {
+          const r = p.result;
           this.syncResult.set({
             discovery: {
-              Targets: p.discovery?.Targets ?? 0,
-              FixturesFound: p.discovery?.FixturesFound ?? 0,
-              FixturesUpserted: p.discovery?.FixturesUpserted ?? 0,
-              Errors: p.discovery?.Errors ?? 0,
+              Targets: r?.discovery?.Targets ?? 0,
+              FixturesFound: r?.discovery?.FixturesFound ?? 0,
+              FixturesUpserted: r?.discovery?.FixturesUpserted ?? 0,
+              Errors: r?.discovery?.Errors ?? 0,
             },
             update: {
-              Checked: p.update?.Checked ?? 0,
-              Finalized: p.update?.Finalized ?? 0,
-              StillOpen: p.update?.StillOpen ?? 0,
-              Errors: p.update?.Errors ?? 0,
+              Checked: r?.update?.Checked ?? 0,
+              Finalized: r?.update?.Finalized ?? 0,
+              StillOpen: r?.update?.StillOpen ?? 0,
+              Errors: r?.update?.Errors ?? 0,
             },
             duration_ms: p.duration_ms,
           });

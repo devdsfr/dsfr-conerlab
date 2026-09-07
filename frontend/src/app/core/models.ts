@@ -393,9 +393,9 @@ export interface ProviderSummary {
 /** Andamento do ciclo de sincronização (GET /sync/progress). O ciclo leva minutos
  *  por causa do throttle da API-Football, então a tela acompanha por polling em vez
  *  de segurar a requisição aberta. */
-export interface SyncProgress {
+export interface TaskProgress<TResult = unknown> {
   running: boolean;
-  phase: 'idle' | 'descoberta' | 'atualizacao' | 'concluido' | 'erro';
+  phase: string;
   phase_label: string;
   current: number;
   total: number;
@@ -405,9 +405,27 @@ export interface SyncProgress {
   finished_at: string | null;
   duration_ms: number;
   error: string;
-  discovery: { Targets: number; FixturesFound: number; FixturesUpserted: number; Errors: number } | null;
-  update: { Checked: number; Finalized: number; StillOpen: number; Errors: number } | null;
+  result?: TResult;
 }
+
+/** Resultado do ciclo de sincronização, entregue no fim do acompanhamento. */
+export interface SyncOutcome {
+  discovery: { Targets: number; FixturesFound: number; FixturesUpserted: number; Errors: number };
+  update: { Checked: number; Finalized: number; StillOpen: number; Errors: number };
+}
+
+export type SyncProgress = TaskProgress<SyncOutcome>;
+
+/** Resultado da varredura de descobertas. */
+export interface DiscoveryOutcome {
+  leagues: number;
+  combinations: number;
+  published: number;
+  deactivated: number;
+  errors: number;
+}
+
+export type DiscoveryProgress = TaskProgress<DiscoveryOutcome>;
 
 export interface SyncStartResponse {
   started: boolean;

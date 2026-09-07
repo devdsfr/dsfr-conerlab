@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/progress"
 	"github.com/devdsfr/cornerlab/internal/repository"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 )
@@ -24,11 +25,11 @@ type SyncHandler struct {
 	discovery *statsync.DiscoveryUsecase
 	update    *statsync.UpdateUsecase
 	runs      repository.SyncRunRepository
-	progress  *statsync.Tracker
+	progress  *progress.Tracker
 }
 
 func NewSyncHandler(discovery *statsync.DiscoveryUsecase, update *statsync.UpdateUsecase, runs repository.SyncRunRepository) *SyncHandler {
-	return &SyncHandler{discovery: discovery, update: update, runs: runs, progress: statsync.NewTracker()}
+	return &SyncHandler{discovery: discovery, update: update, runs: runs, progress: progress.NewTracker()}
 }
 
 // syncTimeout limita o ciclo disparado em segundo plano. Com o throttle da
@@ -53,7 +54,7 @@ type syncRunResponse struct {
 // para proxy ou navegador cortarem a conexão, e o usuário ficava olhando um spinner
 // sem saber quanto faltava. Agora o acompanhamento é por GET /sync/progress.
 func (h *SyncHandler) Run(c *gin.Context) {
-	if !h.progress.Start() {
+	if !h.progress.Start("Preparando…") {
 		// 409: já existe um ciclo rodando. Impede que dois cliques seguidos
 		// dobrem o consumo da cota da API externa.
 		c.JSON(http.StatusConflict, gin.H{
@@ -73,20 +74,20 @@ func (h *SyncHandler) Run(c *gin.Context) {
 		discoveryResult, err := h.discovery.WithProgress(h.progress).Run(ctx)
 		if err != nil {
 			slog.Error("descoberta falhou no ciclo manual", "error", err)
-			h.progress.Finish(fmt.Errorf("descoberta falhou: %w", err), nil, nil)
+			h.progress.Finish(fmt.Errorf("descoberta falhou: %w", err), nil)
 			return
 		}
 
 		updateResult, err := h.update.WithProgress(h.progress).Run(ctx)
 		if err != nil {
 			slog.Error("atualização falhou no ciclo manual", "error", err)
-			h.progress.Finish(fmt.Errorf("atualização falhou: %w", err), &discoveryResult, nil)
+			h.progress.Finish(fmt.Errorf("atualização falhou: %w", err), nil)
 			return
 		}
 
 		durationMs := time.Since(start).Milliseconds()
 		h.recordRun(ctx, "manual", discoveryResult, updateResult, durationMs)
-		h.progress.Finish(nil, &discoveryResult, &updateResult)
+		h.progress.Finish(nil, statsync.SyncOutcome{Discovery: discoveryResult, Update: updateResult})
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{

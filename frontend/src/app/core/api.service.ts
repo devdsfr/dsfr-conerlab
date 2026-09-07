@@ -29,6 +29,7 @@ import {
   StrategyEvaluation,
   DiscoveredStrategiesResponse,
   DiscoveryRunResult,
+  DiscoveryProgress,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -161,8 +162,16 @@ export class ApiService {
    * backtests) — o caminho normal é esperar o worker diário.
    * Sem leagueId, varre todas as ligas.
    */
-  runDiscovery(leagueId?: number): Observable<DiscoveryRunResult> {
-    return this.http.post<DiscoveryRunResult>(`${this.base}/discovery/run`, leagueId ? { league_id: leagueId } : {});
+  runDiscovery(leagueId?: number): Observable<{ started: boolean; message: string; progress: DiscoveryProgress }> {
+    return this.http.post<{ started: boolean; message: string; progress: DiscoveryProgress }>(
+      `${this.base}/discovery/run`,
+      leagueId ? { league_id: leagueId } : {},
+    );
+  }
+
+  /** Andamento da varredura — alimenta a barra de progresso da tela Descobertas. */
+  getDiscoveryProgress(): Observable<DiscoveryProgress> {
+    return this.http.get<DiscoveryProgress>(`${this.base}/discovery/progress`);
   }
 
   // Painel "Integrações" — status/consumo das APIs externas

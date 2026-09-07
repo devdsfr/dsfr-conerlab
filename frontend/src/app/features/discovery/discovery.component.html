@@ -56,11 +56,32 @@
     }
   </section>
 
-  @if (running()) {
-    <p class="text-xs text-slate-400">
-      Varredura em andamento: centenas de backtests estão sendo executados sobre o histórico completo.
-      Isso pode levar alguns minutos.
-    </p>
+  <!-- Barra da varredura. A barra anda de campeonato em campeonato (único total
+       conhecido antes de começar); o texto abaixo mostra o progresso fino, dentro
+       do campeonato que está sendo minerado. -->
+  @if (progress(); as p) {
+    @if (p.running) {
+      <section class="cl-card p-4">
+        <div class="flex items-baseline justify-between gap-3 flex-wrap">
+          <span class="text-sm text-slate-100">{{ progressLabel(p) }}</span>
+          <span class="text-sm font-medium text-cornerlab-primary">{{ p.percent | number:'1.0-0' }}%</span>
+        </div>
+
+        <mat-progress-bar
+          class="mt-3"
+          [mode]="p.total > 0 ? 'determinate' : 'indeterminate'"
+          [value]="p.percent"
+        ></mat-progress-bar>
+
+        @if (p.message) {
+          <div class="text-xs text-slate-400 mt-2">{{ p.message }}</div>
+        }
+        <div class="text-xs text-slate-500 mt-1">
+          Cada combinação roda um backtest sobre o histórico completo — são milhares por ciclo.
+          Pode fechar a página: a varredura continua no servidor.
+        </div>
+      </section>
+    }
   }
 
   @if (error()) {

@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/devdsfr/cornerlab/internal/progress"
 	"github.com/devdsfr/cornerlab/internal/repository"
 	"github.com/devdsfr/cornerlab/internal/usecase/discovery"
 )
@@ -25,11 +29,17 @@ import (
 type DiscoveryHandler struct {
 	strategies repository.StrategyRepository
 	engine     *discovery.Engine
+	progress   *progress.Tracker
 }
 
 func NewDiscoveryHandler(strategies repository.StrategyRepository, engine *discovery.Engine) *DiscoveryHandler {
-	return &DiscoveryHandler{strategies: strategies, engine: engine}
+	return &DiscoveryHandler{strategies: strategies, engine: engine, progress: progress.NewTracker()}
 }
+
+// discoveryTimeout limita a varredura em segundo plano. O último ciclo real testou
+// 5.940 combinações; 30 minutos dá folga larga sem deixar uma goroutine presa para
+// sempre se algo travar.
+const discoveryTimeout = 30 * time.Minute
 
 // discoveredItem é a linha do ranking exibida no doc 08 ("Dashboard": Score, ROI,
 // Yield, EV, Jogos, Lucro, Drawdown, Confiabilidade), já achatada para o frontend
@@ -161,23 +171,66 @@ func (h *DiscoveryHandler) Run(c *gin.Context) {
 		}
 	}
 
-	ctx := c.Request.Context()
-	if req.LeagueID > 0 {
-		result, err := h.engine.RunLeague(ctx, req.LeagueID, req.SeasonIDs)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, result)
+	// A varredura roda em SEGUNDO PLANO e a resposta volta na hora (202). São
+	// milhares de backtests — em produção o último ciclo testou 5.940 combinações
+	// —, tempo suficiente para a requisição ser cortada por proxy ou navegador.
+	// O acompanhamento é por GET /discovery/progress.
+	if !h.progress.Start("Preparando varredura…") {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":    "já existe uma varredura em andamento",
+			"progress": h.progress.Snapshot(),
+		})
 		return
 	}
 
-	result, err := h.engine.RunAll(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, result)
+	leagueID, seasonIDs := req.LeagueID, req.SeasonIDs
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), discoveryTimeout)
+		defer cancel()
+
+		engine := h.engine.WithProgress(h.progress)
+
+		if leagueID > 0 {
+			result, err := engine.RunLeague(ctx, leagueID, seasonIDs)
+			if err != nil {
+				slog.Error("varredura de descobertas falhou", "league_id", leagueID, "error", err)
+				h.progress.Finish(err, nil)
+				return
+			}
+			h.progress.Finish(nil, discovery.Result{
+				Leagues:      1,
+				Combinations: result.Combinations,
+				Published:    result.Published,
+				Deactivated:  result.Deactivated,
+				Errors:       result.Errors,
+				ByLeague:     []discovery.LeagueResult{result},
+			})
+			return
+		}
+
+		result, err := engine.RunAll(ctx)
+		if err != nil {
+			slog.Error("varredura de descobertas falhou", "error", err)
+			h.progress.Finish(err, nil)
+			return
+		}
+		h.progress.Finish(nil, result)
+	}()
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"started":  true,
+		"message":  "varredura iniciada — acompanhe em /discovery/progress",
+		"progress": h.progress.Snapshot(),
+	})
+}
+
+// Progress godoc
+// @Summary Andamento da varredura de descobertas em execução
+// @Tags discovery
+// @Router /api/v1/discovery/progress [get]
+func (h *DiscoveryHandler) Progress(c *gin.Context) {
+	c.JSON(http.StatusOK, h.progress.Snapshot())
 }
 
 func derefFloat(p *float64) float64 {

@@ -27,6 +27,7 @@ type Handlers struct {
 	Overview        *handlers.OverviewHandler
 	Strategy        *handlers.StrategyHandler
 	Discovery       *handlers.DiscoveryHandler
+	AIDocs          *handlers.AIDocsHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
@@ -102,6 +103,12 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		// o ranking — a barra segue atualizando mesmo se o token expirar no meio.
 		api.GET("/discovery/progress", h.Discovery.Progress)
 
+		// Documento de contexto para IA, gerado das constantes reais do motor e
+		// da lista viva de rotas. Público: descreve regras, não expõe dado.
+		if h.AIDocs != nil {
+			api.GET("/docs/contexto.md", h.AIDocs.Download)
+		}
+
 		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
 		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT
 		// da aplicação (a autenticidade é garantida pela assinatura HMAC do Stripe).
@@ -175,6 +182,12 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 				exports.GET("/ranking", h.Export.RankingCSV)
 			}
 		}
+	}
+
+	// Depois de TODAS as rotas registradas: o documento de contexto lê a lista do
+	// próprio engine, então precisa enxergar o router já completo.
+	if h.AIDocs != nil {
+		h.AIDocs.UseRouter(r)
 	}
 
 	return r

@@ -140,6 +140,7 @@ func main() {
 		Overview:        handlers.NewOverviewHandler(matchRepo),
 		Strategy:        handlers.NewStrategyHandler(strategyRepo, strategyEngine),
 		Discovery:       handlers.NewDiscoveryHandler(strategyRepo, discoveryEngine),
+		AIDocs:          handlers.NewAIDocsHandler(),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

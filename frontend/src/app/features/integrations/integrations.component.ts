@@ -78,6 +78,10 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   progress = signal<SyncProgress | null>(null);
   private pollTimer?: ReturnType<typeof setInterval>;
 
+  // Download do documento de contexto para IA.
+  contextLoading = signal(false);
+  contextError = signal<string | null>(null);
+
   // Status rápido "API-Football está de pé?" — independente do painel completo de
   // consumo (que pode demorar mais, ver load()), pra decidir antes de clicar em
   // "Sincronizar agora".
@@ -320,6 +324,33 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   progressLabel(p: SyncProgress): string {
     if (p.total > 0) return `${p.phase_label} — ${p.current} de ${p.total}`;
     return p.phase_label;
+  }
+
+  /**
+   * Baixa o documento de contexto gerado pelo backend. Usa blob + link temporário
+   * (em vez de <a href> direto) porque a URL da API varia entre ambientes e o
+   * arquivo precisa chegar com o nome certo, não como aba aberta.
+   */
+  downloadAIContext(): void {
+    this.contextLoading.set(true);
+    this.contextError.set(null);
+
+    this.api.downloadAIContext().subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cornerlab-contexto-para-ia.md';
+        a.click();
+        // Libera a memória do blob assim que o download dispara.
+        URL.revokeObjectURL(url);
+        this.contextLoading.set(false);
+      },
+      error: () => {
+        this.contextError.set('Não foi possível baixar o documento agora. Tente de novo.');
+        this.contextLoading.set(false);
+      },
+    });
   }
 
   statusLabel(p: ProviderView): string {

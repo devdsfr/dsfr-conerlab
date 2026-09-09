@@ -11,13 +11,13 @@ import (
 // documento é "nunca considerar apenas Win Rate; sempre utilizar múltiplos
 // indicadores".
 const (
-	DefaultMinGames     = 100  // jogos
-	DefaultMinROI       = 10.0 // %
-	DefaultMinYield     = 5.0  // %
-	DefaultMinWinRate   = 75.0 // %
-	DefaultMaxDrawdown  = 20.0 // % do capital movimentado
-	DefaultMinDSFRScore = 40.0 // abaixo disso o doc manda descartar
-	DefaultMaxPerLeague = 40   // teto de descobertas publicadas por liga
+	DefaultMinGames      = 100  // jogos
+	DefaultMinROI        = 10.0 // %
+	DefaultMinYield      = 5.0  // %
+	DefaultMinWinRate    = 75.0 // %
+	DefaultMaxDrawdown   = 20.0 // % do capital movimentado
+	DefaultMinDSFRScore  = 40.0 // abaixo disso o doc manda descartar
+	DefaultMaxPerLeague = 40 // teto de descobertas publicadas por liga
 
 	// AbsoluteMinimumGames é a trava anti-overfitting: nunca publicar abaixo
 	// disso, mesmo que o chamador peça. Exportada porque o documento de contexto

@@ -174,6 +174,15 @@ export class ApiService {
     return this.http.get<DiscoveryProgress>(`${this.base}/discovery/progress`);
   }
 
+  /**
+   * Documento de contexto do CornerLab em Markdown, para alimentar outra IA.
+   * É gerado pelo backend a partir das constantes reais do motor e da lista viva
+   * de rotas — por isso vem da API e não de um arquivo estático em /assets.
+   */
+  downloadAIContext(): Observable<Blob> {
+    return this.http.get(`${this.base}/docs/contexto.md`, { responseType: 'blob' });
+  }
+
   // Painel "Integrações" — status/consumo das APIs externas
   getUsageSummary(): Observable<UsageSummaryResponse> {
     return this.http.get<UsageSummaryResponse>(`${this.base}/diagnostics/usage`);

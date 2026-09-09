@@ -68,11 +68,14 @@ func (r *StatSyncRepo) ListSyncTargets(ctx context.Context) ([]SyncTarget, error
 // UpsertTeam e LinkTeamToLeague reaproveitam exatamente a mesma convenção idempotente
 // (upsert por external_id) já usada por SyncRepo — mantidas aqui como métodos próprios
 // para não acoplar este repositório ao de cmd/sync.
+//
+// tier vai VAZIO (AUD-004): antes gravava 'G12' fixo, que não era classificação
+// nenhuma. Ver o comentário em SyncRepo.UpsertTeam e migrations/014.
 func (r *StatSyncRepo) UpsertTeam(ctx context.Context, externalID, name, shortName, country string) (int64, error) {
 	var id int64
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO teams (external_id, name, short_name, country, tier)
-		VALUES ($1, $2, $3, $4, 'G12')
+		VALUES ($1, $2, $3, $4, '')
 		ON CONFLICT (external_id) DO UPDATE SET name = EXCLUDED.name
 		RETURNING id`, externalID, name, shortName, country).Scan(&id)
 	return id, err

@@ -50,13 +50,19 @@ type discoveredItem struct {
 	Description string `json:"description"`
 	Definition  any    `json:"definition"`
 
-	Games    int     `json:"games"`
-	Wins     int     `json:"wins"`
-	Losses   int     `json:"losses"`
-	WinRate  float64 `json:"win_rate"`
-	ROI      float64 `json:"roi"`
-	Yield    float64 `json:"yield"`
-	EV       float64 `json:"ev"`
+	Games   int     `json:"games"`
+	Wins    int     `json:"wins"`
+	Losses  int     `json:"losses"`
+	WinRate float64 `json:"win_rate"`
+	ROI     float64 `json:"roi"`
+	Yield   float64 `json:"yield"`
+
+	// EV é ponteiro para poder sair NULO (AUD-002). O EV não é calculado em
+	// lugar nenhum do sistema; achatar nil em 0.0 faria a tela exibir "EV 0%"
+	// como se fosse um valor medido. Nulo = "não calculado", e o frontend
+	// mostra "—".
+	EV *float64 `json:"ev"`
+
 	Profit   float64 `json:"profit"`
 	Drawdown float64 `json:"drawdown"`
 
@@ -131,7 +137,7 @@ func toDiscoveredItem(d repository.DiscoveredStrategy) discoveredItem {
 		}
 		item.ROI = derefFloat(b.ROI)
 		item.Yield = derefFloat(b.Yield)
-		item.EV = derefFloat(b.EV)
+		item.EV = b.EV
 		item.Profit = derefFloat(b.Profit)
 		item.Drawdown = derefFloat(b.Drawdown)
 	}

@@ -44,6 +44,34 @@ type FilterCriteria struct {
 	// Discovery Engine, que só pode validar estratégia sobre odd real. O
 	// Simulador roda com false e sinaliza a procedência no resultado.
 	RequireRealOdds bool `json:"-"`
+
+	// DateFrom e DateTo restringem o backtest a uma janela temporal fechada à
+	// esquerda e ABERTA à direita — [DateFrom, DateTo). Nil = sem limite naquele
+	// lado.
+	//
+	// O intervalo é meio-aberto de propósito (AUD-003): o Discovery divide o
+	// histórico em janela de descoberta e janela de validação usando a MESMA data
+	// de corte nas duas pontas. Se o intervalo fosse fechado dos dois lados, as
+	// partidas do dia do corte cairiam nos dois conjuntos e o resultado da
+	// validação já conteria dado que a mineração viu.
+	//
+	// Não é ajustável pelo usuário: o Simulador sempre roda sobre o período
+	// inteiro selecionado na tela. Diferente de maxAgeDays, que é relativo a
+	// time.Now() e portanto muda de significado a cada execução, esta janela é
+	// absoluta e torna o backtest reproduzível.
+	DateFrom *time.Time `json:"-"`
+	DateTo   *time.Time `json:"-"`
+}
+
+// inWindow diz se a partida cai na janela [DateFrom, DateTo).
+func (c FilterCriteria) inWindow(d time.Time) bool {
+	if c.DateFrom != nil && d.Before(*c.DateFrom) {
+		return false
+	}
+	if c.DateTo != nil && !d.Before(*c.DateTo) {
+		return false
+	}
+	return true
 }
 
 func (c FilterCriteria) isGoals() bool         { return c.Metric == "goals" }
@@ -87,6 +115,23 @@ func (c FilterCriteria) Validate() error {
 	}
 	if c.HomeAway != "" && c.HomeAway != "home" && c.HomeAway != "away" {
 		return fmt.Errorf("home_away deve ser 'home', 'away' ou vazio")
+	}
+
+	// AUD-004: o filtro por força do adversário está desligado, e recusar é
+	// melhor do que ignorar em silêncio.
+	//
+	// A coluna teams.tier nunca conteve classificação: 228 equipes tinham a
+	// constante 'G12' gravada no código de sincronização e 110 tinham o número
+	// da divisão da liga. Filtrar por ela devolvia um recorte com aparência
+	// estatística e sem conteúdo. Aceitar o parâmetro e ignorá-lo produziria um
+	// resultado que o usuário leria como "contra o G6" — pior que um erro.
+	//
+	// Para religar: classificação POR TEMPORADA, apurada só com os jogos
+	// anteriores à data de cada partida. Qualquer coisa menos que isso é
+	// look-ahead, porque na 5ª rodada ninguém sabia quem terminaria no G6.
+	if c.OpponentTier != "" {
+		return fmt.Errorf("filtro por força do adversário indisponível: " +
+			"o sistema ainda não calcula classificação por temporada (AUD-004)")
 	}
 	return nil
 }
@@ -201,6 +246,21 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		allMatches = filtered
 	}
 
+	// AUD-003: janela temporal absoluta. Aplicada ANTES de qualquer outro
+	// critério — inclusive antes de LastNGames — para que "últimos N jogos"
+	// signifique "os N mais recentes DENTRO da janela". Se fosse aplicada
+	// depois, a janela de descoberta poderia selecionar jogos que só existem
+	// porque a de validação foi lida.
+	if criteria.DateFrom != nil || criteria.DateTo != nil {
+		filtered := allMatches[:0:0]
+		for _, m := range allMatches {
+			if criteria.inWindow(m.MatchDate) {
+				filtered = append(filtered, m)
+			}
+		}
+		allMatches = filtered
+	}
+
 	teamsByID, err := u.teamIndex(ctx, leagueID)
 	if err != nil {
 		return nil, err
@@ -267,12 +327,10 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		if criteria.HomeAway == "away" && c.isHome {
 			continue
 		}
-		if criteria.OpponentTier != "" {
-			opp, ok := teamsByID[c.oppID]
-			if !ok || opp.Tier != criteria.OpponentTier {
-				continue
-			}
-		}
+		// AUD-004: o recorte por força do adversário existia aqui e comparava
+		// criteria.OpponentTier com teams.tier — uma coluna que continha uma
+		// constante gravada no código. Foi removido junto com o eixo; Validate()
+		// agora recusa a requisição antes de chegar neste laço.
 		var total, threshold int
 		var odd float64
 		switch criteria.Metric {

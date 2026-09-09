@@ -129,14 +129,26 @@ func TestClassifyFollowsDocBands(t *testing.T) {
 
 func TestGenerateCombosCoversFullLeagueGrid(t *testing.T) {
 	combos := generateCombos(nil, false)
-	want := len(cornerLines) * len(homeAwayOptions) * len(windowOptions) *
-		len(opponentTierOptions) * len(maxOddsOptions)
+	// AUD-004: o eixo de tier saiu da grade. Eram 4 valores multiplicando tudo
+	// (540 combinações); agora são 135.
+	want := len(cornerLines) * len(homeAwayOptions) * len(windowOptions) * len(maxOddsOptions)
 	if len(combos) != want {
 		t.Fatalf("esperava %d combinações de liga, veio %d", want, len(combos))
 	}
 	for _, c := range combos {
 		if c.teamID != nil {
 			t.Fatal("varredura de liga não deveria conter combinação por equipe")
+		}
+	}
+}
+
+// AUD-004: nenhuma combinação pode nascer com tier preenchido. Se voltar, volta
+// junto o filtro que comparava com uma constante gravada no código.
+func TestGenerateCombosNaoUsaTier(t *testing.T) {
+	combos := generateCombos([]domain.Team{{ID: 1, Name: "Palmeiras", Tier: "G12"}}, true)
+	for _, c := range combos {
+		if c.tier != "" {
+			t.Fatalf("combinação com tier %q: o eixo foi removido (AUD-004)", c.tier)
 		}
 	}
 }

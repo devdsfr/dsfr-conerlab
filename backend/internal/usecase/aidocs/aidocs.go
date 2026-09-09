@@ -124,9 +124,12 @@ as consultas são rápidas mesmo cruzando milhares de jogos.
 - **Janela**: recorte temporal (últimos 5, 10, 15 ou 20 jogos). Captura momento de
   forma, em oposição à média da temporada inteira.
 - **Mando**: casa, fora ou qualquer. Times costumam pressionar mais em casa.
-- **Tier de adversário**: G6 (seis primeiros), G12 (doze primeiros), Z4 (quatro
-  últimos). Separa "faz muitos escanteios" de "faz muitos escanteios contra time
-  fraco".
+- **Tier de adversário**: DESATIVADO. A ideia era separar "faz muitos escanteios"
+  de "faz muitos escanteios contra time fraco", com G6 (seis primeiros), G12 (doze
+  primeiros) e Z4 (quatro últimos). Nunca funcionou: a coluna teams.tier continha
+  uma constante gravada no código, não classificação. O filtro foi removido da
+  tela, do motor de backtest e do espaço de busca. Se você receber opponent_tier
+  em alguma definição antiga, **ignore** — o backtest recusa esse parâmetro.
 - **Odd**: sempre decimal (2.20 = recebe 2,20 por 1 apostado).
 - **Unidade**: uma stake. "Lucro de 13,8 unidades" = 13,8 vezes a stake configurada.
 
@@ -144,9 +147,19 @@ as consultas são rápidas mesmo cruzando milhares de jogos.
 
 ### Retorno
 
-- EV = (P vitória × lucro) − (P derrota × perda), onde lucro = stake × (odd − 1)
 - ROI = lucro ÷ investimento × 100
-- Yield = lucro ÷ volume apostado × 100 (igual ao ROI quando a stake é fixa)
+- Yield = lucro ÷ volume apostado × 100
+- EV = (P vitória × lucro) − (P derrota × perda), onde lucro = stake × (odd − 1)
+
+> **Leia isto antes de usar ROI, Yield ou EV como três indicadores.**
+> O motor de backtest aposta stake constante e liquida toda entrada. Logo
+> "investimento" e "volume apostado" são a mesma quantidade, e **ROI e Yield são
+> numericamente iguais** — não são duas evidências, são uma.
+> **O EV não é calculado.** A fórmula acima está no catálogo, mas exigiria
+> P(vitória) estimada por um modelo independente e fora da amostra, que o
+> CornerLab ainda não tem; com a taxa de acerto do próprio lote o EV colapsa no
+> ROI realizado. O campo "ev" vem **nulo** e deve ser tratado como ausente, nunca
+> como zero.
 - Profit Factor = lucro bruto ÷ prejuízo bruto
 - Recovery Factor = lucro líquido ÷ drawdown máximo
 - Expectancy = (taxa acerto × ganho médio) − (taxa erro × perda média)
@@ -178,23 +191,23 @@ Todos vão de 0 a 100. Os pesos abaixo são os que estão rodando agora.
 | Componente | Peso |
 |---|---|
 | ROI | %.0f%% |
-| EV | %.0f%% |
 | Taxa de acerto | %.0f%% |
-| Yield | %.0f%% |
 | Drawdown (invertido) | %.0f%% |
 | Tamanho da amostra | %.0f%% |
 | Consistência | %.0f%% |
 | Variância (invertida) | %.0f%% |
 
-Repare que taxa de acerto vale só %.0f%%, de propósito: impede que um critério de
-acerto alto e retorno ruim suba no ranking.
+Até a versão 1.0 do catálogo havia também um slot de EV (20%%) e um de Yield
+(10%%), ambos alimentados pelo mesmo número do ROI — 50%% do score era uma
+variável só. Foram removidos na v1.1; o peso foi distribuído entre os
+componentes acima, não devolvido ao ROI.
 
 **Faixas:** Elite 91–100 · Excelente 81–90 · Muito Boa 71–80 · Boa 61–70 ·
 Regular 40–60 · Descartar abaixo de 40.
 
 ### Health Score — saúde recente
 
-Health = 50 + 50 × média(ΔROI, ΔEV, −ΔDrawdown, ΔConsistência), comparando o
+Health = 50 + 50 × média(ΔROI, −ΔDrawdown, ΔConsistência), comparando o
 período atual com o anterior.
 
 - **50** = estável, ou primeira execução (sem histórico para comparar)
@@ -203,7 +216,7 @@ período atual com o anterior.
 ### Demais scores
 
 - **Consistência**: %.0f%% taxa de acerto + %.0f%% (1−variância) + %.0f%% (1−drawdown) + %.0f%% robustez
-- **Ranking**: %.0f%% DSFR + %.0f%% Health + %.0f%% ROI + %.0f%% Yield + %.0f%% Confiança
+- **Ranking**: %.0f%% DSFR + %.0f%% Health + %.0f%% ROI + %.0f%% Confiança
 - **Oportunidade**: %.0f%% Health + %.0f%% DSFR + %.0f%% ROI + %.0f%% acerto + %.0f%% consistência
 - **Tendência** (−1 a +1): %.0f%% últimos 5 + %.0f%% últimos 10 + %.0f%% últimos 20
 - **Confiança**: média de volume, consistência, baixa variância e robustez temporal
@@ -230,7 +243,9 @@ combinação, usando o MESMO motor do Simulador de Filtros (por isso qualquer n�
 publicado é reproduzível na tela).
 
 **Espaço de busca por campeonato:** 5 linhas de escanteio × 3 mandos × 3 janelas ×
-4 tiers de adversário × 3 tetos de odd = 540 combinações.
+3 tetos de odd = 135 combinações. Eram 540 até 09/2026, quando o eixo de tier de
+adversário saiu — ele multiplicava a grade por 4 sem acrescentar hipótese nenhuma
+(ver "Tier de adversário" na seção de termos).
 
 ### Critérios de aprovação — precisa passar em TODOS
 
@@ -240,13 +255,43 @@ publicado é reproduzível na tela).
 | Taxa de acerto | mínimo %.0f%% | win_rate_baixo |
 | ROI | mínimo %.0f%% | roi_baixo |
 | Yield | mínimo %.0f%% | yield_baixo |
-| Yield por entrada | maior que zero | ev_nao_positivo |
+| Lucro | maior que zero | lucro_nao_positivo |
 | Drawdown máximo | até %.0f%% do capital movimentado | drawdown_alto |
 | DSFR Score | mínimo %.0f | score_baixo |
 | Teto por campeonato | %d publicadas | corte por ranking |
 
 **Guarda contra overfitting:** a trava de %d jogos não é configurável. Existe porque
 com amostra pequena é fácil achar "100%% de acerto" por acaso — e isso não se repete.
+
+### Passar nos critérios acima NÃO basta
+
+Passar em todos eles ainda é um resultado dentro da amostra. Como o motor testa
+centenas de combinações contra o mesmo histórico, algumas passam por sorte. Há mais
+duas barreiras, e as duas são obrigatórias:
+
+**1. Corte temporal.** O histórico de cada campeonato é dividido por data: os %.0f%%
+mais antigos formam a janela de DESCOBERTA e os %.0f%% mais recentes a janela de
+VALIDAÇÃO. A mineração só enxerga a de descoberta. Toda partida da data de corte vai
+para a validação, para que nenhuma data caia nas duas. Campeonato cujo histórico não
+permite esse corte não publica nada (motivo: liga_sem_janela_de_validacao).
+
+**2. Significância corrigida por número de testes.** Cada combinação vira um teste
+binomial unilateral contra a probabilidade que a própria odd embutia (1 ÷ odd). Não
+se pergunta "a taxa de acerto é alta?" — uma linha fácil acerta 90%% e paga 1.05, o
+que é prejuízo. Pergunta-se se o acerto observado supera o que a odd já precificava.
+Os p-valores de todas as combinações passam por controle de falsas descobertas
+(Benjamini–Yekutieli, q = %.2f), então **o limiar depende de quantos testes foram
+feitos**: testar mais custa mais caro. Motivo de rejeição: nao_sobreviveu_correcao_fdr.
+
+**3. Reteste fora da amostra.** Quem sobrevive é reexecutado na janela de validação,
+que nunca foi lida. Para publicar é preciso: mínimo de %d ocorrências lá, lucro
+positivo e significância própria (α = %.2f). Motivos: validacao_amostra_insuficiente,
+validacao_sem_lucro, validacao_nao_significativa.
+
+Como consequência, a descrição de toda descoberta publicada traz o período em que o
+padrão foi procurado, o período em que ele se sustentou e as duas probabilidades de
+o resultado ter saído por acaso. Um ciclo interrompido no meio não publica nada — a
+correção só é válida sobre a varredura completa.
 
 **Idempotência:** cada combinação gera um nome determinístico; um novo ciclo
 atualiza a descoberta equivalente em vez de duplicá-la. Descobertas não
@@ -308,17 +353,16 @@ garante resultado futuro, e nenhum score alto muda isso.
 		time.Now().Format("02/01/2006"),
 		formulas.Version,
 		formulas.Version,
-		// Pesos do DSFR
-		formulas.DSFRWROI*100, formulas.DSFRWEV*100, formulas.DSFRWWinRate*100,
-		formulas.DSFRWYield*100, formulas.DSFRWDrawdown*100, formulas.DSFRWSampleSize*100,
-		formulas.DSFRWConsistency*100, formulas.DSFRWVariance*100,
-		formulas.DSFRWWinRate*100,
+		// Pesos do DSFR (v1.1 — sem EV e sem Yield, ver AUD-002)
+		formulas.DSFRv11WROI*100, formulas.DSFRv11WWinRate*100,
+		formulas.DSFRv11WDrawdown*100, formulas.DSFRv11WSampleSize*100,
+		formulas.DSFRv11WConsistency*100, formulas.DSFRv11WVariance*100,
 		// Consistência
 		formulas.ConsistencyWWinRate*100, formulas.ConsistencyWVariance*100,
 		formulas.ConsistencyWDrawdown*100, formulas.ConsistencyWRobustness*100,
 		// Ranking
-		formulas.RankingWDSFR*100, formulas.RankingWHealth*100, formulas.RankingWROI*100,
-		formulas.RankingWYield*100, formulas.RankingWConfidence*100,
+		formulas.Rankingv11WDSFR*100, formulas.Rankingv11WHealth*100,
+		formulas.Rankingv11WROI*100, formulas.Rankingv11WConfidence*100,
 		// Oportunidade
 		formulas.OpportunityWHealth*100, formulas.OpportunityWDSFR*100, formulas.OpportunityWROI*100,
 		formulas.OpportunityWWinRate*100, formulas.OpportunityWConsistency*100,
@@ -329,6 +373,9 @@ garante resultado futuro, e nenhum score alto muda isso.
 		crit.MinWinRate, crit.MinROI, crit.MinYield,
 		crit.MaxDrawdown, crit.MinDSFR, crit.MaxPerLeague,
 		discovery.AbsoluteMinimumGames,
+		// AUD-003: corte temporal, correção de múltiplos testes e reteste.
+		crit.TrainFraction*100, (1-crit.TrainFraction)*100,
+		crit.FDRq, crit.HoldoutMinGames, crit.HoldoutAlpha,
 		// Seção 8: lista viva de endpoints, lida do router
 		routeTable(routes),
 		// Retenção

@@ -55,7 +55,8 @@ export class FiltersComponent implements OnInit {
   lastNGames = 10;
   homeAway = ''; // '', 'home', 'away'
   cornersThreshold = 5;
-  opponentTier = '';
+  // AUD-004: opponentTier removido. O backend recusa opponent_tier enquanto não
+  // houver classificação por temporada — mandá-lo faria o backtest falhar.
   maxOdds?: number;
   stake = 10;
 
@@ -189,7 +190,6 @@ export class FiltersComponent implements OnInit {
       last_n_games: this.lastNGames || undefined,
       home_away: this.homeAway || undefined,
       corners_threshold: this.cornersThreshold,
-      opponent_tier: this.opponentTier || undefined,
       max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
       stake: this.stake || undefined,
       metric: this.metric,
@@ -262,7 +262,8 @@ export class FiltersComponent implements OnInit {
 
     this.homeAway = d.home_away ?? '';
     this.lastNGames = d.last_n_games ?? 0;
-    this.opponentTier = d.opponent_tier ?? '';
+    // AUD-004: opponent_tier de uma definição antiga é deliberadamente ignorado
+    // ao recarregar — reenviá-lo faria o backtest ser recusado.
     this.maxOdds = d.max_odds ?? undefined;
     this.stake = d.stake ?? this.stake;
     this.selectedTeamId = d.team_id ?? undefined;
@@ -326,7 +327,6 @@ export class FiltersComponent implements OnInit {
       // corners_threshold sempre vai (ignorado no backend quando metric=goals);
       // para gols enviamos metric/goals_threshold/fixed_odd.
       corners_threshold: this.cornersThreshold,
-      opponent_tier: this.opponentTier || undefined,
       max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
       stake: this.stake || undefined,
       metric: this.metric,

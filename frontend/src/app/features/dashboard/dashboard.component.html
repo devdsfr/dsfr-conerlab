@@ -201,7 +201,9 @@
           <th mat-header-cell *matHeaderCellDef>
             <button type="button" class="cl-sort-th" (click)="setSort('opponent')">Adversário <span class="cl-sort-arrow">{{ sortArrow('opponent') }}</span></button>
           </th>
-          <td mat-cell *matCellDef="let m">{{ m.opponent.name }} ({{ m.opponent_tier }})</td>
+          <!-- AUD-004: o "(G12)" ao lado do nome não era classificação, era uma
+               constante gravada no código de sincronização. Removido. -->
+          <td mat-cell *matCellDef="let m">{{ m.opponent.name }}</td>
         </ng-container>
         <ng-container matColumnDef="is_home">
           <th mat-header-cell *matHeaderCellDef>

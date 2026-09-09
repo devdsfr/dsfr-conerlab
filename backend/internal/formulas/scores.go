@@ -76,6 +76,126 @@ func DSFRScore(in DSFRInputs) float64 {
 		DSFRWVariance*clamp01(in.InvVariance))
 }
 
+// ---------------------------------------------------------------------------
+// Formula Catalog v1.1 — correção do AUD-002
+//
+// PROBLEMA (auditoria, AUD-002): no CornerLab, ROI e Yield são o MESMO NÚMERO.
+// Não por erro de digitação, mas por identidade estrutural: o motor de backtest
+// aposta stake constante e liquida toda entrada, então "investimento"
+// (Catálogo 07) e "volume apostado" (Catálogo 08) são a mesma quantidade. E o
+// EV nunca foi calculado — o Strategy Engine atribuía o yield ao campo EV.
+//
+// Resultado: o DSFR v1.0 punha 50% do peso (ROI 20% + EV 20% + Yield 10%) em
+// uma única quantidade — lucro/volume — apresentada como três dimensões
+// independentes.
+//
+// POR QUE NÃO FOI "CONSERTADO" MANTENDO OS TRÊS SLOTS:
+//
+//   - Um Yield genuinamente distinto de ROI exige stake variável por entrada.
+//     O motor não tem política de staking; inventar uma para diferenciar as
+//     métricas seria fabricar dado.
+//   - Um EV genuinamente distinto exige P(vitória) estimada por um modelo
+//     independente e FORA da amostra. Usando a taxa de acerto observada e a
+//     odd média do próprio lote, EV colapsa algebricamente no ROI realizado —
+//     o mesmo número com outro nome. Estimativa fora da amostra é o AUD-003 e
+//     ainda não existe.
+//
+// Então a v1.1 faz o que é honesto hoje: PARA de contar a mesma quantidade três
+// vezes. EV e Yield saem do DSFR e do Ranking; o peso é redistribuído entre as
+// dimensões que de fato carregam informação distinta.
+//
+// A v1.0 continua aqui, intacta e usada por nada: linhas de `backtests` gravadas
+// antes desta versão trazem algorithm_version = "1.0" e só podem ser reproduzidas
+// pela fórmula da época. Comparar score entre versões é inválido.
+//
+// PENDÊNCIAS CONHECIDAS que a v1.1 NÃO resolve (têm AUD próprio, corrigir na
+// ordem de prioridade — não antecipar aqui):
+//
+//	AUD-007 — InvVariance = 1 − 4p(1−p) é função pura de WinRate, e Consistency
+//	          é composta dos outros quatro componentes. Ou seja: mesmo na v1.1
+//	          as dimensões não são ortogonais.
+//	AUD-008 — TrendScore recebe o mesmo delta nas três janelas.
+// ---------------------------------------------------------------------------
+
+// DSFRInputsV11 agrupa os componentes normalizados [0,1] do DSFR v1.1.
+// Não tem EV nem Yield — ver o bloco acima.
+// InvDrawdown e InvVariance já invertidos (1 = melhor).
+type DSFRInputsV11 struct {
+	ROI         float64
+	WinRate     float64
+	InvDrawdown float64
+	SampleSize  float64
+	Consistency float64
+	InvVariance float64
+}
+
+// Pesos do DSFRScoreV11 (Catálogo 24, v1.1). Somam 1.
+//
+// Redistribuição dos 30 pontos liberados por EV (20) e Yield (10): o peso NÃO
+// foi devolvido ao ROI, o que apenas reconcentraria a mesma quantidade. Foi
+// espalhado entre as dimensões restantes, mantendo a ordem de importância
+// declarada no doc 08 (retorno > acerto > risco/robustez > variância).
+const (
+	DSFRv11WROI         = 0.30
+	DSFRv11WWinRate     = 0.20
+	DSFRv11WDrawdown    = 0.15
+	DSFRv11WSampleSize  = 0.15
+	DSFRv11WConsistency = 0.15
+	DSFRv11WVariance    = 0.05
+)
+
+// DSFRScoreV11 (Catálogo 24, v1.1) — score proprietário 0..100.
+func DSFRScoreV11(in DSFRInputsV11) float64 {
+	return 100 * (DSFRv11WROI*clamp01(in.ROI) +
+		DSFRv11WWinRate*clamp01(in.WinRate) +
+		DSFRv11WDrawdown*clamp01(in.InvDrawdown) +
+		DSFRv11WSampleSize*clamp01(in.SampleSize) +
+		DSFRv11WConsistency*clamp01(in.Consistency) +
+		DSFRv11WVariance*clamp01(in.InvVariance))
+}
+
+// Pesos do RankingScoreV11 (Catálogo 28, v1.1). Somam 1.
+//
+// O yield saiu pelo mesmo motivo do DSFR: no v1.0 o ranking somava ROI 20% +
+// Yield 10% sobre a mesma quantidade, ainda por cima em cima de um DSFR que já
+// era 50% dela. Os 10 pontos foram para Confidence, a única entrada do ranking
+// que não deriva de retorno.
+const (
+	Rankingv11WDSFR       = 0.40
+	Rankingv11WHealth     = 0.25
+	Rankingv11WROI        = 0.20
+	Rankingv11WConfidence = 0.15
+)
+
+// RankingScoreV11 (Catálogo 28, v1.1) — chave única de ordenação de estratégias.
+// dsfr, health e confidence em 0..100; roiNorm em [0,1].
+func RankingScoreV11(dsfr, health, roiNorm, confidence float64) float64 {
+	return Rankingv11WDSFR*clamp01(dsfr/100)*100 +
+		Rankingv11WHealth*clamp01(health/100)*100 +
+		Rankingv11WROI*clamp01(roiNorm)*100 +
+		Rankingv11WConfidence*clamp01(confidence/100)*100
+}
+
+// HealthScoreV11 (Catálogo 25, v1.1) — saúde a partir das variações recentes.
+//
+// O v1.0 promediava quatro deltas, mas ΔEV era ΔYield reescalado, isto é, o
+// mesmo ΔROI: metade da "saúde" era uma variável só. A v1.1 promedia os três
+// deltas que existem de verdade. ΔDrawdown entra invertido (drawdown subindo =
+// saúde caindo). Saída 0..100, onde 50 = estável, >50 melhorando, <50 piorando.
+func HealthScoreV11(deltaROI, deltaDrawdown, deltaConsistency float64) float64 {
+	clampD := func(v float64) float64 {
+		if v < -1 {
+			return -1
+		}
+		if v > 1 {
+			return 1
+		}
+		return v
+	}
+	avg := (clampD(deltaROI) + clampD(-deltaDrawdown) + clampD(deltaConsistency)) / 3
+	return 50 + 50*avg
+}
+
 // HealthScore (Catálogo 25) — saúde da estratégia a partir das variações
 // recentes (Δ = período recente − período anterior, normalizados em [-1,1]).
 // ΔDrawdown entra invertido (drawdown subindo = saúde caindo). Saída 0..100,

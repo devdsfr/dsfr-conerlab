@@ -24,6 +24,7 @@ import (
 	"strconv"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/formulas"
 	"github.com/devdsfr/cornerlab/internal/progress"
 	"github.com/devdsfr/cornerlab/internal/repository"
 	"github.com/devdsfr/cornerlab/internal/usecase"
@@ -81,15 +82,26 @@ const PhaseScan = "varredura"
 
 // LeagueResult resume a descoberta de uma liga (observabilidade do doc 15).
 type LeagueResult struct {
-	LeagueID     int64          `json:"league_id"`
-	LeagueName   string         `json:"league_name"`
-	Seasons      int            `json:"seasons"`
-	Combinations int            `json:"combinations"`
-	Approved     int            `json:"approved"`
-	Published    int            `json:"published"`
-	Deactivated  int            `json:"deactivated"`
-	Errors       int            `json:"errors"`
-	Rejections   map[string]int `json:"rejections"`
+	LeagueID     int64  `json:"league_id"`
+	LeagueName   string `json:"league_name"`
+	Seasons      int    `json:"seasons"`
+	Combinations int    `json:"combinations"`
+	Approved     int    `json:"approved"`
+
+	// AUD-003 — rastro da validação. Sem estes números o ciclo não é auditável:
+	// "publiquei 3" não significa nada sem "de quantos testes" e "validadas
+	// contra qual período".
+	TrainUntil   string  `json:"train_until,omitempty"`  // janela de descoberta: [início, esta data)
+	HoldoutFrom  string  `json:"holdout_from,omitempty"` // janela de validação: [esta data, fim]
+	Tested       int     `json:"tested"`                 // combinações com p-valor calculável
+	FDRThreshold float64 `json:"fdr_threshold"`          // limiar efetivo após correção
+	Significant  int     `json:"significant"`            // sobreviveram à correção
+	Validated    int     `json:"validated"`              // sobreviveram também fora da amostra
+
+	Published   int            `json:"published"`
+	Deactivated int            `json:"deactivated"`
+	Errors      int            `json:"errors"`
+	Rejections  map[string]int `json:"rejections"`
 }
 
 // Result resume um ciclo completo (todas as ligas).
@@ -150,6 +162,13 @@ type candidate struct {
 	combo  combo
 	result *usecase.BacktestResult
 	dsfr   float64
+
+	// AUD-003: p-valor na janela de descoberta e resultado da validação fora da
+	// amostra. Ambos acompanham o candidato até a publicação para virar texto na
+	// descrição da estratégia — o usuário precisa poder ver em que período o
+	// padrão foi encontrado e em que período ele se sustentou.
+	pValue  float64
+	holdout holdoutVerdict
 }
 
 // RunLeague executa o ciclo de descoberta de uma liga. seasonIDs vazio = todas as
@@ -191,10 +210,29 @@ func (e *Engine) RunLeague(ctx context.Context, leagueID int64, seasonIDs []int6
 		return res, fmt.Errorf("listar equipes da liga %d: %w", leagueID, err)
 	}
 
+	// AUD-003: corte temporal do histórico ANTES de qualquer backtest. A
+	// mineração só enxerga a janela de descoberta; a de validação fica
+	// intocada até o candidato já estar escolhido.
+	allMatches, err := matches.AllMatches(ctx, leagueID, seasonIDs)
+	if err != nil {
+		return res, fmt.Errorf("carregar partidas da liga %d: %w", leagueID, err)
+	}
+	train, holdout, splittable := splitHistory(allMatches, e.opts.Criteria.TrainFraction)
+	if !splittable {
+		// Sem janela de validação não se publica nada. Não é erro do ciclo — é
+		// uma liga cujo histórico ainda não sustenta descoberta validável.
+		res.Rejections[string(rejectNotSplittable)]++
+		res.Combinations = 0
+		return res, nil
+	}
+	res.TrainUntil = train.To.Format("2006-01-02")
+	res.HoldoutFrom = holdout.From.Format("2006-01-02")
+
 	combos := generateCombos(teams, e.opts.IncludeTeams)
 	res.Combinations = len(combos)
 
-	approved := e.mine(ctx, filters, leagueID, seasonIDs, combos, &res)
+	approved := e.mine(ctx, filters, leagueID, seasonIDs, combos, train, &res)
+	approved = e.validate(ctx, filters, leagueID, seasonIDs, approved, holdout, &res)
 	res.Approved = len(approved)
 
 	published, err := e.publish(ctx, league.Name, leagueID, seasonIDs, approved, &res)
@@ -212,19 +250,26 @@ func (e *Engine) RunLeague(ctx context.Context, leagueID int64, seasonIDs []int6
 	return res, nil
 }
 
-// mine executa o backtest de cada combinação e aplica os critérios do doc 08.
-// Erros de uma combinação isolada (ex.: definição inválida) são contados e o
-// ciclo segue — uma combinação ruim não pode invalidar a varredura inteira.
+// mine executa o backtest de cada combinação NA JANELA DE DESCOBERTA e aplica os
+// critérios do doc 08 mais a correção para testes múltiplos (AUD-003). Erros de
+// uma combinação isolada (ex.: definição inválida) são contados e o ciclo segue
+// — uma combinação ruim não pode invalidar a varredura inteira.
+//
+// Duas passagens são necessárias e a ordem não é negociável: o limiar de
+// significância depende de QUANTOS testes foram feitos, então nenhum candidato
+// pode ser aprovado antes de a varredura inteira terminar. Aprovar na primeira
+// passagem seria aplicar um limiar fixo — o defeito que esta correção remove.
 func (e *Engine) mine(
 	ctx context.Context,
 	filters *usecase.FilterUsecase,
 	leagueID int64,
 	seasonIDs []int64,
 	combos []combo,
+	train window,
 	res *LeagueResult,
 ) []candidate {
 	crit := e.opts.Criteria
-	var approved []candidate
+	var passed []candidate
 
 	// Reporta a cada 25 combinações: dá movimento visível no texto sem travar o
 	// laço pegando o mutex do tracker milhares de vezes.
@@ -232,7 +277,12 @@ func (e *Engine) mine(
 
 	for i, c := range combos {
 		if ctx.Err() != nil {
-			return approved // shutdown pedido: devolve o que já foi minerado
+			// Shutdown no meio da varredura: NÃO devolve o que já foi minerado.
+			// A correção de múltiplos testes só é válida sobre a varredura
+			// COMPLETA — corrigir sobre um prefixo do espaço de busca usaria um
+			// m menor que o real e afrouxaria o limiar. Ciclo interrompido não
+			// publica nada.
+			return nil
 		}
 
 		if i%detalheACada == 0 {
@@ -255,10 +305,15 @@ func (e *Engine) mine(
 			// acerto alto por construção, não por vantagem. Sem odd real, a
 			// combinação simplesmente não é testável e não vira estratégia.
 			RequireRealOdds: true,
+
+			// AUD-003: só a janela de descoberta. A de validação não existe para
+			// este backtest.
+			DateFrom: &train.From,
+			DateTo:   train.To,
 		}
 
-		// maxAgeDays = 0: o pipeline sempre minera o histórico completo. O cap de
-		// 90 dias é uma regra do plano gratuito na navegação, não da descoberta.
+		// maxAgeDays = 0: o recorte temporal aqui é o do split, absoluto. O cap
+		// de 90 dias é uma regra do plano gratuito na navegação, não da descoberta.
 		result, err := filters.RunBacktest(ctx, leagueID, seasonIDs, criteria, 0)
 		if err != nil {
 			res.Errors++
@@ -270,17 +325,129 @@ func (e *Engine) mine(
 			continue
 		}
 
-		// Último filtro (doc 08: faixa "Descartar" = score < 40). O score é o mesmo
-		// que a estratégia receberá ao ser persistida.
+		// Último filtro do doc 08 (faixa "Descartar" = score < 40). O score é o
+		// mesmo que a estratégia receberá ao ser persistida.
 		dsfr := strategyengine.PreviewScores(result).DSFRScore
 		if dsfr < crit.MinDSFR {
 			res.Rejections[string(rejectScore)]++
 			continue
 		}
 
-		approved = append(approved, candidate{combo: c, result: result, dsfr: dsfr})
+		// AUD-003: p-valor unilateral contra a probabilidade que a odd embutia.
+		// Sem odd utilizável não há hipótese nula — e sem hipótese nula não se
+		// publica. "Não testável" reprova; nunca passa direto.
+		p, ok := pValue(result)
+		if !ok {
+			res.Rejections[string(rejectNotTestable)]++
+			continue
+		}
+
+		passed = append(passed, candidate{combo: c, result: result, dsfr: dsfr, pValue: p})
 	}
-	return approved
+
+	return e.applyFDR(passed, res)
+}
+
+// applyFDR corrige o limiar de significância pelo número de testes efetivamente
+// realizados e devolve só os candidatos que sobrevivem.
+//
+// O limiar NÃO é uma constante: quanto mais combinações o ciclo testar, mais
+// exigente ele fica. É isso que torna o espaço de busca um custo em vez de uma
+// vantagem — hoje ampliar a grade aumenta a chance de achar sorte, e a correção
+// é o que cobra por isso.
+func (e *Engine) applyFDR(passed []candidate, res *LeagueResult) []candidate {
+	res.Tested = len(passed)
+	if len(passed) == 0 {
+		return nil
+	}
+
+	pvalues := make([]float64, len(passed))
+	for i, c := range passed {
+		pvalues[i] = c.pValue
+	}
+
+	threshold, err := formulas.FDRThreshold(pvalues, e.opts.Criteria.FDRq, e.opts.Criteria.FDRMethod)
+	if err != nil {
+		// Critério inválido não pode virar "publique tudo". Reprova o lote.
+		res.Errors++
+		res.Rejections[string(rejectMultipleTesting)] += len(passed)
+		return nil
+	}
+	res.FDRThreshold = threshold
+
+	// threshold == 0 significa que nenhum p-valor sobreviveu ao procedimento.
+	// A comparação abaixo já cuida disso (nenhum p-valor real é <= 0), mas o
+	// caso é explicitado porque tratá-lo como "sem limiar" publicaria tudo.
+	var significant []candidate
+	for _, c := range passed {
+		if threshold > 0 && c.pValue <= threshold {
+			significant = append(significant, c)
+			continue
+		}
+		res.Rejections[string(rejectMultipleTesting)]++
+	}
+	res.Significant = len(significant)
+	return significant
+}
+
+// validate reexecuta cada candidato na JANELA DE VALIDAÇÃO — dados que a
+// mineração nunca leu — e devolve só os que continuam de pé.
+//
+// É aqui que o ciclo deixa de premiar sorte. Um padrão que existe só porque foi
+// procurado entre milhares de combinações não tem motivo para reaparecer num
+// período que não participou da busca.
+func (e *Engine) validate(
+	ctx context.Context,
+	filters *usecase.FilterUsecase,
+	leagueID int64,
+	seasonIDs []int64,
+	candidates []candidate,
+	holdout window,
+	res *LeagueResult,
+) []candidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	crit := e.opts.Criteria
+	var validated []candidate
+
+	for _, c := range candidates {
+		if ctx.Err() != nil {
+			return validated
+		}
+
+		criteria := usecase.FilterCriteria{
+			TeamID:           c.combo.teamID,
+			LastNGames:       c.combo.window,
+			HomeAway:         c.combo.homeAway,
+			CornersThreshold: c.combo.line,
+			OpponentTier:     c.combo.tier,
+			MaxOdds:          c.combo.maxOdds,
+			Metric:           "corners",
+			RequireRealOdds:  true,
+
+			DateFrom: &holdout.From,
+			DateTo:   holdout.To,
+		}
+
+		out, err := filters.RunBacktest(ctx, leagueID, seasonIDs, criteria, 0)
+		if err != nil {
+			res.Errors++
+			continue
+		}
+
+		verdict := checkHoldout(out, crit.HoldoutMinGames, crit.HoldoutAlpha)
+		if !verdict.Passed {
+			res.Rejections[string(verdict.Reason)]++
+			continue
+		}
+
+		c.holdout = verdict
+		validated = append(validated, c)
+	}
+
+	res.Validated = len(validated)
+	return validated
 }
 
 // publish ordena as aprovadas por DSFR Score, aplica o teto por liga e grava cada
@@ -364,11 +531,34 @@ func describe(c candidate, leagueName string) string {
 			"No mesmo período o retorno histórico foi de %.2f%% (yield %.2f%%), com lucro acumulado de %.2f unidades "+
 			"e drawdown máximo de %.1f%% do capital movimentado. "+
 			"Classificação DSFR: %s (score %.1f). "+
+			"%s"+
 			"Números apurados sobre dados históricos armazenados — não constituem recomendação de aposta "+
 			"nem previsão de resultados futuros.",
 		leagueName, scope, filters, c.combo.maxOdds,
 		r.MatchCount, c.combo.line, r.HitRate,
 		r.ROI, r.Yield, r.Profit, drawdownPct(r),
 		Classify(c.dsfr), c.dsfr,
+		describeValidation(c),
+	)
+}
+
+// describeValidation transforma o rastro estatístico do candidato em texto.
+//
+// Existe porque um número de acerto sem o contexto de "quantas hipóteses foram
+// testadas para chegar nele" e "isso se repetiu num período que a busca não
+// viu?" comunica mais confiança do que a evidência sustenta. O usuário precisa
+// ver as duas coisas junto com o resultado, não escondidas num log de ciclo.
+func describeValidation(c candidate) string {
+	if !c.holdout.Passed {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Verificação fora da amostra: o padrão foi procurado apenas no trecho mais antigo do "+
+			"histórico e depois reexecutado no trecho mais recente, que não participou da busca. "+
+			"Nesse período reservado foram %d ocorrências, %.1f%% de acerto e retorno de %.2f%%. "+
+			"A chance de um resultado assim aparecer por acaso, se a estratégia não tivesse "+
+			"vantagem sobre a odd oferecida, é de %.2f%% na busca e %.2f%% na verificação. ",
+		c.holdout.Games, c.holdout.HitRate, c.holdout.ROI,
+		c.pValue*100, c.holdout.PValue*100,
 	)
 }

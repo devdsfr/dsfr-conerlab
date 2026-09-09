@@ -64,4 +64,18 @@
 package formulas
 
 // Version é a versão do Formula Catalog implementada por este pacote.
-const Version = "1.0"
+//
+// Gravada em cada linha de `backtests`, `strategy_health` e `strategy_scores`.
+// Score de versões diferentes NÃO é comparável — quem lê histórico precisa
+// respeitar esse campo.
+//
+// Histórico de versões:
+//
+//	1.0 — versão inicial (Remodelagem/27).
+//	1.1 — AUD-002. DSFR e Ranking deixam de contar ROI, EV e Yield como três
+//	      dimensões: sob stake fixa eles são a mesma quantidade, e o EV nunca
+//	      chegou a ser calculado. Health passa a promediar 3 deltas reais em vez
+//	      de 4 (um deles duplicado). As funções da v1.0 permanecem no pacote para
+//	      reproduzir linhas antigas. Ver DSFRScoreV11, RankingScoreV11,
+//	      HealthScoreV11 em scores.go.
+const Version = "1.1"

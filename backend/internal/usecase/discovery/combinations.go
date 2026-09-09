@@ -26,8 +26,22 @@ var (
 	// Janela de forma recente: 0 = histórico completo do período.
 	windowOptions = []int{0, 10, 20}
 
-	// Força do adversário pela classificação da liga: "" = qualquer adversário.
-	opponentTierOptions = []string{"", "G6", "G12", "Z4"}
+	// AUD-004: o eixo de força do adversário FOI REMOVIDO do espaço de busca.
+	//
+	// Ele era `[]string{"", "G6", "G12", "Z4"}` e quadruplicava a grade. Metade
+	// dessas combinações (G6 e Z4) nunca podia render nada: zero equipes tinham
+	// esses valores. A de G12 filtrava por uma constante gravada no código de
+	// sincronização, não por classificação. E as combinações "" repetiam a grade
+	// inteira sem filtro nenhum.
+	//
+	// Resultado prático: 540 combinações por liga viraram 135. As 405 que saíram
+	// não eram hipóteses — eram a mesma hipótese contada quatro vezes, três delas
+	// vazias. Isso também alivia a correção de múltiplos testes do AUD-003, que
+	// estava sendo penalizada por um espaço de busca inflado artificialmente.
+	//
+	// Para reintroduzir o eixo é preciso primeiro ter classificação por
+	// temporada, apurada com os jogos anteriores à data de cada partida — sem
+	// isso o filtro carrega look-ahead por construção.
 
 	// Teto de odd. TODOS os valores são > 0 DE PROPÓSITO: com MaxOdds = 0 o motor
 	// aceita jogos sem odd histórica e assume odd 1.0, o que produziria um ROI
@@ -60,13 +74,10 @@ func generateCombos(teams []domain.Team, includeTeams bool) []combo {
 	for _, line := range cornerLines {
 		for _, ha := range homeAwayOptions {
 			for _, window := range windowOptions {
-				for _, tier := range opponentTierOptions {
-					for _, odds := range maxOddsOptions {
-						out = append(out, combo{
-							line: line, homeAway: ha, window: window,
-							tier: tier, maxOdds: odds,
-						})
-					}
+				for _, odds := range maxOddsOptions {
+					out = append(out, combo{
+						line: line, homeAway: ha, window: window, maxOdds: odds,
+					})
 				}
 			}
 		}

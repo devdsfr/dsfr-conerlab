@@ -334,7 +334,12 @@ export interface DiscoveredStrategy {
   win_rate: number;
   roi: number;
   yield: number;
-  ev: number;
+  /**
+   * NULO quando não calculado — que é o caso hoje (AUD-002): o EV exigiria
+   * P(vitória) estimada fora da amostra, que o sistema ainda não produz.
+   * Exibir como "—", nunca como 0.
+   */
+  ev: number | null;
   profit: number;
   drawdown: number;
 

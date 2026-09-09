@@ -26,9 +26,14 @@ import (
 // qualquer um exige nova versão no Formula Catalog):
 //
 //	ROI:      teto em ±20%  (ROI ≥ 20% conta como componente cheio)
-//	Yield/EV: teto em 15%   (EV por aposta ≈ yield; sem odds reais é simulado)
 //	Drawdown: teto em 10 stakes (dd ≥ 10 unidades zera o componente)
 //	Amostra:  teto em 50 jogos  (critério do doc 09: amostra robusta)
+//
+// yieldCapPct existia para normalizar Yield e EV como componentes próprios do
+// DSFR. Desde a v1.1 do catálogo (AUD-002) nenhum score o usa: sob stake fixa o
+// yield é o próprio ROI, e o EV não é calculado. Fica declarado porque os testes
+// de regressão do AUD-002 precisam do valor histórico para reproduzir o cenário
+// da v1.0 — e some junto com ele quando um Yield/EV de verdade existir.
 const (
 	roiCapPct      = 20.0
 	yieldCapPct    = 15.0
@@ -172,13 +177,25 @@ func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
 	confidence := formulas.ConfidenceScore(sampleNorm, consistency/100, invVar, sampleNorm)
 
 	return &domain.Backtest{
-		StrategyID:       strategyID,
-		Games:            r.MatchCount,
-		Wins:             r.Hits,
-		Losses:           r.Misses,
-		ROI:              ptr(r.ROI),
-		Yield:            ptr(r.Yield),
-		EV:               ptr(r.Yield), // EV por aposta ≈ yield (sem odds reais é simulado)
+		StrategyID: strategyID,
+		Games:      r.MatchCount,
+		Wins:       r.Hits,
+		Losses:     r.Misses,
+		ROI:        ptr(r.ROI),
+		Yield:      ptr(r.Yield),
+
+		// AUD-002: EV fica NULO porque não é calculado em lugar nenhum.
+		//
+		// Até aqui o campo recebia `r.Yield` — que é o próprio ROI, já que sob
+		// stake fixa investimento e volume apostado são a mesma coisa. Gravar
+		// isso como "EV" apresentava uma dimensão que não existe.
+		//
+		// EV de verdade (Catálogo 06) precisa de P(vitória) estimada por modelo
+		// independente e fora da amostra. Com a taxa de acerto do próprio lote,
+		// EV colapsa no ROI realizado. Enquanto esse modelo não existir
+		// (AUD-003), o valor honesto é NULL — "não calculado" — e não um número
+		// emprestado de outra métrica.
+		EV:               nil,
 		Drawdown:         ptr(r.MaxDrawdown),
 		Profit:           ptr(r.Profit),
 		Confidence:       ptr(round2(confidence)),
@@ -189,11 +206,10 @@ func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
 // healthRow calcula o Health Score (Catálogo 25) comparando com o backtest
 // anterior. Sem anterior: 50 (estável) e tendência 0.
 func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtest) *domain.StrategyHealth {
-	var dROI, dEV, dDD, dCons float64
+	var dROI, dDD, dCons float64
 	if prev != nil {
 		winRate := r.HitRate / 100
 		dROI = clampD((r.ROI - deref(prev.ROI)) / roiCapPct)
-		dEV = clampD((r.Yield - deref(prev.Yield)) / yieldCapPct)
 		dDD = clampD((r.MaxDrawdown - deref(prev.Drawdown)) / drawdownCapStk)
 		prevWinRate := 0.0
 		if prev.Games > 0 {
@@ -201,11 +217,14 @@ func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtes
 		}
 		dCons = clampD(winRate - prevWinRate)
 	}
-	score := formulas.HealthScore(dROI, dEV, dDD, dCons)
-	trend := formulas.TrendScore(dROI, dROI, dROI) // sem janelas históricas ainda: delta atual
+	// AUD-002: o ΔEV que existia aqui era (Yield − prevYield)/yieldCapPct, ou
+	// seja, o mesmo ΔROI com outro divisor — metade da saúde era uma variável só.
+	// A v1.1 promedia os três deltas que de fato medem coisas diferentes.
+	score := formulas.HealthScoreV11(dROI, dDD, dCons)
+	trend := formulas.TrendScore(dROI, dROI, dROI) // AUD-008 (pendente): sem janelas históricas ainda
 
 	variation, _ := json.Marshal(map[string]float64{
-		"roi": round3(dROI), "ev": round3(dEV), "drawdown": round3(dDD), "consistency": round3(dCons),
+		"roi": round3(dROI), "drawdown": round3(dDD), "consistency": round3(dCons),
 	})
 	return &domain.StrategyHealth{
 		StrategyID:       strategyID,
@@ -220,17 +239,18 @@ func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtes
 func scoresRow(strategyID int64, r *usecase.BacktestResult, health, trend float64) *domain.StrategyScores {
 	winRate := r.HitRate / 100
 	roiNorm := clamp01(r.ROI / roiCapPct)
-	yieldNorm := clamp01(r.Yield / yieldCapPct)
 	invDD := 1 - clamp01(r.MaxDrawdown/drawdownCapStk)
 	sampleNorm := clamp01(float64(r.MatchCount) / sampleCap)
 	invVar := 1 - 4*winRate*(1-winRate)
 	consistency := formulas.ConsistencyIndex(winRate, invVar, invDD, sampleNorm)
 
-	dsfr := formulas.DSFRScore(formulas.DSFRInputs{
+	// AUD-002: o DSFR v1.0 recebia roiNorm, yieldNorm (como EV) e yieldNorm de
+	// novo (como Yield) — 50% do score numa quantidade só. Sob stake fixa, ROI e
+	// Yield são iguais por construção, e EV nunca foi calculado. A v1.1 mantém
+	// apenas o retorno, uma vez.
+	dsfr := formulas.DSFRScoreV11(formulas.DSFRInputsV11{
 		ROI:         roiNorm,
-		EV:          yieldNorm,
 		WinRate:     winRate,
-		Yield:       yieldNorm,
 		InvDrawdown: invDD,
 		SampleSize:  sampleNorm,
 		Consistency: consistency / 100,
@@ -240,13 +260,16 @@ func scoresRow(strategyID int64, r *usecase.BacktestResult, health, trend float6
 	robustness := formulas.RobustnessScore(sampleNorm, consistency/100, invVar, roiNorm, sampleNorm)
 	volatility := formulas.VolatilityScore(1-invVar, absF(trend), absF(trend))
 	risk := formulas.RiskScore(1-invDD, 1-invVar, volatility/100, 1-winRate)
-	ranking := formulas.RankingScore(dsfr, health, roiNorm, yieldNorm, confidence)
+	ranking := formulas.RankingScoreV11(dsfr, health, roiNorm, confidence)
 	stage := formulas.LifecycleStage(r.MatchCount, lifecycleMinN, health, trend)
 
+	// Sem as chaves "ev" e "yield": não eram componentes, eram o roiNorm
+	// reescalado. Mantê-las no JSON faria a tela de detalhe continuar exibindo
+	// três barras para uma evidência só.
 	components, _ := json.Marshal(map[string]float64{
-		"roi": round3(roiNorm), "ev": round3(yieldNorm), "win_rate": round3(winRate),
-		"yield": round3(yieldNorm), "inv_drawdown": round3(invDD),
-		"sample": round3(sampleNorm), "consistency": round3(consistency / 100),
+		"roi": round3(roiNorm), "win_rate": round3(winRate),
+		"inv_drawdown": round3(invDD),
+		"sample":       round3(sampleNorm), "consistency": round3(consistency / 100),
 		"inv_variance": round3(invVar),
 	})
 	return &domain.StrategyScores{

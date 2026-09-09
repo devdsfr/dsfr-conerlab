@@ -114,15 +114,19 @@
         </mat-form-field>
       }
 
-      <mat-form-field appearance="outline" class="w-44">
-        <mat-label>Contra equipes</mat-label>
-        <mat-select [(ngModel)]="opponentTier">
-          <mat-option value="">Qualquer</mat-option>
-          <mat-option value="G6">G6</mat-option>
-          <mat-option value="G12">G12</mat-option>
-          <mat-option value="Z4">Z4</mat-option>
-        </mat-select>
-      </mat-form-field>
+<!--
+        AUD-004: o seletor "Contra equipes" (G6 / G12 / Z4) foi removido.
+
+        Ele filtrava por teams.tier, uma coluna que nunca conteve classificação:
+        228 equipes tinham a constante "G12" gravada no código de sincronização,
+        110 tinham o número da divisão, e nenhuma tinha G6 ou Z4. Escolher "G6"
+        devolvia zero jogos; escolher "G12" devolvia um recorte por procedência
+        do cadastro com aparência de análise de força do adversário.
+
+        Volta quando existir classificação por temporada apurada com os jogos
+        anteriores à data de cada partida — antes disso o filtro seria
+        look-ahead, porque na 5ª rodada ninguém sabe quem termina no G6.
+      -->
 
       @if (!usesFixedOdd) {
         <mat-form-field appearance="outline" class="w-40">

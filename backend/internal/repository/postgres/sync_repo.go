@@ -38,11 +38,21 @@ func (r *SyncRepo) UpsertSeason(ctx context.Context, leagueID int64, year int, l
 	return id, err
 }
 
+// UpsertTeam grava a equipe com tier VAZIO (AUD-004).
+//
+// Até 09/2026 esta query gravava a string literal 'G12' em toda equipe
+// sincronizada. Não era classificação: era uma constante. O provedor não devolve
+// esse campo, e nada no sistema calculava a posição de nenhuma equipe. Gravar um
+// valor fixo fazia o filtro "contra o G12" parecer uma variável de força do
+// adversário quando era, na prática, um filtro de procedência do cadastro.
+//
+// Vazio = não classificado, que é a verdade. Só volte a preencher com uma
+// classificação por temporada apurada com os jogos anteriores à data da partida.
 func (r *SyncRepo) UpsertTeam(ctx context.Context, externalID, name, shortName, country string) (int64, error) {
 	var id int64
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO teams (external_id, name, short_name, country, tier)
-		VALUES ($1, $2, $3, $4, 'G12')
+		VALUES ($1, $2, $3, $4, '')
 		ON CONFLICT (external_id) DO UPDATE SET name = EXCLUDED.name
 		RETURNING id`, externalID, name, shortName, country).Scan(&id)
 	return id, err

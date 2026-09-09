@@ -194,6 +194,15 @@
         </a>
       </div>
     }
+    @if (r.odds_source === 'synthetic') {
+      <div class="cl-card p-3 border border-amber-900/50 bg-amber-950/20 text-sm text-amber-200">
+        <strong class="text-amber-300">Simulação — odds não são de mercado.</strong>
+        As odds deste período foram estimadas a partir do próprio histórico de escanteios,
+        não capturadas de uma casa. ROI, yield e lucro abaixo mostram como a regra teria se
+        comportado <em>sob essas odds estimadas</em> — não são desempenho observado e não
+        devem ser lidos como vantagem real.
+      </div>
+    }
     @if (usesFixedOdd && !fixedOdd) {
       <div class="cl-card p-3 text-xs text-slate-400">
         Sem odd fixa informada, o backtest mostra só a taxa de acerto — o ROI/lucro não têm significado (esta métrica não tem odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.

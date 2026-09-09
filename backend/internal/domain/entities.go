@@ -79,8 +79,28 @@ type Match struct {
 	// para o mercado "mais de X escanteios". Usado pelo motor de filtros/backtesting e
 	// pelo simulador financeiro para calcular ROI/yield/lucro de forma reproduzível.
 	CornerOdds map[string]float64 `json:"corner_odds" db:"corner_odds"`
-	CreatedAt  time.Time          `json:"created_at" db:"created_at"`
+
+	// OddsSource identifica a PROCEDÊNCIA da odd (AUD-001). Sem isso, uma odd
+	// derivada dos próprios dados históricos é indistinguível de uma odd de
+	// mercado, e o backtest passa a medir o próprio dado que gerou a odd.
+	//   real      — ofertada por um mercado, capturada antes do jogo
+	//   synthetic — derivada do histórico (ver usecase.SyntheticCornerOdds)
+	//   unknown   — sem odd registrada ou origem não rastreável
+	OddsSource string    `json:"odds_source" db:"odds_source"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
+
+// Valores válidos de Match.OddsSource.
+const (
+	OddsSourceReal      = "real"
+	OddsSourceSynthetic = "synthetic"
+	OddsSourceUnknown   = "unknown"
+)
+
+// HasRealOdds indica se a partida pode sustentar cálculo financeiro com validade
+// de mercado. É a única porta pela qual o Discovery aceita uma partida — ver
+// AUD-001 na auditoria.
+func (m Match) HasRealOdds() bool { return m.OddsSource == OddsSourceReal }
 
 // OddForThreshold retorna a odd histórica para "mais de N escanteios" (equivalente à
 // linha N+0.5), e um bool indicando se a odd está disponível.

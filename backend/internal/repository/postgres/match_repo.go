@@ -220,7 +220,7 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 		       home_corners, away_corners, home_goals, away_goals,
 		       home_offsides, away_offsides,
 		       home_shots, away_shots, home_shots_on_target, away_shots_on_target,
-		       corner_odds::text, created_at
+		       corner_odds::text, odds_source, created_at
 		FROM matches
 		WHERE league_id = $1 AND status = 'FINALIZADO'
 	`
@@ -245,7 +245,7 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 			&m.HomeCorners, &m.AwayCorners, &m.HomeGoals, &m.AwayGoals,
 			&m.HomeOffsides, &m.AwayOffsides,
 			&m.HomeShots, &m.AwayShots, &m.HomeShotsOnTarget, &m.AwayShotsOnTarget,
-			&oddsRaw, &m.CreatedAt); err != nil {
+			&oddsRaw, &m.OddsSource, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(oddsRaw), &m.CornerOdds); err != nil {

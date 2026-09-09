@@ -242,6 +242,14 @@ export interface BacktestResult {
   // ESTRATEGIA-MONETIZACAO.md e FilterHandler.FreeHistoryCapDays no backend).
   history_capped: boolean;
   history_cap_days?: number;
+
+  // Procedência das odds usadas (AUD-001). 'real' = odd de mercado;
+  // 'synthetic' = odd derivada do próprio histórico; 'fixed' = odd única
+  // informada pelo usuário; 'none' = nenhuma odd envolvida.
+  // financials_reliable só é true em 'real' — nos demais casos ROI, yield e
+  // lucro descrevem um cenário hipotético e a tela precisa dizer isso.
+  odds_source: 'real' | 'synthetic' | 'fixed' | 'none';
+  financials_reliable: boolean;
 }
 
 // ---------------------------------------------------------------------------

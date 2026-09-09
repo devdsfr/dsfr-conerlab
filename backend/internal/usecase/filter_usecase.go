@@ -38,6 +38,12 @@ type FilterCriteria struct {
 	ShotsThreshold         int     `json:"shots_threshold,omitempty"`
 	ShotsOnTargetThreshold int     `json:"shots_on_target_threshold,omitempty"`
 	FixedOdd               float64 `json:"fixed_odd,omitempty"`
+
+	// RequireRealOdds descarta qualquer partida cuja odd não seja de mercado
+	// (AUD-001). Não é ajustável pelo usuário — é ligado internamente pelo
+	// Discovery Engine, que só pode validar estratégia sobre odd real. O
+	// Simulador roda com false e sinaliza a procedência no resultado.
+	RequireRealOdds bool `json:"-"`
 }
 
 func (c FilterCriteria) isGoals() bool         { return c.Metric == "goals" }
@@ -136,6 +142,20 @@ type BacktestResult struct {
 	// Premium para ver o histórico completo" sem precisar duplicar essa regra.
 	HistoryCapped  bool `json:"history_capped"`
 	HistoryCapDays int  `json:"history_cap_days,omitempty"`
+
+	// OddsSource e FinancialsReliable expõem a procedência das odds usadas neste
+	// backtest (AUD-001).
+	//
+	//   real      — toda odd veio de mercado; ROI/yield/lucro são medida
+	//   synthetic — ao menos uma odd foi derivada do próprio histórico
+	//   fixed     — odd única informada pelo usuário (métricas sem odd por partida)
+	//   none      — nenhuma odd envolvida
+	//
+	// FinancialsReliable só é true no caso "real". Nos demais, os campos
+	// financeiros descrevem um cenário hipotético e o frontend deve rotulá-los
+	// como simulação — nunca como desempenho observado.
+	OddsSource         string `json:"odds_source"`
+	FinancialsReliable bool   `json:"financials_reliable"`
 }
 
 type FilterUsecase struct {
@@ -238,6 +258,8 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	}
 
 	entries := make([]BacktestEntry, 0)
+	// Procedência das odds efetivamente usadas — alimenta oddsSourceSummary.
+	oddsSources := make([]string, 0)
 	for _, c := range candidates {
 		if criteria.HomeAway == "home" && !c.isHome {
 			continue
@@ -276,9 +298,18 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			total = *f + *a
 			odd = fixedOddOrOne(criteria.FixedOdd)
 		default:
-			// Escanteios: odd histórica real do mercado (corner_odds). MaxOdds filtra.
+			// Escanteios: única métrica com odd registrada por partida.
 			total = c.cornersF + c.cornersA
 			threshold = criteria.CornersThreshold
+
+			// AUD-001: odd sintética é derivada da média de escanteios do próprio
+			// lote histórico. Usá-la para validar estratégia é medir o dado com
+			// ele mesmo. O Discovery exige procedência real; o Simulador aceita,
+			// mas o resultado sai marcado (ver oddsSourceSummary).
+			if criteria.RequireRealOdds && !c.match.HasRealOdds() {
+				continue
+			}
+
 			var hasOdd bool
 			odd, hasOdd = c.match.OddForThreshold(criteria.CornersThreshold)
 			if criteria.MaxOdds > 0 {
@@ -287,8 +318,12 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				}
 			}
 			if !hasOdd {
-				odd = 1.0
+				// AUD-012: fabricar odd 1.0 produz P/L estruturalmente negativo e
+				// sem significado. Sem odd, a partida não sustenta cálculo
+				// financeiro e fica fora do backtest.
+				continue
 			}
+			oddsSources = append(oddsSources, c.match.OddsSource)
 		}
 
 		hit := total > threshold
@@ -329,7 +364,37 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	result := buildBacktestResult(criteria, entries, stake)
 	result.HistoryCapped = maxAgeDays > 0
 	result.HistoryCapDays = maxAgeDays
+	result.OddsSource, result.FinancialsReliable = oddsSourceSummary(criteria, oddsSources)
 	return result, nil
+}
+
+// oddsSourceSummary resume a procedência das odds do backtest e decide se os
+// números financeiros (ROI, yield, lucro, drawdown) podem ser tratados como
+// medida de mercado.
+//
+// Regra (AUD-001): financeiro só é confiável quando TODAS as odds usadas são
+// reais. Basta uma sintética para o conjunto virar cenário hipotético — misturar
+// as duas produziria um número sem interpretação possível.
+func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool) {
+	// Métricas sem odd por partida usam a odd fixa informada pelo usuário: é
+	// explicitamente uma simulação, nunca uma medida de mercado.
+	switch criteria.Metric {
+	case "goals", "offsides", "shots", "shots_on_target":
+		if criteria.FixedOdd > 0 {
+			return "fixed", false
+		}
+		return "none", false
+	}
+
+	if len(sources) == 0 {
+		return "none", false
+	}
+	for _, s := range sources {
+		if s != domain.OddsSourceReal {
+			return domain.OddsSourceSynthetic, false
+		}
+	}
+	return domain.OddsSourceReal, true
 }
 
 func (u *FilterUsecase) teamIndex(ctx context.Context, leagueID int64) (map[int64]domain.Team, error) {

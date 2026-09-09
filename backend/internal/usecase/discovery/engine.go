@@ -248,6 +248,13 @@ func (e *Engine) mine(
 			OpponentTier:     c.tier,
 			MaxOdds:          c.maxOdds,
 			Metric:           "corners",
+
+			// AUD-001: a descoberta só pode minerar sobre odd de mercado. Odd
+			// sintética é derivada da média do próprio lote histórico — filtrar
+			// por "odd <= X" sobre ela seleciona lotes de média alta e devolve
+			// acerto alto por construção, não por vantagem. Sem odd real, a
+			// combinação simplesmente não é testável e não vira estratégia.
+			RequireRealOdds: true,
 		}
 
 		// maxAgeDays = 0: o pipeline sempre minera o histórico completo. O cap de

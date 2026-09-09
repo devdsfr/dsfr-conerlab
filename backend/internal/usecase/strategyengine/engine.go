@@ -84,6 +84,12 @@ func (d *Definition) criteria() usecase.FilterCriteria {
 		ShotsThreshold:         d.ShotsThreshold,
 		ShotsOnTargetThreshold: d.ShotsOnTargetThreshold,
 		FixedOdd:               d.FixedOdd,
+
+		// AUD-001: reavaliar uma estratégia publicada é validação quantitativa,
+		// mesma exigência da mineração — só odd real. Uma estratégia cujo
+		// backtest só se sustenta sobre odd sintética passa a devolver amostra
+		// zero e reprova nos critérios de saúde, que é o resultado honesto.
+		RequireRealOdds: true,
 	}
 }
 

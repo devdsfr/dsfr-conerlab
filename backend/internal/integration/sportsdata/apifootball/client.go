@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +52,17 @@ type Client struct {
 	// pelo worker quanto por um handler HTTP sem vazar goroutine.
 	throttle sync.Mutex
 	lastCall time.Time
+
+	// baseURLOverride existe só para os testes apontarem o cliente para um
+	// servidor local. Vazio em produção — ver base().
+	baseURLOverride string
+}
+
+func (c *Client) base() string {
+	if c.baseURLOverride != "" {
+		return c.baseURLOverride
+	}
+	return baseURL
 }
 
 // New cria o cliente. recorder pode ser nil (nenhum uso é registrado) ou um
@@ -79,7 +92,7 @@ func (c *Client) wait(ctx context.Context) error {
 func (c *Client) Name() string { return "api-football" }
 
 func (c *Client) newRequest(ctx context.Context, path string, query map[string]string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base()+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +171,39 @@ func (c *Client) doGet(ctx context.Context, path string, query map[string]string
 			return nil, errors.New(errMsg)
 		}
 
+		// STATUS 200 NÃO SIGNIFICA SUCESSO NESTA API.
+		//
+		// A API-Football devolve HTTP 200 mesmo quando recusa a requisição, e
+		// coloca o motivo num campo "errors" DENTRO do corpo, com "response"
+		// vazio. Checar só o status HTTP faz uma recusa passar por sucesso.
+		//
+		// Foi assim que o pipeline ficou parado de 24/08 a 09/09 sem ninguém
+		// notar: `api_usage_log` registrava 50 chamadas com status 200 e
+		// success=true por ciclo, a tela de diagnóstico mostrava tudo verde, e
+		// mesmo assim o worker gravava 0 partidas. O que acontecia:
+		//
+		//   /fixtures?league=X&season=Y  -> 200 + errors -> response vazio
+		//                                -> SyncFixtures devolvia 0 partidas
+		//                                   E NENHUM ERRO (achadas=0, erros=0)
+		//   /fixtures?id=N               -> 200 + errors -> response vazio
+		//                                -> "partida não encontrada"
+		//                                   (checadas=50, erros=50)
+		//
+		// Um pipeline que falha em silêncio é pior que um que quebra: ninguém
+		// investiga o que parece estar funcionando. Agora a recusa vira erro de
+		// verdade, com a mensagem que a própria API mandou.
+		if apiErr := apiErrorMessage(body); apiErr != "" {
+			// Limite de requisições também chega como 200 + errors nesta API.
+			// É a mesma condição do 429 e merece o mesmo backoff.
+			if isRateLimitMessage(apiErr) {
+				lastErr = fmt.Errorf("API-Football recusou %s por limite de requisições: %s", path, apiErr)
+				continue
+			}
+			errMsg := fmt.Sprintf("API-Football recusou %s (status 200, erro no corpo): %s", path, apiErr)
+			c.record(endpointLabel, false, &status, errMsg, time.Since(start))
+			return nil, errors.New(errMsg)
+		}
+
 		c.record(endpointLabel, true, &status, "", time.Since(start))
 		return body, nil
 	}
@@ -166,6 +212,52 @@ func (c *Client) doGet(ctx context.Context, path string, query map[string]string
 	status := http.StatusTooManyRequests
 	c.record(endpointLabel, false, &status, lastErr.Error(), time.Since(start))
 	return nil, lastErr
+}
+
+// apiErrorMessage extrai o campo "errors" do corpo de uma resposta da
+// API-Football. Devolve "" quando não há erro.
+//
+// O campo é polimórfico, e é por isso que ele precisa de tratamento próprio:
+// em caso de sucesso vem como ARRAY VAZIO (`"errors": []`); em caso de recusa
+// vem como OBJETO com o motivo (`"errors": {"plan": "Free plans do not have
+// access to this season."}`). Desserializar direto para um tipo fixo falha em
+// um dos dois casos, então o campo é lido como RawMessage e interpretado aqui.
+func apiErrorMessage(body []byte) string {
+	var env struct {
+		Errors json.RawMessage `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil || len(env.Errors) == 0 {
+		return ""
+	}
+
+	switch strings.TrimSpace(string(env.Errors)) {
+	case "[]", "{}", "null", `""`:
+		return "" // sucesso
+	}
+
+	// Formato de recusa: objeto chave -> motivo.
+	var asMap map[string]string
+	if err := json.Unmarshal(env.Errors, &asMap); err == nil && len(asMap) > 0 {
+		parts := make([]string, 0, len(asMap))
+		for k, v := range asMap {
+			parts = append(parts, k+": "+v)
+		}
+		sort.Strings(parts) // ordem estável: a mensagem entra em log e em teste
+		return strings.Join(parts, "; ")
+	}
+
+	// Formato inesperado: devolve cru em vez de engolir. Preferir ruído a
+	// silêncio é a lição do próprio incidente que esta função corrige.
+	return strings.TrimSpace(string(env.Errors))
+}
+
+// isRateLimitMessage identifica, no texto devolvido pela API, as recusas que são
+// de ritmo/cota — as únicas que vale a pena repetir com backoff.
+func isRateLimitMessage(msg string) bool {
+	m := strings.ToLower(msg)
+	return strings.Contains(m, "rate") ||
+		strings.Contains(m, "too many requests") ||
+		strings.Contains(m, "requests per")
 }
 
 func (c *Client) record(endpoint string, success bool, statusCode *int, errMsg string, dur time.Duration) {

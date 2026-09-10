@@ -22,6 +22,101 @@ Nenhum problema é iniciado antes do anterior estar registrado aqui.
 
 ---
 
+## Pipeline parado desde 24/08 — falha silenciosa no cliente da API-Football
+
+**Data:** 2026-09-10 · **Status:** causa raiz identificada e corrigida no código
+**Não é item da auditoria original.** Apareceu ao investigar por que a Champions League
+não carregava.
+
+### Sintoma
+
+`sync_runs` mostrava o mesmo padrão em cinco ciclos seguidos:
+
+| ciclo | alvos | achadas | gravadas | checadas | finalizadas | erros |
+|---|---|---|---|---|---|---|
+| 07/09 14:00 | 11 | 0 | 0 | 50 | 0 | 50 |
+| 07/09 12:59 | 11 | 0 | 0 | 50 | 0 | 50 |
+| 30/08 11:56 | 11 | 0 | 0 | 50 | 0 | 50 |
+| 24/08 01:05 | 11 | 0 | 0 | 50 | 0 | 50 |
+| 23/08 20:33 | 11 | 0 | 0 | 50 | 5 | 45 |
+| **02/08 02:48** | 11 | **3.456** | **3.456** | 50 | 44 | **0** |
+
+### O que a evidência mostrou — e o que ela derrubou
+
+A hipótese óbvia era cota estourada. **Errada.** `api_usage_log` nos dias 24/08 e 30/08:
+
+| dia | endpoint | success | status | chamadas |
+|---|---|---|---|---|
+| 30/08 | `fixtures.lookup` | **true** | **200** | 50 |
+| 30/08 | `fixtures` | **true** | **200** | 11 |
+| 24/08 | `fixtures.lookup` | **true** | **200** | 50 |
+| 24/08 | `fixtures` | **true** | **200** | 11 |
+
+A API respondeu **200 OK em todas as chamadas** e o worker mesmo assim gravou zero.
+(Em 23/08 sim houve 45 respostas 429 — rate limit real, problema diferente e já
+tratado com throttle.)
+
+### Causa raiz
+
+**Status 200 não significa sucesso nesta API.** A API-Football devolve HTTP 200 mesmo
+quando recusa a requisição, colocando o motivo num campo `errors` **dentro do corpo**,
+com `response` vazio:
+
+```json
+{"errors":{"plan":"Free plans do not have access to this season."},"response":[]}
+```
+
+`Client.doGet` checava **apenas o status HTTP**. Consequências, ambas batendo com os
+números observados:
+
+- `/fixtures?league=X&season=Y` → 200 + `errors` → `response` vazio →
+  `SyncFixtures` devolvia **0 partidas e nenhum erro** → `achadas=0`, sem erro registrado
+- `/fixtures?id=N` → 200 + `errors` → `response` vazio →
+  `"partida não encontrada na API-Football"` → `checadas=50, erros=50`
+
+**Por que ficou duas semanas sem ninguém notar:** o `api_usage_log` registrava
+`success=true, status=200`, e a tela de diagnóstico mostrava tudo verde. Um pipeline que
+falha em silêncio é pior do que um que quebra — ninguém investiga o que parece estar
+funcionando. E a mensagem da API, que dizia exatamente qual era o problema, era
+descartada antes de chegar a qualquer log.
+
+### Correção
+
+`internal/integration/sportsdata/apifootball/client.go`:
+
+- `apiErrorMessage()` lê o campo `errors` do corpo. Ele é **polimórfico** — array vazio
+  em caso de sucesso, objeto com o motivo em caso de recusa —, então é lido como
+  `RawMessage` e interpretado. Formato inesperado é devolvido cru: preferir ruído a
+  silêncio é a lição do próprio incidente.
+- `doGet` passa a tratar 200-com-`errors` como erro, **carregando a mensagem original da
+  API**. Na próxima execução o log dirá o motivo exato da recusa.
+- Recusa por ritmo/cota que chega como 200 entra no mesmo backoff do 429
+  (`isRateLimitMessage`).
+- `baseURLOverride` para os testes apontarem a um servidor local.
+
+**Testes** (`client_test.go`, 8 casos): recusa com 200 vira erro; `SyncFixtures` não
+devolve mais vazio silencioso; `SyncFixtureStatistics` deixa de reportar recusa de plano
+como "partida não encontrada"; resposta legítima com zero jogos **continua não sendo
+erro**; status HTTP de erro continua erro; mensagem estável com múltiplos motivos.
+
+### O que a correção NÃO faz, e o que ficou em aberto
+
+**Ela não faz o pipeline voltar a sincronizar.** Ela faz o pipeline *dizer por que* não
+sincroniza. A mensagem que a API vinha mandando foi descartada em todas as execuções, e
+sem ela não é possível afirmar a causa da recusa — a suspeita mais provável é a
+temporada pedida não estar coberta pelo plano (as ligas europeias estão com `MAX(year) =
+2025` e as sul-americanas com `2026`), mas **isso é hipótese, não conclusão**. O próximo
+ciclo depois do deploy resolve a dúvida.
+
+**Ponto sem explicação, registrado como aberto:** nos ciclos de 07/09 o `sync_runs`
+marca `checadas=50, erros=50`, mas o `api_usage_log` **não tem nenhuma linha naquela
+data** (a retenção é de 90 dias, então não é limpeza). Verifiquei `provider_incidents`
+para testar a hipótese de o disjuntor de saúde ter suspendido o provedor: a tabela está
+**vazia**, o disjuntor nunca disparou. Não tenho explicação sustentada por dado para
+esses dois ciclos e não vou inventar uma.
+
+---
+
 ## Fonte de odds reais — o que a API-Football consegue e o que não consegue
 
 **Data:** 2026-09-09 · **Status:** investigado, decisão pendente do usuário

@@ -22,6 +22,85 @@ Nenhum problema é iniciado antes do anterior estar registrado aqui.
 
 ---
 
+## Fonte de odds reais — o que a API-Football consegue e o que não consegue
+
+**Data:** 2026-09-09 · **Status:** investigado, decisão pendente do usuário
+**Contexto:** é a pendência que trava o AUD-001 e o AUD-003 de terem efeito prático.
+
+### O achado que muda o planejamento
+
+Da documentação oficial do endpoint `/odds` (Odds Pre-Match), citação direta:
+
+> *"We provide pre-match odds between 1 and 14 days before the fixture."*
+> *"We keep a 7-days history (The availability of odds may vary according to the
+> leagues, seasons, fixtures and bookmakers)."*
+
+**Não existe arquivo histórico de odds.** A consequência é dura e precisa estar clara
+antes de qualquer estimativa de prazo:
+
+1. **As 3.547 partidas já no banco nunca terão odd real.** Não é questão de plano pago
+   ou de esforço de implementação — o dado não existe mais do lado do provedor.
+2. **O histórico de odds reais começa do zero** no dia em que a coleta entrar no ar, e
+   cresce uma rodada por vez.
+3. **Até acumular 100 jogos por combinação** (mínimo do doc 08), o Discovery continua
+   publicando zero. Corretamente.
+
+Ou seja: integrar odds não é uma tarefa que "destrava" o Discovery em uma semana. É
+ligar uma coleta e esperar uma temporada.
+
+### O que ainda não sei, e por que não chutei
+
+Três coisas não se respondem lendo documentação, e nenhuma delas eu vou afirmar sem
+medir:
+
+- **Existe mercado de escanteios na API?** Se só houver 1X2 e over/under de gols, a
+  integração não resolve o AUD-001 — precificaria gols, não escanteios, que é a
+  métrica central do produto. A lista de mercados é devolvida em tempo de execução
+  (`/odds/bets`), não está publicada na documentação.
+- **A cota do plano aguenta?** Odds vêm paginadas de 10 em 10.
+- **Qual casa usar?** Odd de casa diferente muda o break-even e, portanto, o p-valor
+  do teste de significância do AUD-003.
+
+### Ferramenta criada: `cmd/oddsprobe`
+
+Responde as três com dados, contra a API real, usando a chave já configurada.
+**Só lê — não grava nada, em lugar nenhum.**
+
+```
+go run ./cmd/oddsprobe
+go run ./cmd/oddsprobe -league 71 -season 2026
+```
+
+Verifica plano e cota, procura mercados de escanteios, lista as casas e busca uma
+amostra real de odds, imprimindo a leitura de cada resultado.
+
+### Ferramenta criada: `cmd/findleague`
+
+Não é sobre odds, mas nasceu do mesmo problema — depender de um número que ninguém
+confirmou. Resolve o `external_id` de um campeonato perguntando ao provedor, em vez
+de procurar no painel ou chutar:
+
+```
+go run ./cmd/findleague -name "Europa League" -season 2025
+```
+
+Chutar id é pior do que parece: um id errado não deixa a liga vazia, ele carrega
+dados de **outra** competição sob o nome que você escolheu, e ninguém percebe.
+
+### Defeito encontrado durante esta investigação (corrigido)
+
+`SyncRepo.UpsertMatch` gravava odd sintética **sem rótulo**: linha nova caía no
+`DEFAULT 'unknown'`, descrevendo como "origem desconhecida" algo de origem
+perfeitamente conhecida. Pior, no `ON CONFLICT` ele sobrescreveria odd **real** com
+sintética mantendo o rótulo `'real'` — lavando dado fabricado como se fosse de
+mercado, exatamente o que o AUD-001 existe para impedir.
+
+A migration 013 marcou os dados que **já existiam**; o **produtor** continuava sem
+correção. Agora grava `'synthetic'` explicitamente e nunca sobrescreve odd marcada
+como `'real'`.
+
+---
+
 ## AUD-001 — Odds sintéticas derivadas da própria amostra causam leakage
 
 **Severidade:** CRITICAL · **Prioridade:** P0 · **Categoria:** Estatística / Backtest

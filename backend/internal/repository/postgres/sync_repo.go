@@ -73,16 +73,34 @@ func (r *SyncRepo) UpsertMatch(ctx context.Context, externalID string, leagueID,
 		return err
 	}
 
+	// odds_source = 'synthetic' explícito (AUD-001, complemento).
+	//
+	// As odds que chegam aqui vêm de usecase.SyntheticCornerOdds — derivadas da
+	// média de escanteios do próprio lote, nunca de mercado. A migration 013
+	// marcou os dados que JÁ existiam, mas esta query continuava gravando odd
+	// sintética sem rótulo: linha nova caía no DEFAULT 'unknown', descrevendo
+	// como "origem desconhecida" algo cuja origem é perfeitamente conhecida.
+	//
+	// O CASE no ON CONFLICT é a parte que mais importa. Sem ele, um ciclo de
+	// cmd/sync sobrescreveria odd REAL com odd sintética mantendo o rótulo
+	// 'real' — lavando dado fabricado como se fosse de mercado, que é
+	// exatamente o defeito que o AUD-001 existe para impedir. Partida já marcada
+	// como 'real' conserva odd e rótulo.
 	_, err = r.db.Exec(ctx, `
 		INSERT INTO matches (external_id, league_id, season_id, round, match_date, home_team_id, away_team_id,
-			home_corners, away_corners, home_goals, away_goals, corner_odds)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+			home_corners, away_corners, home_goals, away_goals, corner_odds, odds_source)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,'synthetic')
 		ON CONFLICT (external_id) DO UPDATE SET
 			home_corners = EXCLUDED.home_corners,
 			away_corners = EXCLUDED.away_corners,
 			home_goals = EXCLUDED.home_goals,
 			away_goals = EXCLUDED.away_goals,
-			corner_odds = EXCLUDED.corner_odds`,
+			corner_odds = CASE WHEN matches.odds_source = 'real'
+			                   THEN matches.corner_odds
+			                   ELSE EXCLUDED.corner_odds END,
+			odds_source = CASE WHEN matches.odds_source = 'real'
+			                   THEN 'real'
+			                   ELSE 'synthetic' END`,
 		externalID, leagueID, seasonID, round, matchDate, homeTeamID, awayTeamID,
 		homeCorners, awayCorners, homeGoals, awayGoals, string(oddsJSON))
 	return err

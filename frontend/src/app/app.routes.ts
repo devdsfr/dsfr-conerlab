@@ -49,6 +49,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
   },
   {
+    // Explicação do método para quem não é da área. Pública e sem login: é a
+    // página que o usuário abre ANTES de decidir se confia nos números.
+    path: 'como-funciona',
+    loadComponent: () => import('./features/how-it-works/how-it-works.component').then(m => m.HowItWorksComponent),
+  },
+  {
     path: 'suporte',
     loadComponent: () => import('./features/support/support.component').then(m => m.SupportComponent),
   },

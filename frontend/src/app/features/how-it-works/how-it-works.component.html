@@ -1,0 +1,162 @@
+<div class="max-w-4xl mx-auto flex flex-col gap-8">
+
+  <!-- Abertura: a ideia toda em três frases, para quem não vai ler o resto. -->
+  <div>
+    <h1 class="text-xl font-semibold text-slate-100">Como funciona o CornerLab</h1>
+    <p class="text-sm text-slate-400 mt-2 leading-relaxed">
+      O CornerLab é uma ferramenta de <strong class="text-slate-200">análise de dados de futebol</strong>,
+      com foco em escanteios. Ele guarda o que aconteceu em milhares de partidas, calcula estatísticas
+      sobre esses jogos e permite testar regras no histórico.
+    </p>
+    <p class="text-sm text-slate-400 mt-2 leading-relaxed">
+      Esta página explica o caminho completo, do jogo até o número na sua tela — sem jargão.
+      Leva uns cinco minutos.
+    </p>
+  </div>
+
+  <!-- O aviso vem ANTES da explicação, não escondido no rodapé. Se a pessoa ler
+       só o começo da página, é isto que ela precisa ter lido. -->
+  <div class="cl-card p-5 border-l-4 border-l-amber-500">
+    <div class="flex items-start gap-3">
+      <mat-icon aria-hidden="true" class="!text-amber-400 !w-6 !h-6 !text-[22px] !leading-6 shrink-0 mt-0.5">priority_high</mat-icon>
+      <div>
+        <h2 class="text-sm font-medium text-amber-200">Antes de tudo: o que o CornerLab não é</h2>
+        <p class="text-sm text-slate-300 mt-1.5 leading-relaxed">
+          Ele <strong class="text-slate-100">não prevê resultado</strong> e
+          <strong class="text-slate-100">não recomenda aposta</strong>. Tudo aqui descreve partidas
+          que já aconteceram. Um número alto significa que algo foi frequente no passado — não que
+          vá se repetir. Quem decide apostar, decide sozinho e assume o risco.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Os quatro passos. -->
+  <section class="flex flex-col gap-4">
+    <h2 class="text-base font-semibold text-slate-100">O caminho do dado, em 4 passos</h2>
+
+    @for (s of steps; track s.n) {
+      <div class="cl-card p-5">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 w-9 h-9 rounded-full bg-cornerlab-primary/15 flex items-center justify-center">
+            <span class="text-sm font-semibold text-cornerlab-primary">{{ s.n }}</span>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <mat-icon aria-hidden="true" class="!text-cornerlab-primary !w-5 !h-5 !text-[20px] !leading-5 shrink-0">{{ s.icon }}</mat-icon>
+              <h3 class="text-sm font-medium text-slate-100">{{ s.title }}</h3>
+            </div>
+            <p class="text-sm text-slate-400 mt-2 leading-relaxed">{{ s.text }}</p>
+            <p class="text-xs text-slate-500 mt-2 leading-relaxed border-l-2 border-slate-700 pl-3">{{ s.detail }}</p>
+          </div>
+        </div>
+      </div>
+    }
+  </section>
+
+  <!-- A parte que diferencia a ferramenta. Vale o espaço extra. -->
+  <section class="flex flex-col gap-4">
+    <div>
+      <h2 class="text-base font-semibold text-slate-100">Por que não basta encontrar um padrão</h2>
+      <p class="text-sm text-slate-400 mt-1.5 leading-relaxed">
+        Esta é a parte que mais separa análise séria de número bonito. Vale a leitura com calma.
+      </p>
+    </div>
+
+    @for (r of rigor; track r.title) {
+      <div class="cl-card p-5">
+        <div class="flex items-start gap-3">
+          <mat-icon aria-hidden="true" class="!text-cornerlab-accent !w-6 !h-6 !text-[22px] !leading-6 shrink-0 mt-0.5">{{ r.icon }}</mat-icon>
+          <div class="min-w-0">
+            <h3 class="text-sm font-medium text-slate-100">{{ r.title }}</h3>
+            <p class="text-sm text-slate-400 mt-2 leading-relaxed">{{ r.text }}</p>
+            <p class="text-sm text-slate-400 mt-2 leading-relaxed">{{ r.text2 }}</p>
+          </div>
+        </div>
+      </div>
+    }
+
+    <div class="cl-card p-4 bg-slate-800/40">
+      <p class="text-xs text-slate-400 leading-relaxed">
+        <strong class="text-slate-200">Em resumo:</strong> uma regra só chega até você se passar nos
+        critérios de qualidade, sobreviver a um teste de significância que fica mais rigoroso quanto
+        mais combinações foram testadas, e ainda se sustentar num período que a busca nunca enxergou.
+        Muita coisa é reprovada nesse caminho — é para isso que ele existe.
+      </p>
+    </div>
+  </section>
+
+  <!-- Limites, com destaque próprio. -->
+  <section class="flex flex-col gap-4">
+    <div>
+      <h2 class="text-base font-semibold text-slate-100">Os limites, ditos com clareza</h2>
+      <p class="text-sm text-slate-400 mt-1.5 leading-relaxed">
+        Toda ferramenta tem limite. Quem conhece o da sua usa melhor.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      @for (l of limits; track l.title) {
+        <div class="cl-card p-4">
+          <div class="flex items-start gap-3">
+            <mat-icon aria-hidden="true" class="!text-slate-400 !w-5 !h-5 !text-[20px] !leading-5 shrink-0 mt-0.5">{{ l.icon }}</mat-icon>
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium text-slate-100">{{ l.title }}</h3>
+              <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ l.text }}</p>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Glossário. -->
+  <section>
+    <h2 class="text-base font-semibold text-slate-100 mb-1">Dicionário rápido</h2>
+    <p class="text-sm text-slate-400 mb-4 leading-relaxed">
+      O mínimo para ler as outras telas sem travar em nenhuma palavra.
+    </p>
+
+    <div class="cl-card divide-y divide-slate-800">
+      @for (g of glossary; track g.term) {
+        <div class="p-4 sm:flex sm:gap-4">
+          <div class="text-sm font-medium text-cornerlab-primary sm:w-40 sm:shrink-0">{{ g.term }}</div>
+          <div class="text-sm text-slate-400 mt-1 sm:mt-0 leading-relaxed">{{ g.def }}</div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Saídas. -->
+  <section>
+    <h2 class="text-base font-semibold text-slate-100 mb-4">Por onde começar</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      @for (n of next; track n.route) {
+        <a
+          [routerLink]="n.route"
+          class="cl-card p-4 flex items-center gap-3 no-underline hover:border-cornerlab-primary transition-colors"
+        >
+          <mat-icon aria-hidden="true" class="!text-cornerlab-primary !w-6 !h-6 !text-[22px] !leading-6 shrink-0">{{ n.icon }}</mat-icon>
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-slate-100">{{ n.label }}</div>
+            <div class="text-xs text-slate-500 mt-0.5">{{ n.text }}</div>
+          </div>
+        </a>
+      }
+    </div>
+  </section>
+
+  <!-- Fecho, repetindo o essencial. Quem rolou até aqui merece sair com isso. -->
+  <div class="cl-card p-5 border-l-4 border-l-slate-600">
+    <p class="text-xs text-slate-400 leading-relaxed">
+      Todos os números do CornerLab são apurados sobre dados históricos armazenados. Eles não
+      constituem recomendação de aposta nem previsão de resultados futuros. Resultado passado não
+      garante resultado futuro, e nenhuma pontuação alta muda isso.
+    </p>
+    <p class="text-xs text-slate-500 mt-3 leading-relaxed">
+      Ficou alguma dúvida que esta página não respondeu?
+      <a routerLink="/suporte" class="text-cornerlab-accent hover:underline">Fale com a gente no Suporte</a>.
+    </p>
+  </div>
+
+</div>

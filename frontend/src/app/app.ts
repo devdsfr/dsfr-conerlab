@@ -42,6 +42,7 @@ export class App {
     { label: 'Projeções', route: '/projecoes', icon: 'trending_up' },
     { label: 'Assinatura', route: '/assinatura', icon: 'workspace_premium' },
     { label: 'Integrações', route: '/integracoes', icon: 'sync' },
+    { label: 'Como Funciona', route: '/como-funciona', icon: 'school' },
     { label: 'Suporte', route: '/suporte', icon: 'support_agent' },
   ];
 

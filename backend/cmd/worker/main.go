@@ -33,8 +33,10 @@ import (
 
 	"github.com/joho/godotenv"
 
+	cornerlab "github.com/devdsfr/cornerlab"
 	"github.com/devdsfr/cornerlab/internal/domain"
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
+	"github.com/devdsfr/cornerlab/internal/migrate"
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider"
 	"github.com/devdsfr/cornerlab/internal/integration/statsprovider/sofascore"
 	"github.com/devdsfr/cornerlab/internal/repository/postgres"
@@ -75,6 +77,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// Mesmo contrato da API: o schema é acertado antes de qualquer trabalho.
+	// O worker costuma subir junto num deploy, então qualquer um dos dois pode
+	// ser o primeiro a aplicar — o advisory lock resolve a corrida.
+	if err := migrate.Run(ctx, pool, cornerlab.MigrationsFS, appLog); err != nil {
+		appLog.Error("falha ao aplicar migrations — o worker não vai rodar", "error", err)
+		os.Exit(1)
+	}
 
 	usageRepo := postgres.NewUsageRepo(pool)
 	statSyncRepo := postgres.NewStatSyncRepo(pool)

@@ -7,8 +7,10 @@ import (
 
 	"github.com/joho/godotenv"
 
+	cornerlab "github.com/devdsfr/cornerlab"
 	httpDelivery "github.com/devdsfr/cornerlab/internal/delivery/http"
 	"github.com/devdsfr/cornerlab/internal/delivery/http/handlers"
+	"github.com/devdsfr/cornerlab/internal/migrate"
 	"github.com/devdsfr/cornerlab/internal/integration/llm"
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/apifootball"
 	"github.com/devdsfr/cornerlab/internal/integration/sportsdata/sportmonks"
@@ -43,6 +45,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// Schema em dia ANTES de aceitar tráfego. Se uma migration falhar, o processo
+	// não sobe — subir com o schema desatualizado é o que derrubou o Simulador
+	// três vezes (ver internal/migrate).
+	if err := migrate.Run(ctx, pool, cornerlab.MigrationsFS, appLog); err != nil {
+		appLog.Error("falha ao aplicar migrations — a API não vai subir", "error", err)
+		os.Exit(1)
+	}
 
 	redisClient := cache.NewRedisClient(cfg.RedisAddr, cfg.RedisPassword)
 	defer redisClient.Close()

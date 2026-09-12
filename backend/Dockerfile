@@ -22,6 +22,9 @@ COPY --from=builder /out/api /app/api
 COPY --from=builder /out/seed /app/seed
 COPY --from=builder /out/sync /app/sync
 COPY --from=builder /out/worker /app/worker
+# migrations continua aqui só para consulta manual dentro do container. O que
+# REALMENTE roda vem embutido no binário via go:embed (ver migrations_embed.go):
+# assim não existe a possibilidade de um binário novo encontrar arquivos velhos.
 COPY migrations /app/migrations
 COPY docs /app/docs
 EXPOSE 8080

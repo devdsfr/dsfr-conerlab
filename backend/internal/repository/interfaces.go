@@ -179,8 +179,22 @@ type BankrollRepository interface {
 // sincronização" sem depender de estado local do navegador.
 type SyncRunRepository interface {
 	AddRun(ctx context.Context, r *domain.SyncRun) error
-	// LastRun retorna nil (sem erro) se nenhuma sincronização foi registrada ainda.
+	// LastRun retorna a última TENTATIVA — que pode ter trazido zero dado.
+	// Retorna nil (sem erro) se nenhuma sincronização foi registrada ainda.
 	LastRun(ctx context.Context) (*domain.SyncRun, error)
+
+	// LastSuccessfulRun retorna o último ciclo que REALMENTE trouxe dado (sem
+	// erros e com partida gravada ou finalizada). nil se nunca houve um.
+	//
+	// A separação entre este e LastRun não é detalhe: entre 02/08 e 12/09 o cron
+	// rodou todo dia, LastRun respondia "hoje", e o banco estava seis semanas
+	// parado porque a API recusava as chamadas devolvendo HTTP 200.
+	LastSuccessfulRun(ctx context.Context) (*domain.SyncRun, error)
+
+	// LastProviderError devolve a mensagem do erro mais recente do provedor e
+	// quando ocorreu, para a interface poder dizer POR QUE a sincronização está
+	// parada. String vazia e tempo zero quando não há erro registrado.
+	LastProviderError(ctx context.Context) (string, time.Time, error)
 }
 
 // LeagueSeason é um par liga+temporada com jogos finalizados — unidade de

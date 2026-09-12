@@ -129,11 +129,28 @@ func TestClassifyFollowsDocBands(t *testing.T) {
 
 func TestGenerateCombosCoversFullLeagueGrid(t *testing.T) {
 	combos := generateCombos(nil, false)
+
 	// AUD-004: o eixo de tier saiu da grade. Eram 4 valores multiplicando tudo
-	// (540 combinações); agora são 135.
-	want := len(cornerLines) * len(homeAwayOptions) * len(windowOptions) * len(maxOddsOptions)
-	if len(combos) != want {
-		t.Fatalf("esperava %d combinações de liga, veio %d", want, len(combos))
+	// (540 combinações); a grade de escanteios ficou em 135.
+	wantCorners := len(cornerLines) * len(homeAwayOptions) * len(windowOptions) * len(maxOddsOptions)
+	// Mercados de resultado: sem linha e sem teto de odd, só mando × janela.
+	wantResult := len(resultMetrics) * len(homeAwayOptions) * len(windowOptions)
+
+	if want := wantCorners + wantResult; len(combos) != want {
+		t.Fatalf("esperava %d combinações de liga (%d escanteios + %d resultado), veio %d",
+			want, wantCorners, wantResult, len(combos))
+	}
+
+	var gotCorners, gotResult int
+	for _, c := range combos {
+		if c.isResult() {
+			gotResult++
+		} else {
+			gotCorners++
+		}
+	}
+	if gotCorners != wantCorners || gotResult != wantResult {
+		t.Errorf("divisão entre mercados errada: %d escanteios / %d resultado", gotCorners, gotResult)
 	}
 	for _, c := range combos {
 		if c.teamID != nil {
@@ -230,13 +247,45 @@ func TestComboDefinitionMatchesFilterFormat(t *testing.T) {
 	}
 }
 
-// Toda combinação precisa exigir odd registrada, senão ROI/EV não têm
-// significado (ver comentário de maxOddsOptions).
+// Toda combinação DE ESCANTEIOS precisa exigir odd registrada, senão ROI/EV não
+// têm significado (ver comentário de maxOddsOptions).
+//
+// Mercados de resultado ficam de fora desta regra porque o teto de odd é aplicado
+// sobre corner_odds — para eles a garantia equivalente é outra: sem result_odds
+// registrada, o teste de significância não é calculável e a combinação é
+// descartada em mine() com o motivo "sem_pvalor_calculavel".
 func TestEveryComboRequiresRegisteredOdds(t *testing.T) {
 	for _, c := range generateCombos([]domain.Team{{ID: 1, Name: "X"}}, true) {
+		if c.isResult() {
+			if c.maxOdds != 0 || c.line != 0 {
+				t.Fatalf("combinação de resultado não deveria ter linha nem teto de odd: %+v", c)
+			}
+			continue
+		}
 		if c.maxOdds <= 0 {
 			t.Fatalf("combinação sem teto de odd permitiria jogos sem odd real: %+v", c)
 		}
+	}
+}
+
+// A métrica precisa sobreviver à serialização, senão o Strategy Engine
+// reexecutaria uma estratégia de resultado como se fosse de escanteios.
+func TestComboDefinitionCarregaMetricaDeResultado(t *testing.T) {
+	c := combo{metric: usecase.MetricDraw, homeAway: "away", window: 20}
+
+	raw, err := c.definition(18, []int64{26})
+	if err != nil {
+		t.Fatalf("definition falhou: %v", err)
+	}
+	d, err := strategyengine.ParseDefinition(raw)
+	if err != nil {
+		t.Fatalf("definição inválida: %v", err)
+	}
+	if d.Metric != usecase.MetricDraw {
+		t.Errorf("metric = %q, esperado %q", d.Metric, usecase.MetricDraw)
+	}
+	if d.CornersThreshold != 0 || d.MaxOdds != 0 {
+		t.Errorf("mercado de resultado não deveria carregar linha nem teto de odd: %+v", d)
 	}
 }
 

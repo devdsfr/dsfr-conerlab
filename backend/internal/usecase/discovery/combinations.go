@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
+	"github.com/devdsfr/cornerlab/internal/usecase"
 	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
 )
 
@@ -49,6 +50,22 @@ var (
 	// entrem no backtest jogos com odd real registrada — sem isso não há como
 	// validar ROI/EV, que são critérios obrigatórios do doc 08.
 	maxOddsOptions = []float64{1.70, 2.20, 3.50}
+
+	// Mercados de RESULTADO. Não têm linha nem teto de odd: o desfecho da partida
+	// já é a resposta, e não há odd registrada para aplicar um teto.
+	//
+	// LEIA ISTO ANTES DE ESPERAR RESULTADO DESTE EIXO. Nenhuma rota do sistema
+	// grava matches.result_odds hoje. Sem odd não existe hipótese nula, e sem
+	// hipótese nula o teste de significância do AUD-003 não é calculável — todas
+	// estas combinações são descartadas com o motivo "sem_pvalor_calculavel". É o
+	// comportamento correto: publicar sem poder testar é o defeito que a auditoria
+	// inteira existe para impedir.
+	//
+	// O eixo fica aqui porque o dia em que a coleta de odds 1X2 entrar, ele passa
+	// a funcionar sem mudança de código. Enquanto isso, o custo é só CPU: as
+	// combinações são rejeitadas ANTES de entrar na correção de múltiplos testes
+	// (ver mine), então não endurecem o limiar das combinações de escanteios.
+	resultMetrics = []string{usecase.MetricWin, usecase.MetricDraw, usecase.MetricWinOrDraw}
 )
 
 // combo é uma combinação candidata do espaço de busca.
@@ -60,6 +77,35 @@ type combo struct {
 	window   int
 	tier     string
 	maxOdds  float64
+
+	// metric vazio = escanteios (o padrão histórico do motor). Preenchido nos
+	// mercados de resultado, onde line e maxOdds não se aplicam.
+	metric string
+}
+
+// isResult indica se a combinação é de mercado de resultado.
+func (c combo) isResult() bool { return c.metric != "" && c.metric != "corners" }
+
+// effectiveMetric devolve a métrica a enviar ao motor. Vazio = escanteios, que é
+// o padrão histórico e o que o restante do sistema espera quando o campo não vem.
+func (c combo) effectiveMetric() string {
+	if c.metric == "" {
+		return "corners"
+	}
+	return c.metric
+}
+
+// resultLabel é o nome em português do mercado de resultado, usado no nome da
+// estratégia publicada.
+func resultLabel(metric string) string {
+	switch metric {
+	case usecase.MetricDraw:
+		return "Empate"
+	case usecase.MetricWinOrDraw:
+		return "Não perde"
+	default:
+		return "Vitória"
+	}
 }
 
 // generateCombos monta o espaço de busca de uma liga.
@@ -79,6 +125,15 @@ func generateCombos(teams []domain.Team, includeTeams bool) []combo {
 						line: line, homeAway: ha, window: window, maxOdds: odds,
 					})
 				}
+			}
+		}
+	}
+
+	// Mercados de resultado: só mando e janela fazem sentido como eixo.
+	for _, metric := range resultMetrics {
+		for _, ha := range homeAwayOptions {
+			for _, window := range windowOptions {
+				out = append(out, combo{metric: metric, homeAway: ha, window: window})
 			}
 		}
 	}
@@ -116,7 +171,7 @@ func (c combo) definition(leagueID int64, seasonIDs []int64) (string, error) {
 		CornersThreshold: c.line,
 		OpponentTier:     c.tier,
 		MaxOdds:          c.maxOdds,
-		Metric:           "corners",
+		Metric:           c.effectiveMetric(),
 	}
 	raw, err := json.Marshal(d)
 	if err != nil {
@@ -134,7 +189,12 @@ const strategyNameMaxLen = 120
 // precisam produzir nomes diferentes — por isso todos os eixos do espaço de busca
 // aparecem no texto, inclusive o teto de odd.
 func (c combo) name(leagueName string) string {
-	parts := []string{fmt.Sprintf("Escanteios %d.5+", c.line)}
+	var parts []string
+	if c.isResult() {
+		parts = []string{resultLabel(c.metric)}
+	} else {
+		parts = []string{fmt.Sprintf("Escanteios %d.5+", c.line)}
+	}
 
 	if c.teamName != "" {
 		parts = append(parts, c.teamName)
@@ -146,7 +206,11 @@ func (c combo) name(leagueName string) string {
 	if c.tier != "" {
 		parts = append(parts, "vs "+c.tier)
 	}
-	parts = append(parts, fmt.Sprintf("odd ≤ %.2f", c.maxOdds))
+	// Mercado de resultado não tem teto de odd — incluir "odd ≤ 0,00" no nome
+	// tornaria o identificador confuso e, pior, igual entre combinações distintas.
+	if !c.isResult() {
+		parts = append(parts, fmt.Sprintf("odd ≤ %.2f", c.maxOdds))
+	}
 
 	return truncate(strings.Join(parts, " · ")+" — "+leagueName, strategyNameMaxLen)
 }

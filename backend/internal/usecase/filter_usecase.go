@@ -74,6 +74,49 @@ func (c FilterCriteria) inWindow(d time.Time) bool {
 	return true
 }
 
+// Mercados de RESULTADO. Diferente de todas as outras métricas do CornerLab,
+// que são limiar sobre um total ("mais de N escanteios"), estas são desfecho da
+// partida — e por isso têm tratamento próprio no motor e odd em outro mapa
+// (Match.ResultOdds).
+//
+// Sempre na perspectiva do time analisado: "vitória" é vitória DELE, seja em
+// casa ou fora. O motor traduz para mandante/visitante na hora de buscar a odd.
+const (
+	MetricWin       = "win"         // o time vence
+	MetricDraw      = "draw"        // a partida termina empatada
+	MetricWinOrDraw = "win_or_draw" // o time não perde (dupla chance)
+)
+
+func isResultMetric(metric string) bool {
+	switch metric {
+	case MetricWin, MetricDraw, MetricWinOrDraw:
+		return true
+	}
+	return false
+}
+
+// resultOutcome traduz a métrica (perspectiva do time) para a chave do desfecho
+// em Match.ResultOdds (perspectiva da partida).
+//
+// Empate é o mesmo desfecho dos dois lados; vitória e dupla chance dependem do
+// mando.
+func resultOutcome(metric string, isHome bool) string {
+	switch metric {
+	case MetricDraw:
+		return domain.ResultOutcomeDraw
+	case MetricWinOrDraw:
+		if isHome {
+			return domain.ResultOutcomeHomeOrDraw
+		}
+		return domain.ResultOutcomeAwayOrDraw
+	default: // MetricWin
+		if isHome {
+			return domain.ResultOutcomeHome
+		}
+		return domain.ResultOutcomeAway
+	}
+}
+
 func (c FilterCriteria) isGoals() bool         { return c.Metric == "goals" }
 func (c FilterCriteria) isOffsides() bool      { return c.Metric == "offsides" }
 func (c FilterCriteria) isShots() bool         { return c.Metric == "shots" }
@@ -110,6 +153,9 @@ func (c FilterCriteria) Validate() error {
 		if c.ShotsOnTargetThreshold < 0 {
 			return fmt.Errorf("shots_on_target_threshold não pode ser negativo")
 		}
+	case MetricWin, MetricDraw, MetricWinOrDraw:
+		// Mercados de resultado não têm limiar: o desfecho da partida já é a
+		// resposta. Nada a validar aqui.
 	default:
 		return fmt.Errorf("metric inválida")
 	}
@@ -149,7 +195,13 @@ type BacktestEntry struct {
 	TotalOffsides      int     `json:"total_offsides"`
 	TotalShots         int     `json:"total_shots"`
 	TotalShotsOnTarget int     `json:"total_shots_on_target"`
-	Hit                bool    `json:"hit"`
+
+	// Placar na perspectiva do time analisado. Preenchido só nos mercados de
+	// resultado (vitória/empate/dupla chance), onde é ele que explica o acerto.
+	GoalsFor     int `json:"goals_for,omitempty"`
+	GoalsAgainst int `json:"goals_against,omitempty"`
+
+	Hit bool    `json:"hit"`
 	Odd                float64 `json:"odd"`
 	ProfitLoss         float64 `json:"profit_loss"`
 }
@@ -333,7 +385,57 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		// agora recusa a requisição antes de chegar neste laço.
 		var total, threshold int
 		var odd float64
+
+		// hit é resolvido de duas formas diferentes, e por isso mora fora do switch.
+		//
+		// Quase toda métrica do CornerLab é "o total passou de N?" — escanteios,
+		// gols, chutes, impedimentos. Mercados de RESULTADO não são: vitória e
+		// empate são desfecho, não limiar. Esses ramos decidem hit diretamente e
+		// marcam resolvido = true; os demais caem na comparação padrão logo abaixo.
+		var hit, resolvido bool
+
 		switch criteria.Metric {
+		case MetricWin, MetricDraw, MetricWinOrDraw:
+			// Desfecho da partida. O dado já está no banco (home_goals/away_goals),
+			// então não custa nenhuma requisição nova ao provedor.
+			//
+			// goalsF/goalsA já vêm na perspectiva do time analisado (ver asHome e
+			// asAway), então "venceu" é a mesma comparação dos dois lados.
+			switch criteria.Metric {
+			case MetricWin:
+				hit = c.goalsF > c.goalsA
+			case MetricDraw:
+				hit = c.goalsF == c.goalsA
+			case MetricWinOrDraw:
+				hit = c.goalsF >= c.goalsA
+			}
+			resolvido = true
+
+			// AUD-001, mesma regra dos escanteios: o Discovery só valida sobre odd
+			// de mercado. Aqui ela nunca existe ainda — nenhuma rota grava
+			// result_odds —, então o Discovery descarta tudo. É o comportamento
+			// correto: sem odd não há hipótese nula e não há o que validar.
+			if criteria.RequireRealOdds && !c.match.HasRealResultOdds() {
+				continue
+			}
+
+			var hasOdd bool
+			odd, hasOdd = c.match.OddForResultOutcome(resultOutcome(criteria.Metric, c.isHome))
+			if !hasOdd {
+				// Odd fixa informada na tela é o caminho do Simulador: deixa o
+				// usuário testar um cenário sem que o número vire evidência de
+				// mercado (oddsSourceSummary marca como "fixed", não confiável).
+				if criteria.FixedOdd > 0 {
+					odd = criteria.FixedOdd
+					break
+				}
+				// AUD-012: sem odd, não se fabrica 1.0.
+				continue
+			}
+			if criteria.MaxOdds > 0 && odd > criteria.MaxOdds {
+				continue
+			}
+			oddsSources = append(oddsSources, c.match.ResultOddsSource)
 		case "goals":
 			// Gols: linha over/under, sem odds históricas — odd fixa simulada (ou 1.0).
 			total = c.goalsF + c.goalsA
@@ -384,7 +486,9 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			oddsSources = append(oddsSources, c.match.OddsSource)
 		}
 
-		hit := total > threshold
+		if !resolvido {
+			hit = total > threshold
+		}
 
 		pl := -stake
 		if hit {
@@ -405,6 +509,12 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			ProfitLoss: round2(pl),
 		}
 		switch criteria.Metric {
+		case MetricWin, MetricDraw, MetricWinOrDraw:
+			// O placar é o que explica o acerto neste mercado — sem ele, a linha da
+			// tabela mostraria "acertou" sem dizer por quê.
+			entry.GoalsFor = c.goalsF
+			entry.GoalsAgainst = c.goalsA
+			entry.TotalGoals = c.goalsF + c.goalsA
 		case "goals":
 			entry.TotalGoals = total
 		case "offsides":
@@ -445,6 +555,11 @@ func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool)
 	}
 
 	if len(sources) == 0 {
+		// Mercados de resultado aceitam odd fixa quando não há odd de mercado
+		// registrada — e nesse caso o resultado é cenário, não medição.
+		if isResultMetric(criteria.Metric) && criteria.FixedOdd > 0 {
+			return "fixed", false
+		}
 		return "none", false
 	}
 	for _, s := range sources {

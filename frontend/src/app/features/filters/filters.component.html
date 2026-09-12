@@ -50,7 +50,19 @@
         <mat-button-toggle value="offsides">Impedimentos</mat-button-toggle>
         <mat-button-toggle value="shots">Chutes</mat-button-toggle>
         <mat-button-toggle value="shots_on_target">Chutes no gol</mat-button-toggle>
+        <mat-button-toggle value="win">Vitória</mat-button-toggle>
+        <mat-button-toggle value="draw">Empate</mat-button-toggle>
+        <mat-button-toggle value="win_or_draw">Não perde</mat-button-toggle>
       </mat-button-toggle-group>
+
+      @if (isResultMetric) {
+        <p class="text-xs text-slate-500 mt-2 leading-relaxed">
+          Mercado de resultado: não tem linha, o desfecho da partida já é a resposta.
+          O sistema ainda não coleta odds de vitória/empate, então informe uma
+          <strong class="text-slate-400">odd fixa</strong> abaixo para ver o retorno —
+          e leia o resultado como simulação, não como desempenho de mercado.
+        </p>
+      }
     </div>
 
     <div class="flex flex-wrap items-end gap-4">

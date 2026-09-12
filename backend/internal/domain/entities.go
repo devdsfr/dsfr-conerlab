@@ -86,8 +86,25 @@ type Match struct {
 	//   real      — ofertada por um mercado, capturada antes do jogo
 	//   synthetic — derivada do histórico (ver usecase.SyntheticCornerOdds)
 	//   unknown   — sem odd registrada ou origem não rastreável
-	OddsSource string    `json:"odds_source" db:"odds_source"`
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+	OddsSource string `json:"odds_source" db:"odds_source"`
+
+	// ResultOdds mapeia o DESFECHO da partida -> odd de mercado, para os mercados
+	// de resultado (1X2 e dupla chance). Chaves válidas: ver ResultOutcome*.
+	//
+	// É um mapa separado de CornerOdds de propósito: são mercados diferentes, com
+	// preços diferentes e — principalmente — com procedências que podem divergir.
+	// Pode existir odd real de 1X2 sem existir odd real de escanteios, e vice-versa.
+	//
+	// Nasce VAZIO: nenhuma rota do sistema grava aqui hoje. Só passa a ter conteúdo
+	// quando existir coleta de odds reais. Até lá, todo backtest de resultado é
+	// corretamente rejeitado pelo Discovery por falta de hipótese nula (AUD-003).
+	ResultOdds map[string]float64 `json:"result_odds" db:"result_odds"`
+
+	// ResultOddsSource é a procedência de ResultOdds, com o mesmo vocabulário de
+	// OddsSource. Separado porque os dois mercados são coletados separadamente.
+	ResultOddsSource string `json:"result_odds_source" db:"result_odds_source"`
+
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
 // Valores válidos de Match.OddsSource.
@@ -101,6 +118,36 @@ const (
 // de mercado. É a única porta pela qual o Discovery aceita uma partida — ver
 // AUD-001 na auditoria.
 func (m Match) HasRealOdds() bool { return m.OddsSource == OddsSourceReal }
+
+// HasRealResultOdds é o equivalente de HasRealOdds para os mercados de resultado.
+func (m Match) HasRealResultOdds() bool { return m.ResultOddsSource == OddsSourceReal }
+
+// Desfechos aceitos como chave de Match.ResultOdds.
+//
+// São nomeados pela PERSPECTIVA DA PARTIDA (mandante/visitante), não pela do time
+// analisado — assim a mesma partida tem uma única representação, e é o motor que
+// traduz "este time venceu" para "home" ou "away" conforme o mando.
+//
+// A dupla chance tem chave PRÓPRIA em vez de ser derivada de home/draw/away. Dá
+// para calcular uma dupla chance "justa" somando probabilidades implícitas, mas
+// isso produziria um preço que nenhuma casa ofereceu — odd sintética com outro
+// nome, exatamente o que o AUD-001 existe para impedir.
+const (
+	ResultOutcomeHome       = "home"
+	ResultOutcomeDraw       = "draw"
+	ResultOutcomeAway       = "away"
+	ResultOutcomeHomeOrDraw = "home_or_draw"
+	ResultOutcomeAwayOrDraw = "away_or_draw"
+)
+
+// OddForResultOutcome retorna a odd de mercado para um desfecho e se ela existe.
+func (m Match) OddForResultOutcome(outcome string) (float64, bool) {
+	if m.ResultOdds == nil {
+		return 0, false
+	}
+	v, ok := m.ResultOdds[outcome]
+	return v, ok
+}
 
 // OddForThreshold retorna a odd histórica para "mais de N escanteios" (equivalente à
 // linha N+0.5), e um bool indicando se a odd está disponível.

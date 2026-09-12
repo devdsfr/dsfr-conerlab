@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
 	"github.com/devdsfr/cornerlab/internal/formulas"
@@ -297,7 +298,7 @@ func (e *Engine) mine(
 			CornersThreshold: c.line,
 			OpponentTier:     c.tier,
 			MaxOdds:          c.maxOdds,
-			Metric:           "corners",
+			Metric:           c.effectiveMetric(),
 
 			// AUD-001: a descoberta só pode minerar sobre odd de mercado. Odd
 			// sintética é derivada da média do próprio lote histórico — filtrar
@@ -423,7 +424,7 @@ func (e *Engine) validate(
 			CornersThreshold: c.combo.line,
 			OpponentTier:     c.combo.tier,
 			MaxOdds:          c.combo.maxOdds,
-			Metric:           "corners",
+			Metric:           c.combo.effectiveMetric(),
 			RequireRealOdds:  true,
 
 			DateFrom: &holdout.From,
@@ -524,18 +525,32 @@ func describe(c candidate, leagueName string) string {
 		filters += fmt.Sprintf(", apenas contra adversários do grupo %s", c.combo.tier)
 	}
 
+	// O que foi observado muda conforme o mercado: escanteios é limiar sobre um
+	// total, resultado é desfecho da partida. Descrever os dois com a mesma frase
+	// produziria texto errado ("o total de escanteios ficou acima de 0.5").
+	var observado string
+	if c.combo.isResult() {
+		observado = fmt.Sprintf(
+			"Restrito ao mercado de %s. Em %d ocorrências analisadas, o desfecho se confirmou em %.1f%% delas.",
+			strings.ToLower(resultLabel(c.combo.metric)), r.MatchCount, r.HitRate)
+	} else {
+		observado = fmt.Sprintf(
+			"Restrito a jogos com odd registrada até %.2f. Em %d ocorrências analisadas, "+
+				"o total de escanteios ficou acima de %d.5 em %.1f%% delas.",
+			c.combo.maxOdds, r.MatchCount, c.combo.line, r.HitRate)
+	}
+
 	return fmt.Sprintf(
-		"Padrão identificado automaticamente pela mineração do histórico do %s, %s (%s), "+
-			"restrito a jogos com odd registrada até %.2f. "+
-			"Em %d ocorrências analisadas, o total de escanteios ficou acima de %d.5 em %.1f%% delas. "+
+		"Padrão identificado automaticamente pela mineração do histórico do %s, %s (%s). "+
+			"%s "+
 			"No mesmo período o retorno histórico foi de %.2f%% (yield %.2f%%), com lucro acumulado de %.2f unidades "+
 			"e drawdown máximo de %.1f%% do capital movimentado. "+
 			"Classificação DSFR: %s (score %.1f). "+
 			"%s"+
 			"Números apurados sobre dados históricos armazenados — não constituem recomendação de aposta "+
 			"nem previsão de resultados futuros.",
-		leagueName, scope, filters, c.combo.maxOdds,
-		r.MatchCount, c.combo.line, r.HitRate,
+		leagueName, scope, filters,
+		observado,
 		r.ROI, r.Yield, r.Profit, drawdownPct(r),
 		Classify(c.dsfr), c.dsfr,
 		describeValidation(c),

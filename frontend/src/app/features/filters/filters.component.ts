@@ -63,7 +63,16 @@ export class FiltersComponent implements OnInit {
   // Métrica: 'corners' (com odds históricas) ou as demais (odd fixa simulada). Cada
   // uma tem seu threshold (linha over/under: 2 = "acima de 2.5"; chutes usam faixas
   // inteiras maiores).
-  metric: 'corners' | 'goals' | 'offsides' | 'shots' | 'shots_on_target' = 'corners';
+  metric:
+    | 'corners'
+    | 'goals'
+    | 'offsides'
+    | 'shots'
+    | 'shots_on_target'
+    // Mercados de resultado: não têm linha, o desfecho da partida já é a resposta.
+    | 'win'
+    | 'draw'
+    | 'win_or_draw' = 'corners';
   goalsThreshold = 2;
   offsidesThreshold = 2;
   shotsThreshold = 20;
@@ -96,8 +105,22 @@ export class FiltersComponent implements OnInit {
   get isNullableMetric(): boolean {
     return this.metric === 'offsides' || this.metric === 'shots' || this.metric === 'shots_on_target';
   }
+  // Mercados de resultado (vitória / empate / não perde): sem limiar, e sem odd
+  // coletada — o backend só aceita odd fixa informada aqui.
+  get isResultMetric(): boolean {
+    return this.metric === 'win' || this.metric === 'draw' || this.metric === 'win_or_draw';
+  }
   private label(): string {
-    return { corners: 'Escanteios', goals: 'Gols', offsides: 'Impedimentos', shots: 'Chutes', shots_on_target: 'Chutes no gol' }[this.metric];
+    return {
+      corners: 'Escanteios',
+      goals: 'Gols',
+      offsides: 'Impedimentos',
+      shots: 'Chutes',
+      shots_on_target: 'Chutes no gol',
+      win: 'Vitória',
+      draw: 'Empate',
+      win_or_draw: 'Não perde',
+    }[this.metric];
   }
   // Total da métrica ativa por entrada.
   entryTotal(e: BacktestEntry): number {

@@ -31,10 +31,21 @@
         </button>
       </div>
       <div class="text-xs text-slate-400 mt-1">
+        <!-- Duas linhas, e a distinção entre elas é o ponto: "tentativa" não é
+             "sincronização". Antes só existia a primeira, e ela dizia
+             "Última sincronização: hoje" com o banco seis semanas parado. -->
         @if (lastSyncLoading()) {
           Verificando última sincronização…
         } @else if (lastSyncRun(); as run) {
-          Última sincronização: <span class="text-slate-200">{{ formatLastSync(run) }}</span>
+          Última tentativa: <span class="text-slate-200">{{ formatLastSync(run) }}</span>
+          <div class="mt-0.5">
+            @if (lastSuccessfulRun(); as ok) {
+              Último ciclo que trouxe dado:
+              <span [class]="syncStale() ? 'text-amber-300' : 'text-emerald-300'">{{ formatLastSync(ok) }}</span>
+            } @else {
+              <span class="text-amber-300">Nenhum ciclo trouxe dado até agora.</span>
+            }
+          </div>
         } @else {
           Ainda sem nenhuma sincronização registrada.
         }

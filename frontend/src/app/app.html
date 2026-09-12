@@ -93,6 +93,12 @@
 </nav>
 
 <main id="conteudo-principal" class="cl-main min-h-screen bg-cornerlab-bg px-4 py-6 sm:px-8 md:ml-[232px]">
+  <!-- Aviso de dado desatualizado. Fica ACIMA de qualquer conteúdo e em todas as
+       telas de propósito: o risco não é o usuário não achar a tela de
+       Integrações, é ele olhar uma média no Dashboard sem saber que ela parou de
+       ser atualizada semanas atrás. -->
+  <app-stale-data-banner class="block -mx-4 -mt-6 mb-6 sm:-mx-8" />
+
   <router-outlet></router-outlet>
   <footer class="max-w-6xl mx-auto mt-10 text-xs text-slate-300 border-t border-slate-800 pt-4">
     CornerLab organiza dados históricos, calcula estatísticas e simula cenários. A plataforma nunca recomenda apostas.

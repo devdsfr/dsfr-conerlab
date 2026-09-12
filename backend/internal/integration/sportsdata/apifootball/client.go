@@ -315,7 +315,19 @@ func (c *Client) record(endpoint string, success bool, statusCode *int, errMsg s
 // assinatura (plano, cota diária) sem consumir a cota de requisições — ideal para o
 // botão "Testar agora" do painel de diagnóstico.
 func (c *Client) TestConnection(ctx context.Context) error {
-	_, err := c.doGet(ctx, "/status", nil, "status")
+	// Testa um endpoint que BUSCA DADO, não o /status.
+	//
+	// /status devolve informação da conta e responde normalmente mesmo quando a
+	// conta está suspensa — é justamente o endpoint que a API oferece para você
+	// descobrir que está suspensa. Usá-lo como teste de saúde produziu o pior
+	// resultado possível: em 12/09 a tela de Integrações exibia "API-Football de
+	// pé" em verde enquanto TODA busca de partida era recusada com
+	// "Your account is suspended".
+	//
+	// /leagues com filtro mínimo custa uma requisição e responde a pergunta certa:
+	// "dá para obter dado agora?". Qualquer recusa de plano, chave ou suspensão
+	// aparece aqui — o cliente já trata o erro no corpo com status 200.
+	_, err := c.doGet(ctx, "/leagues", map[string]string{"id": "71"}, "test_connection")
 	return err
 }
 

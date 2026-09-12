@@ -620,7 +620,28 @@ export interface SyncRun {
 }
 
 export interface SyncStatusResponse {
+  /** Última TENTATIVA de sincronização — pode ter trazido zero dado. */
   last_run: SyncRun | null;
+
+  /**
+   * Último ciclo que realmente trouxe dado (sem erros e com partida gravada ou
+   * finalizada). É esta data que importa para saber se o banco está em dia.
+   *
+   * A distinção não é preciosismo: entre 02/08 e 12/09 o cron rodou todos os
+   * dias e a tela dizia "última sincronização: hoje" com o banco seis semanas
+   * parado, porque a API recusava as chamadas devolvendo HTTP 200.
+   */
+  last_successful_run: SyncRun | null;
+
+  /** Horas desde o último ciclo bem-sucedido. null = nunca houve um. */
+  hours_since_success: number | null;
+
+  /** true quando passou do limite (48h) ou nunca houve sincronização bem-sucedida. */
+  stale: boolean;
+
+  /** Mensagem do erro mais recente do provedor, quando houver um nos últimos 7 dias. */
+  provider_error?: string;
+  provider_error_at?: string;
 }
 
 // Registro de rodadas confirmadas manualmente (saldo real acumulado) — ver

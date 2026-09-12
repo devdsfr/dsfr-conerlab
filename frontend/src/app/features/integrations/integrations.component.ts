@@ -94,6 +94,12 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   lastSyncRun = signal<SyncRun | null>(null);
   lastSyncLoading = signal(false);
 
+  // O ciclo que REALMENTE trouxe dado, que é diferente da última tentativa.
+  // Ver o comentário em SyncStatusResponse: a confusão entre os dois escondeu
+  // seis semanas de banco parado.
+  lastSuccessfulRun = signal<SyncRun | null>(null);
+  syncStale = signal(false);
+
   constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit(): void {
@@ -120,6 +126,8 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     this.api.getSyncStatus().subscribe({
       next: res => {
         this.lastSyncRun.set(res.last_run);
+        this.lastSuccessfulRun.set(res.last_successful_run);
+        this.syncStale.set(res.stale);
         this.lastSyncLoading.set(false);
       },
       error: () => this.lastSyncLoading.set(false),

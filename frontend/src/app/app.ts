@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { LogoMarkComponent } from './shared/logo-mark.component';
+import { StaleDataBannerComponent } from './shared/stale-data-banner.component';
 import { AuthService } from './core/auth.service';
 
 interface NavItem {
@@ -24,6 +25,7 @@ interface NavItem {
     MatIconModule,
     MatTooltipModule,
     LogoMarkComponent,
+    StaleDataBannerComponent,
   ],
   templateUrl: './app.html',
   styleUrl: './app.scss',

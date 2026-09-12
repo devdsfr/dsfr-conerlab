@@ -111,13 +111,49 @@ func (h *SyncHandler) Progress(c *gin.Context) {
 // @Tags sync
 // @Router /api/v1/sync/status [get]
 func (h *SyncHandler) Status(c *gin.Context) {
-	last, err := h.runs.LastRun(c.Request.Context())
+	ctx := c.Request.Context()
+
+	last, err := h.runs.LastRun(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"last_run": last})
+
+	// A partir daqui é o que alimenta o aviso de dado desatualizado na interface.
+	// Nenhuma dessas consultas pode derrubar o endpoint: se falharem, a tela
+	// mostra "última sincronização" como sempre mostrou e o aviso simplesmente
+	// não aparece.
+	lastOK, _ := h.runs.LastSuccessfulRun(ctx)
+	errMsg, errAt, _ := h.runs.LastProviderError(ctx)
+
+	resp := gin.H{"last_run": last, "last_successful_run": lastOK}
+
+	if lastOK != nil {
+		horas := time.Since(lastOK.CreatedAt).Hours()
+		resp["hours_since_success"] = int(horas)
+		resp["stale"] = horas >= staleAfterHours
+	} else {
+		// Nunca houve um ciclo bem-sucedido registrado: tratar como desatualizado
+		// é o padrão seguro — o contrário afirmaria saúde sem evidência.
+		resp["hours_since_success"] = nil
+		resp["stale"] = true
+	}
+
+	// Só reporta o erro do provedor se ele for RECENTE. Um erro de duas semanas
+	// atrás, já resolvido, não deve aparecer como causa do problema de hoje.
+	if errMsg != "" && time.Since(errAt) < 7*24*time.Hour {
+		resp["provider_error"] = errMsg
+		resp["provider_error_at"] = errAt
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
+
+// staleAfterHours é o tempo sem uma sincronização BEM-SUCEDIDA a partir do qual
+// a interface avisa. 48h cobre o caso normal (o ciclo roda uma vez por dia, às
+// 08:00) com uma folga de um dia — assim uma falha isolada não gera alarme, mas
+// duas seguidas geram.
+const staleAfterHours = 48
 
 // recordRun nunca falha a requisição por causa de um erro ao salvar o histórico —
 // a sincronização em si já rodou com sucesso, perder o registro não pode virar 500.

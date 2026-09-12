@@ -78,9 +78,9 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   progress = signal<SyncProgress | null>(null);
   private pollTimer?: ReturnType<typeof setInterval>;
 
-  // Download do documento de contexto para IA.
-  contextLoading = signal(false);
-  contextError = signal<string | null>(null);
+  // Download dos dados do próprio usuário (filtros, apostas, banca, alertas).
+  myDataLoading = signal(false);
+  myDataError = signal<string | null>(null);
 
   // Status rápido "API-Football está de pé?" — independente do painel completo de
   // consumo (que pode demorar mais, ver load()), pra decidir antes de clicar em
@@ -327,28 +327,33 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Baixa o documento de contexto gerado pelo backend. Usa blob + link temporário
-   * (em vez de <a href> direto) porque a URL da API varia entre ambientes e o
-   * arquivo precisa chegar com o nome certo, não como aba aberta.
+   * Baixa um JSON com os dados do próprio usuário. Usa blob + link temporário
+   * (em vez de <a href> direto) porque a rota exige o cabeçalho de autenticação,
+   * que um link comum não envia — e porque a URL da API varia entre ambientes.
    */
-  downloadAIContext(): void {
-    this.contextLoading.set(true);
-    this.contextError.set(null);
+  downloadMyData(): void {
+    this.myDataLoading.set(true);
+    this.myDataError.set(null);
 
-    this.api.downloadAIContext().subscribe({
+    this.api.downloadMyData().subscribe({
       next: blob => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'cornerlab-contexto-para-ia.md';
+        const hoje = new Date().toISOString().slice(0, 10);
+        a.download = `cornerlab-meus-dados-${hoje}.json`;
         a.click();
         // Libera a memória do blob assim que o download dispara.
         URL.revokeObjectURL(url);
-        this.contextLoading.set(false);
+        this.myDataLoading.set(false);
       },
-      error: () => {
-        this.contextError.set('Não foi possível baixar o documento agora. Tente de novo.');
-        this.contextLoading.set(false);
+      error: err => {
+        this.myDataError.set(
+          err?.status === 401
+            ? 'Faça login para baixar os seus dados.'
+            : 'Não foi possível baixar os seus dados agora. Tente de novo.',
+        );
+        this.myDataLoading.set(false);
       },
     });
   }

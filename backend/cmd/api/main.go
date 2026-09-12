@@ -145,6 +145,8 @@ func main() {
 		Strategy:        handlers.NewStrategyHandler(strategyRepo, strategyEngine),
 		Discovery:       handlers.NewDiscoveryHandler(strategyRepo, discoveryEngine),
 		AIDocs:          handlers.NewAIDocsHandler(),
+		MyData: handlers.NewMyDataHandler(
+			filterRepo, betRepo, bankrollRepo, alertRepo, strategyHistoryRepo),
 	}
 
 	router := httpDelivery.NewRouter(h, cfg.JWTSecret, userRepo)

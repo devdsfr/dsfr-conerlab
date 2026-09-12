@@ -28,6 +28,7 @@ type Handlers struct {
 	Strategy        *handlers.StrategyHandler
 	Discovery       *handlers.DiscoveryHandler
 	AIDocs          *handlers.AIDocsHandler
+	MyData          *handlers.MyDataHandler
 }
 
 func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *gin.Engine {
@@ -103,11 +104,14 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 		// o ranking — a barra segue atualizando mesmo se o token expirar no meio.
 		api.GET("/discovery/progress", h.Discovery.Progress)
 
-		// Documento de contexto para IA, gerado das constantes reais do motor e
-		// da lista viva de rotas. Público: descreve regras, não expõe dado.
-		if h.AIDocs != nil {
-			api.GET("/docs/contexto.md", h.AIDocs.Download)
-		}
+		// O documento de contexto para IA SAIU DAQUI (era público) e passou para o
+		// grupo autenticado, mais abaixo. Ele descreve os critérios de aprovação do
+		// Discovery, os pesos do DSFR e o espaço de busca — não expõe dado de
+		// usuário, mas é a descrição do método, e não há motivo para deixá-la
+		// aberta na internet.
+		//
+		// Esconder o botão na tela sem mexer na rota seria teatro: a URL continuaria
+		// respondendo para qualquer um.
 
 		// Assinatura Premium (Stripe). /webhook é a única rota pública do grupo — é
 		// chamada pelo Stripe, não pelo navegador do usuário, então não carrega o JWT
@@ -129,6 +133,19 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 			authGroup.DELETE("/bets/:id", h.Bet.Delete)
 
 			authGroup.GET("/strategy-history", h.StrategyHistory.List)
+
+			// Documento de contexto para IA — agora exige login (antes era público).
+			if h.AIDocs != nil {
+				authGroup.GET("/docs/contexto.md", h.AIDocs.Download)
+			}
+
+			// "Baixar meus dados": filtros salvos, apostas, banca, alertas e
+			// histórico. Fica no grupo autenticado e NÃO no premium de propósito —
+			// levar embora o que é seu não é um benefício que se vende, e uma
+			// assinatura vencida não deveria significar perder o que você montou.
+			if h.MyData != nil {
+				authGroup.GET("/exports/meus-dados", h.MyData.Download)
+			}
 
 			// Strategy Engine (Remodelagem F4): CRUD + execucao sob demanda.
 			authGroup.POST("/strategies", h.Strategy.Create)

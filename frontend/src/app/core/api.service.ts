@@ -176,11 +176,24 @@ export class ApiService {
 
   /**
    * Documento de contexto do CornerLab em Markdown, para alimentar outra IA.
-   * É gerado pelo backend a partir das constantes reais do motor e da lista viva
+   * Gerado pelo backend a partir das constantes reais do motor e da lista viva
    * de rotas — por isso vem da API e não de um arquivo estático em /assets.
+   *
+   * A rota EXIGE LOGIN (antes era pública) e não tem mais botão na interface:
+   * ela descreve o método do produto — pesos do DSFR, critérios de aprovação do
+   * Discovery, espaço de busca. Mantida aqui porque continua sendo útil ao dono
+   * do produto.
    */
   downloadAIContext(): Observable<Blob> {
     return this.http.get(`${this.base}/docs/contexto.md`, { responseType: 'blob' });
+  }
+
+  /**
+   * Exporta os dados do próprio usuário: filtros salvos, apostas, gestão de
+   * banca, alertas e histórico de estratégias. Exige login; não exige premium.
+   */
+  downloadMyData(): Observable<Blob> {
+    return this.http.get(`${this.base}/exports/meus-dados`, { responseType: 'blob' });
   }
 
   // Painel "Integrações" — status/consumo das APIs externas

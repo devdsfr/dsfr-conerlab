@@ -23,10 +23,28 @@ type UpdateUsecase struct {
 
 	// report acompanha o andamento para a barra de progresso (ver progress.go).
 	report reporter
+
+	// maxPerCycle é o teto de partidas finalizadas por execução. Ver
+	// defaultMaxPerCycle e WithMaxPerCycle.
+	maxPerCycle int
 }
 
 func NewUpdateUsecase(provider statsprovider.StatisticsProvider, repo *postgres.StatSyncRepo, incidents *postgres.ProviderIncidentRepo) *UpdateUsecase {
-	return &UpdateUsecase{provider: provider, repo: repo, incidents: incidents, report: noopReporter{}}
+	return &UpdateUsecase{
+		provider: provider, repo: repo, incidents: incidents,
+		report: noopReporter{}, maxPerCycle: defaultMaxPerCycle,
+	}
+}
+
+// WithMaxPerCycle ajusta quantas partidas o ciclo finaliza, para acompanhar a
+// frequência com que o worker é disparado. Valor <= 0 mantém o padrão.
+func (u *UpdateUsecase) WithMaxPerCycle(n int) *UpdateUsecase {
+	if n <= 0 {
+		return u
+	}
+	clone := *u
+	clone.maxPerCycle = n
+	return &clone
 }
 
 // WithProgress liga o acompanhamento de andamento a este usecase.
@@ -44,12 +62,20 @@ func (u *UpdateUsecase) WithProgress(r reporter) *UpdateUsecase {
 // data marcada já passou há pelo menos 2h (tempo de jogo + acréscimos + folga).
 const dueBuffer = 2 * time.Hour
 
-// maxPerCycle limita quantas partidas são atualizadas por ciclo, para não estourar a
-// cota do provedor de uma vez só — o restante é pego no próximo ciclo. Combinado com o
-// ORDER BY match_date DESC (ver ListDueForUpdate), os jogos mais recentes são sempre
-// finalizados primeiro, então esse teto não atrasa o que o usuário realmente olha; ele
-// só espalha ao longo dos ciclos a limpeza da fila histórica de jogos antigos.
-const maxPerCycle = 50
+// defaultMaxPerCycle limita quantas partidas são atualizadas por ciclo, para não
+// estourar a cota do provedor de uma vez só — o restante é pego no próximo ciclo.
+// Combinado com o ORDER BY match_date DESC (ver ListDueForUpdate), os jogos mais
+// recentes são sempre finalizados primeiro, então esse teto não atrasa o que o
+// usuário realmente olha; ele só espalha ao longo dos ciclos a limpeza da fila
+// histórica de jogos antigos.
+//
+// ATENÇÃO ao trocar a frequência do ciclo: este número e o intervalo entre
+// execuções são a mesma decisão vista de dois ângulos. 50 nasceu de um ciclo a
+// cada 15 minutos (≈4.800 partidas/dia). Com UM ciclo por dia, 50 passa a ser o
+// teto do dia inteiro — e 12 ligas somam mais que isso num fim de semana, então
+// a fila de jogos sem resultado cresceria para sempre. Quem roda uma vez por dia
+// precisa subir SYNC_MAX_PER_CYCLE junto.
+const defaultMaxPerCycle = 50
 
 type UpdateResult struct {
 	Checked   int
@@ -70,7 +96,7 @@ func (u *UpdateUsecase) Run(ctx context.Context) (UpdateResult, error) {
 		return result, nil
 	}
 
-	due, err := u.repo.ListDueForUpdate(ctx, dueBuffer, maxPerCycle)
+	due, err := u.repo.ListDueForUpdate(ctx, dueBuffer, u.maxPerCycle)
 	if err != nil {
 		return result, fmt.Errorf("erro ao listar partidas pendentes: %w", err)
 	}

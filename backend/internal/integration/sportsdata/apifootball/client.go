@@ -31,8 +31,10 @@ const baseURL = "https://v3.football.api-sports.io"
 // "status 429 para /fixtures". 6,5s entre chamadas mantém o ritmo em ~9 por
 // minuto, abaixo do teto de 10/min do plano gratuito.
 //
-// Se um dia o plano for atualizado, basta reduzir esta constante — nenhum outro
-// ponto do código precisa mudar.
+// É o PADRÃO, não um valor fixo: quem tem plano pago passa o teto do plano em
+// WithRateLimitPerMinute e o intervalo é recalculado. O padrão continua sendo o
+// do Free porque errar para o lado lento custa tempo; errar para o rápido pode
+// levar a chave a ser bloqueada pelo firewall da API.
 const minRequestInterval = 6500 * time.Millisecond
 
 // maxRetriesOn429 define quantas vezes uma chamada é repetida quando a API
@@ -53,6 +55,10 @@ type Client struct {
 	throttle sync.Mutex
 	lastCall time.Time
 
+	// minInterval é o espaçamento efetivo entre chamadas. Vem de
+	// WithRateLimitPerMinute; sem ele, minRequestInterval (ritmo do plano Free).
+	minInterval time.Duration
+
 	// baseURLOverride existe só para os testes apontarem o cliente para um
 	// servidor local. Vazio em produção — ver base().
 	baseURLOverride string
@@ -65,10 +71,44 @@ func (c *Client) base() string {
 	return baseURL
 }
 
+// Option ajusta o cliente na construção. Existe como variádico para que os
+// chamadores que não precisam configurar nada continuem chamando New(chave, rec).
+type Option func(*Client)
+
+// WithRateLimitPerMinute ajusta o espaçamento entre chamadas ao teto por minuto
+// do plano CONTRATADO (Free 10 · Pro 300 · Ultra 450 · Mega 900).
+//
+// Sem isto, o cliente fica travado no ritmo do plano gratuito — 6,5s entre
+// chamadas, ~9 por minuto. Num plano pago isso significa pagar por 300/min e
+// continuar andando a 9/min: um ciclo de 600 chamadas levaria 65 minutos em vez
+// de 2.
+//
+// O valor informado é reduzido em 10% de propósito. O teto da API é rígido e
+// punitivo (a documentação avisa que excesso pode levar a bloqueio pelo
+// firewall), então vale gastar um pouco de margem para nunca encostar nele.
+func WithRateLimitPerMinute(perMinute int) Option {
+	return func(c *Client) {
+		if perMinute <= 0 {
+			return // valor inválido: mantém o padrão seguro
+		}
+		safe := float64(perMinute) * 0.9
+		c.minInterval = time.Duration(float64(time.Minute) / safe)
+	}
+}
+
 // New cria o cliente. recorder pode ser nil (nenhum uso é registrado) ou um
 // usagelog.Recorder (ex: internal/repository/postgres.UsageRepo).
-func New(apiKey string, recorder usagelog.Recorder) *Client {
-	return &Client{apiKey: apiKey, httpClient: &http.Client{Timeout: 20 * time.Second}, recorder: recorder}
+func New(apiKey string, recorder usagelog.Recorder, opts ...Option) *Client {
+	c := &Client{
+		apiKey:      apiKey,
+		httpClient:  &http.Client{Timeout: 20 * time.Second},
+		recorder:    recorder,
+		minInterval: minRequestInterval,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // wait bloqueia até que o intervalo mínimo desde a última chamada tenha passado.
@@ -78,9 +118,9 @@ func (c *Client) wait(ctx context.Context) error {
 	c.throttle.Lock()
 	defer c.throttle.Unlock()
 
-	if elapsed := time.Since(c.lastCall); !c.lastCall.IsZero() && elapsed < minRequestInterval {
+	if elapsed := time.Since(c.lastCall); !c.lastCall.IsZero() && elapsed < c.minInterval {
 		select {
-		case <-time.After(minRequestInterval - elapsed):
+		case <-time.After(c.minInterval - elapsed):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -115,7 +155,7 @@ func (c *Client) doGet(ctx context.Context, path string, query map[string]string
 		return nil, ErrNotConfigured
 	}
 
-	backoff := minRequestInterval
+	backoff := c.minInterval
 	var lastErr error
 
 	// Tentativa 0 é a chamada normal; as seguintes só acontecem em caso de 429.

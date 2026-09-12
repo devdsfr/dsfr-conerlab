@@ -81,14 +81,18 @@ func main() {
 	incidentRepo := postgres.NewProviderIncidentRepo(pool)
 	syncRunRepo := postgres.NewSyncRunRepo(pool)
 
-	provider, err := buildProvider(cfg.StatisticsProvider, cfg.APIFootballKey, usageRepo)
+	provider, err := buildProvider(cfg.StatisticsProvider, cfg.APIFootballKey,
+		cfg.APIFootballRateLimitPerMin, usageRepo)
 	if err != nil {
 		appLog.Error("falha ao configurar provedor de estatísticas", "error", err)
 		os.Exit(1)
 	}
 
 	discoveryUC := statsync.NewDiscoveryUsecase(provider, statSyncRepo, incidentRepo)
-	updateUC := statsync.NewUpdateUsecase(provider, statSyncRepo, incidentRepo)
+	// O teto por ciclo acompanha a frequência do disparo: com um ciclo por dia,
+	// 50 partidas não dão conta de um fim de semana (ver SYNC_MAX_PER_CYCLE).
+	updateUC := statsync.NewUpdateUsecase(provider, statSyncRepo, incidentRepo).
+		WithMaxPerCycle(cfg.SyncMaxPerCycle)
 	healthUC := statsync.NewHealthCheckUsecase(provider, incidentRepo)
 
 	// Analytics Worker (Remodelagem F3, doc 15): pré-calcula team_metrics após
@@ -372,13 +376,16 @@ func recoverAndLog(cycle string) {
 // STATISTICS_PROVIDER. "sofascore" já é aceito aqui (a interface está pronta), mas
 // hoje devolve sempre ErrNotImplemented — ver comentário de pacote em
 // internal/integration/statsprovider/sofascore/client.go sobre o motivo.
-func buildProvider(name, apiFootballKey string, recorder usagelog.Recorder) (statsprovider.StatisticsProvider, error) {
+//
+// ratePerMin é o teto de requisições por minuto do plano CONTRATADO na
+// API-Football — sem ele o cliente anda no ritmo do plano gratuito (ver
+// apifootball.WithRateLimitPerMinute).
+func buildProvider(name, apiFootballKey string, ratePerMin int, recorder usagelog.Recorder) (statsprovider.StatisticsProvider, error) {
 	switch name {
 	case "sofascore":
 		return sofascore.New(), nil
-	case "api_football", "":
-		return apifootball.New(apiFootballKey, recorder), nil
 	default:
-		return apifootball.New(apiFootballKey, recorder), nil
+		return apifootball.New(apiFootballKey, recorder,
+			apifootball.WithRateLimitPerMinute(ratePerMin)), nil
 	}
 }

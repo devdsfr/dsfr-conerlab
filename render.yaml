@@ -63,22 +63,35 @@ cronJobs:
   # Integrações.
   #
   # Por que uma vez por dia e não de hora em hora:
-  #  1. O plano gratuito da API-Football tem cota diária E limite por minuto. Rodar
-  #     de hora em hora queimava a cota e devolvia 429 (ver o throttle em
-  #     internal/integration/sportsdata/apifootball/client.go).
+  #  1. Custo de API. A cota é diária; concentrar tudo num disparo torna o consumo
+  #     previsível e cabe folgado no plano Pro (ver a conta abaixo).
   #  2. Jogo de futebol não muda de placar a cada hora. Um ciclo diário, depois que
-  #     as partidas da noite terminaram, já deixa o banco em dia.
+  #     as partidas da véspera terminaram, já deixa o banco em dia.
   #  3. Menos execução = menos custo de cron no Render.
   #
-  # 06:00 UTC = 03:00 em Brasília: horário em que qualquer jogo da véspera
-  # (inclusive os das 21h45) já terminou e teve estatística publicada.
+  # 11:00 UTC = 08:00 em Brasília. Todo jogo da véspera (inclusive os das 21h45)
+  # já terminou e teve estatística publicada com folga.
+  #
+  # ORÇAMENTO DE REQUISIÇÕES POR DISPARO — precisa fechar com o plano contratado:
+  #
+  #   health check .................................   1
+  #   descoberta: 1 por liga × 12 ligas ............  12
+  #   atualização: até 2 por partida × 300 ......... 600   (SYNC_MAX_PER_CYCLE)
+  #                                                  ----
+  #   pico por dia .................................. 613
+  #
+  #   Plano Free .....   100/dia  -> NÃO CABE (e não dá acesso à temporada atual)
+  #   Plano Pro ...... 7.500/dia  -> usa 8% da cota
+  #
+  # Se um dia entrarem mais ligas ou a coleta de odds reais, é esta conta que
+  # precisa ser refeita — não o palpite.
   # ---------------------------------------------------------------------------
   - type: cron
     name: cornerlab-worker
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    schedule: "0 6 * * *" # todo dia às 06:00 UTC = 03:00 BRT
+    schedule: "0 11 * * *" # todo dia às 11:00 UTC = 08:00 BRT
     dockerCommand: /app/worker
     envVars:
       - key: ENVIRONMENT
@@ -91,6 +104,23 @@ cronJobs:
       # uma execução por dia.
       - key: DISCOVERY_RUN
         value: "true"
+
+      # --- Dimensionamento: os dois valores abaixo ASSUMEM O PLANO PRO --------
+      #
+      # Teto de requisições por minuto do plano contratado. O cliente deriva daqui
+      # o espaçamento entre chamadas.
+      #   Free 10 · Pro 300 · Ultra 450 · Mega 900
+      # Deixar 300 sem ter o plano Pro faz a API responder 429 e, em excesso,
+      # pode levar a chave a ser bloqueada pelo firewall dela.
+      - key: API_FOOTBALL_RATE_LIMIT_PER_MIN
+        value: "300"
+      #
+      # Partidas finalizadas por ciclo. Com UM ciclo por dia, este número é o teto
+      # do dia inteiro: 12 ligas somam bem mais que 50 jogos num fim de semana, e
+      # 300 dá margem para limpar a fila acumulada.
+      - key: SYNC_MAX_PER_CYCLE
+        value: "300"
+
       - key: DATABASE_URL
         sync: false
       - key: API_FOOTBALL_KEY

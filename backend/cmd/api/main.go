@@ -98,7 +98,10 @@ func main() {
 	// Clientes de integração externa — cada chamada real fica registrada em usageRepo
 	// (internal/usagelog), alimentando o painel de diagnóstico "Integrações".
 	openaiClient := llm.NewOpenAIClient(cfg.OpenAIAPIKey, usageRepo)
-	apiFootballClient := apifootball.New(cfg.APIFootballKey, usageRepo)
+	// O mesmo teto de ritmo do worker: o botão "Sincronizar agora" usa os mesmos
+	// usecases e não pode andar mais rápido que o plano contratado.
+	apiFootballClient := apifootball.New(cfg.APIFootballKey, usageRepo,
+		apifootball.WithRateLimitPerMinute(cfg.APIFootballRateLimitPerMin))
 	sportMonksClient := sportmonks.New(cfg.SportMonksKey, usageRepo)
 
 	// Módulo de Sincronização de Dados — os mesmos usecases que o Render Cron Job
@@ -108,7 +111,8 @@ func main() {
 	providerIncidentRepo := postgres.NewProviderIncidentRepo(pool)
 	syncRunRepo := postgres.NewSyncRunRepo(pool)
 	discoverySyncUC := statsync.NewDiscoveryUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
-	updateSyncUC := statsync.NewUpdateUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
+	updateSyncUC := statsync.NewUpdateUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo).
+		WithMaxPerCycle(cfg.SyncMaxPerCycle)
 
 	explainUC := intelligence.NewExplainUsecase(openaiClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
 	diagnosticsUC := diagnostics.New(

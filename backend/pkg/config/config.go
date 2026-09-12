@@ -34,6 +34,31 @@ type Config struct {
 	// internal/integration/statsprovider/sofascore).
 	StatisticsProvider string
 
+	// --- Dimensionamento do ciclo de sincronização -------------------------
+	//
+	// Estes dois números precisam ser lidos JUNTOS, e junto com a frequência do
+	// cron. O ciclo roda uma vez por dia (ver render.yaml), então tudo o que não
+	// couber num ciclo só é adiado por 24 horas.
+	//
+	// APIFootballRateLimitPerMin é o teto de requisições POR MINUTO do plano
+	// contratado. O cliente deriva daqui o espaçamento entre chamadas. Padrão 10
+	// = plano Free, que é o valor seguro: subir isso sem ter o plano correspondente
+	// faz a API responder 429 e, se o excesso for grande, o firewall dela pode
+	// bloquear a chave.
+	//
+	//	Free 10 · Pro 300 · Ultra 450 · Mega 900
+	//
+	// SyncMaxPerCycle é quantas partidas o Worker de Atualização finaliza por
+	// ciclo. Cada partida custa até 2 requisições (lookup + estatísticas).
+	//
+	// O padrão 50 vem de quando o ciclo rodava a cada 15 minutos — 50 por ciclo
+	// dava ~4.800 por dia. Com UM ciclo diário, 50 vira o teto do DIA inteiro, e
+	// isso não cobre um fim de semana cheio (12 ligas somam bem mais que 50 jogos
+	// num sábado). Quem roda uma vez por dia precisa subir este número, senão a
+	// fila de partidas sem resultado só cresce.
+	APIFootballRateLimitPerMin int
+	SyncMaxPerCycle            int
+
 	// TTL padrão do cache de cálculos do módulo de Inteligência Estatística.
 	// Regra do documento de requisitos: "atualização automática diária".
 	IntelligenceCacheTTL time.Duration
@@ -94,6 +119,11 @@ func Load() Config {
 
 		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 		EmailFrom:    getEnv("EMAIL_FROM", "CornerLab <onboarding@resend.dev>"),
+
+		// Padrões conservadores de propósito: são os do plano Free. Quem tem plano
+		// pago sobe os dois no ambiente (ver render.yaml).
+		APIFootballRateLimitPerMin: getEnvInt("API_FOOTBALL_RATE_LIMIT_PER_MIN", 10),
+		SyncMaxPerCycle:            getEnvInt("SYNC_MAX_PER_CYCLE", 50),
 	}
 }
 

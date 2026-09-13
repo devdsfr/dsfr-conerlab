@@ -31,9 +31,13 @@
         </button>
       </div>
       <div class="text-xs text-slate-400 mt-1">
-        <!-- Duas linhas, e a distinção entre elas é o ponto: "tentativa" não é
-             "sincronização". Antes só existia a primeira, e ela dizia
-             "Última sincronização: hoje" com o banco seis semanas parado. -->
+        <!-- Quatro informações, e a distinção entre elas é o ponto:
+             "tentativa" não é "sincronização", e "manual" não é "automático".
+             Antes existia só a primeira linha, dizendo "Última sincronização:
+             hoje" com o banco seis semanas parado. E mesmo depois de separar
+             tentativa de sucesso, um clique em "Sincronizar agora" ainda
+             mascarava a execução automática morta — por isso as duas linhas
+             por origem. -->
         @if (lastSyncLoading()) {
           Verificando última sincronização…
         } @else if (lastSyncRun(); as run) {
@@ -44,6 +48,49 @@
               <span [class]="syncStale() ? 'text-amber-300' : 'text-emerald-300'">{{ formatLastSync(ok) }}</span>
             } @else {
               <span class="text-amber-300">Nenhum ciclo trouxe dado até agora.</span>
+            }
+          </div>
+
+          <!-- Por origem. É esta a linha que responde "o worker rodou?". -->
+          <div class="mt-2 pt-2 border-t border-slate-700/60 grid gap-1">
+            <div>
+              <span class="text-slate-500">Automático (agendado, 08:00):</span>
+              @if (lastCronRun(); as cron) {
+                <span [class]="falhou(cron) ? 'text-red-400' : (cronStale() ? 'text-amber-300' : 'text-emerald-300')">{{ formatRunShort(cron) }}</span>
+                <span [class]="falhou(cron) ? 'text-red-400' : 'text-slate-500'"> — {{ resumoDoCiclo(cron) }}</span>
+                @if (cron.error_message) {
+                  <div class="text-red-400/80 mt-0.5 ml-1">{{ cron.error_message }}</div>
+                }
+              } @else {
+                <span class="text-red-400">nunca executou</span>
+              }
+            </div>
+            <div>
+              <span class="text-slate-500">Manual (este botão):</span>
+              @if (lastManualRun(); as man) {
+                <span [class]="falhou(man) ? 'text-red-400' : 'text-slate-200'">{{ formatRunShort(man) }}</span>
+                <span [class]="falhou(man) ? 'text-red-400' : 'text-slate-500'"> — {{ resumoDoCiclo(man) }}</span>
+                @if (man.error_message) {
+                  <div class="text-red-400/80 mt-0.5 ml-1">{{ man.error_message }}</div>
+                }
+              } @else {
+                <span class="text-slate-500">nunca executou</span>
+              }
+            </div>
+
+            <!-- "Nunca rodou" e "está atrasado" têm causas diferentes e por isso
+                 avisos diferentes: o primeiro praticamente só acontece quando o
+                 Cron Job não existe, e nesse caso esperar não resolve nada. -->
+            @if (cronNeverRan()) {
+              <div class="text-amber-300 mt-0.5">
+                A sincronização automática nunca rodou. Enquanto isso, os dados só
+                são atualizados quando alguém clica em "Sincronizar agora".
+              </div>
+            } @else if (cronStale()) {
+              <div class="text-amber-300 mt-0.5">
+                A sincronização automática não roda há mais de um dia — pelo menos um
+                ciclo agendado foi perdido.
+              </div>
             }
           </div>
         } @else {

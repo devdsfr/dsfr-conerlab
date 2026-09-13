@@ -10,6 +10,28 @@
 # Render (~US$1/mês) em vez de um processo 24h (a partir de US$7/mês). Ver o
 # comentário de cabeçalho em backend/cmd/worker/main.go.
 #
+# ============================================================================
+# ESTE ARQUIVO NUNCA FOI APLICADO. LEIA ANTES DE APLICAR.
+#
+# Verificado no painel do Render em 12/09/2026: existem três blueprints na conta
+# (DIZIMAN, dsfr-finance, dsfr-global) e NENHUM do dsfr-conerlab. Ou seja, tudo o
+# que este arquivo descreve é intenção, não estado. Em particular o Cron Job
+# abaixo NÃO EXISTE — nada dispara cmd/worker automaticamente, e toda
+# sincronização que aconteceu até hoje foi alguém clicando em "Sincronizar
+# agora" na tela de Integrações.
+#
+# Os nomes e planos abaixo foram corrigidos para bater com os serviços REAIS
+# (antes diziam "cornerlab-api" e "plan: starter", que não existem — aplicar
+# assim criaria um serviço duplicado e/ou trocaria o plano cobrado).
+#
+# RISCO CONHECIDO AO APLICAR O BLUEPRINT: o Render reconcilia as variáveis de
+# ambiente com o que está declarado aqui. O serviço cornerlab-backend tem hoje
+# variáveis que este arquivo não declarava (ANTHROPIC_API_KEY, DEV_PREMIUM_EMAILS,
+# PORT, REDIS_ADDR, REDIS_PASSWORD, SPORTMONKS_KEY, SPORTS_DATA_PROVIDER,
+# STRIPE_TRIAL_DAYS). Elas foram acrescentadas abaixo justamente para que aplicar
+# o blueprint não as apague. Antes de aplicar, confira a lista contra o painel:
+# qualquer variável que exista lá e não exista aqui corre risco de sumir.
+#
 # COMO APLICAR: no painel do Render, "New +" → "Blueprint" → aponte para este
 # repositório. O Render lê este arquivo e cria/atualiza os serviços. Serviços que já
 # existem e não estão aqui não são apagados.
@@ -17,28 +39,49 @@
 # ATENÇÃO às variáveis marcadas com sync:false — elas NÃO vêm deste arquivo (segredos
 # nunca devem ser versionados). O Render vai pedir o valor de cada uma na primeira
 # aplicação do blueprint; use os mesmos valores que já estão configurados hoje no
-# serviço da API.
+# serviço cornerlab-backend.
+# ============================================================================
 
 services:
-  # API HTTP. Já existe hoje no Render; está declarada aqui para o blueprint ficar
-  # completo e reproduzível.
+  # API HTTP. Já existe hoje no Render com ESTE nome (srv-d9aeajfaqgkc739gouig).
+  # O nome tem que bater exatamente, senão o blueprint cria um serviço novo em vez
+  # de atualizar o que está no ar.
+  #
+  # plan: free é o plano REAL de hoje. Ele hiberna por inatividade — e isso importa
+  # para a sincronização: o ciclo disparado pelo botão "Sincronizar agora" roda em
+  # segundo plano, sem gerar tráfego HTTP de entrada, então a instância pode
+  # hibernar no meio de um ciclo longo. É mais um motivo para a carga pesada morar
+  # no Cron Job, não no botão. Trocar para "starter" aqui muda a COBRANÇA — só
+  # altere de propósito.
   - type: web
-    name: cornerlab-api
+    name: cornerlab-backend
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: PORT
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
         sync: false
       - key: API_FOOTBALL_KEY
         sync: false
+      - key: SPORTMONKS_KEY
+        sync: false
+      - key: SPORTS_DATA_PROVIDER
+        sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: REDIS_ADDR
+        sync: false
+      - key: REDIS_PASSWORD
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
@@ -46,10 +89,38 @@ services:
         sync: false
       - key: STRIPE_PRICE_ID
         sync: false
+      - key: STRIPE_TRIAL_DAYS
+        sync: false
+      - key: DEV_PREMIUM_EMAILS
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: FRONTEND_URL
         value: https://dsfrcornerlab.com.br
+
+      # --- Dimensionamento do botão "Sincronizar agora" -----------------------
+      #
+      # ESTAS TRÊS PRECISAM ESTAR AQUI TAMBÉM, e não só no Cron Job abaixo.
+      # O botão "Sincronizar agora" da tela de Integrações roda DENTRO deste
+      # serviço web, usando os mesmos usecases do worker. Enquanto elas existiam
+      # só no cron, o ciclo manual rodava com os padrões do plano Free: 10
+      # req/min e 50 partidas por ciclo. Foi por isso que a sincronização manual
+      # de 12/09 gravou 3.712 jogos na descoberta e atualizou apenas 50.
+      #
+      # Mantenha os valores iguais aos do Cron Job — são o mesmo plano de API.
+      # (Já configuradas à mão no painel em 12/09/2026.)
+      - key: API_FOOTBALL_RATE_LIMIT_PER_MIN
+        value: "300"
+      - key: SYNC_MAX_PER_CYCLE
+        value: "300"
+      #
+      # Teto de duração do ciclo manual. Era uma constante de 20 minutos e cortou
+      # pela metade a recuperação do acúmulo de seis semanas ("20min 0s" +
+      # context deadline exceeded). Em operação normal o ciclo termina em poucos
+      # minutos e este teto nunca é atingido; ele só existe para não deixar uma
+      # goroutine presa se o provedor pendurar a conexão.
+      - key: SYNC_TIMEOUT_MINUTES
+        value: "60"
 
 cronJobs:
   # ---------------------------------------------------------------------------
@@ -85,12 +156,20 @@ cronJobs:
   #
   # Se um dia entrarem mais ligas ou a coleta de odds reais, é esta conta que
   # precisa ser refeita — não o palpite.
+  #
+  # CRIADO À MÃO NO PAINEL em 12/09/2026: crn-dair0e95efls73ek3080, plano
+  # 0.5 CPU / 512 MB a US$ 0,00016/min (~US$ 0,15/mês para um ciclo diário).
+  # Os campos abaixo descrevem exatamente o que foi configurado lá.
+  #
+  # dockerCommand é OBRIGATÓRIO: o Dockerfile termina com CMD ["/app/api"], ou
+  # seja, sem sobrescrever o comando o cron subiria o servidor HTTP — que nunca
+  # encerra — em vez do worker.
   # ---------------------------------------------------------------------------
   - type: cron
     name: cornerlab-worker
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
     schedule: "0 11 * * *" # todo dia às 11:00 UTC = 08:00 BRT
     dockerCommand: /app/worker
     envVars:

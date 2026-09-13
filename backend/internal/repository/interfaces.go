@@ -191,6 +191,17 @@ type SyncRunRepository interface {
 	// parado porque a API recusava as chamadas devolvendo HTTP 200.
 	LastSuccessfulRun(ctx context.Context) (*domain.SyncRun, error)
 
+	// LastRunBySource retorna o último ciclo disparado por uma origem específica
+	// ("cron" para o Render Cron Job, "manual" para o botão da tela). nil quando
+	// aquela origem nunca rodou.
+	//
+	// Por que não basta LastRun: ele devolve o ciclo mais recente de QUALQUER
+	// origem, então um clique no botão "Sincronizar agora" mascara por completo o
+	// fato de a execução automática estar morta. Foi exatamente o que aconteceu —
+	// o Cron Job nunca existiu no Render, e a tela, mostrando só o ciclo manual
+	// mais recente, não tinha como revelar isso.
+	LastRunBySource(ctx context.Context, triggeredBy string) (*domain.SyncRun, error)
+
 	// LastProviderError devolve a mensagem do erro mais recente do provedor e
 	// quando ocorreu, para a interface poder dizer POR QUE a sincronização está
 	// parada. String vazia e tempo zero quando não há erro registrado.

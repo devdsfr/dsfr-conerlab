@@ -617,6 +617,17 @@ export interface SyncRun {
   errors: number;
   duration_ms: number;
   created_at: string;
+
+  /**
+   * 'success' = o ciclo completou as duas fases (pode ter trazido zero dado).
+   * 'failed'  = o ciclo foi interrompido; error_message diz por quê.
+   *
+   * Um ciclo interrompido antes não deixava registro nenhum, então a tela seguia
+   * anunciando a sincronização anterior como a mais recente — o sistema parecia
+   * mais saudável justamente por ter falhado.
+   */
+  status: string;
+  error_message?: string;
 }
 
 export interface SyncStatusResponse {
@@ -638,6 +649,31 @@ export interface SyncStatusResponse {
 
   /** true quando passou do limite (48h) ou nunca houve sincronização bem-sucedida. */
   stale: boolean;
+
+  /**
+   * Último ciclo AUTOMÁTICO (Render Cron Job) e último ciclo MANUAL (botão
+   * "Sincronizar agora"), separados.
+   *
+   * Sem essa separação a tela não consegue responder "o worker rodou?": ela
+   * mostrava o ciclo mais recente de qualquer origem, então um clique manual
+   * deixava tudo com cara de saudável. Foi assim que o fato de o Cron Job NUNCA
+   * ter sido criado no Render passou despercebido.
+   */
+  last_cron_run: SyncRun | null;
+  last_manual_run: SyncRun | null;
+
+  /** Horas desde o último ciclo automático. null = nunca rodou. */
+  hours_since_cron: number | null;
+
+  /** true quando o ciclo automático passou de 36h ou nunca rodou. */
+  cron_stale: boolean;
+
+  /**
+   * true quando NENHUM ciclo automático foi registrado. Diferente de
+   * cron_stale sozinho: "nunca rodou" quase sempre significa Cron Job
+   * inexistente ou mal configurado, e esperar não resolve.
+   */
+  cron_never_ran?: boolean;
 
   /** Mensagem do erro mais recente do provedor, quando houver um nos últimos 7 dias. */
   provider_error?: string;

@@ -100,6 +100,15 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
   lastSuccessfulRun = signal<SyncRun | null>(null);
   syncStale = signal(false);
 
+  // Ciclo AUTOMÁTICO (Render Cron Job) separado do manual. Esta é a linha que
+  // responde "o worker rodou?" — pergunta que as anteriores não respondem,
+  // porque elas olham o ciclo mais recente de qualquer origem e um clique em
+  // "Sincronizar agora" basta para deixá-las verdes.
+  lastCronRun = signal<SyncRun | null>(null);
+  lastManualRun = signal<SyncRun | null>(null);
+  cronStale = signal(false);
+  cronNeverRan = signal(false);
+
   constructor(private api: ApiService, public auth: AuthService) {}
 
   ngOnInit(): void {
@@ -128,6 +137,10 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
         this.lastSyncRun.set(res.last_run);
         this.lastSuccessfulRun.set(res.last_successful_run);
         this.syncStale.set(res.stale);
+        this.lastCronRun.set(res.last_cron_run);
+        this.lastManualRun.set(res.last_manual_run);
+        this.cronStale.set(res.cron_stale);
+        this.cronNeverRan.set(res.cron_never_ran === true);
         this.lastSyncLoading.set(false);
       },
       error: () => this.lastSyncLoading.set(false),
@@ -143,6 +156,37 @@ export class IntegrationsComponent implements OnInit, OnDestroy {
     const origem = run.triggered_by === 'cron' ? 'automática' : 'manual';
     const duracao = this.formatDuration(run.duration_ms);
     return `${dd}/${mm} ${hh}:${min} (${origem}, durou ${duracao})`;
+  }
+
+  // Mesma informação de formatLastSync SEM a origem entre parênteses, para as
+  // linhas que já dizem a origem no rótulo ("Automático:" / "Manual:") — repetir
+  // viraria "Automático: 13/09 08:00 (automática, durou 4min)".
+  formatRunShort(run: SyncRun): string {
+    const d = new Date(run.created_at);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm} ${hh}:${min} · ${this.formatDuration(run.duration_ms)}`;
+  }
+
+  // Resumo do que o ciclo produziu. Sem isto, "rodou" e "trouxe dado" ficam
+  // indistinguíveis na tela — que é precisamente a confusão que deixou seis
+  // semanas de banco parado passarem como saudáveis.
+  resumoDoCiclo(run: SyncRun): string {
+    if (run.status === 'failed') {
+      // Os números parciais continuam valendo: "interrompido depois de gravar
+      // 3.712 jogos" e "interrompido sem fazer nada" são diagnósticos diferentes.
+      const parcial = `${run.fixtures_upserted} jogos novos, ${run.matches_finalized} finalizados`;
+      return `INTERROMPIDO — ${parcial}`;
+    }
+    const partes = [`${run.fixtures_upserted} jogos novos`, `${run.matches_finalized} finalizados`];
+    if (run.errors > 0) partes.push(`${run.errors} erros`);
+    return partes.join(', ');
+  }
+
+  falhou(run: SyncRun | null): boolean {
+    return run?.status === 'failed';
   }
 
   // Duração do ciclo completo (descoberta + atualização) — pedido do usuário para

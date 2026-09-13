@@ -38,6 +38,14 @@ func main() {
 	slog.SetDefault(appLog)
 	devaccess.Configure(cfg.DevPremiumEmails)
 
+	// Mesma proteção do worker: em produção, configuração faltando falha aqui
+	// nomeando a variável, em vez de virar um "connection refused" em localhost
+	// três passos adiante — ver config.Validate.
+	if err := cfg.Validate(); err != nil {
+		appLog.Error("API não vai subir", "error", err)
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
 	pool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -123,6 +131,10 @@ func main() {
 	discoverySyncUC := statsync.NewDiscoveryUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo)
 	updateSyncUC := statsync.NewUpdateUsecase(apiFootballClient, statSyncRepo, providerIncidentRepo).
 		WithMaxPerCycle(cfg.SyncMaxPerCycle)
+	// Teto de duração do ciclo manual. Precisa ser configurável porque o custo de um
+	// ciclo depende de quanto atraso há para recuperar — ver o comentário de
+	// syncTimeout em internal/delivery/http/handlers/sync_handler.go.
+	handlers.SetSyncTimeoutMinutes(cfg.SyncTimeoutMinutes)
 
 	explainUC := intelligence.NewExplainUsecase(openaiClient, consistencyUC, trendUC, stabilityUC, scoreUC, opponentUC)
 	diagnosticsUC := diagnostics.New(

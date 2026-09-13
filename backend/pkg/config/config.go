@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -58,6 +59,12 @@ type Config struct {
 	// fila de partidas sem resultado só cresce.
 	APIFootballRateLimitPerMin int
 	SyncMaxPerCycle            int
+
+	// SyncTimeoutMinutes limita o ciclo disparado pelo botão "Sincronizar agora".
+	// Precisa acompanhar o tamanho do atraso a recuperar: um ciclo rotineiro
+	// termina em minutos, mas recuperar semanas de acúmulo pode levar bem mais
+	// (ver o comentário de syncTimeout em handlers/sync_handler.go).
+	SyncTimeoutMinutes int
 
 	// TTL padrão do cache de cálculos do módulo de Inteligência Estatística.
 	// Regra do documento de requisitos: "atualização automática diária".
@@ -124,7 +131,48 @@ func Load() Config {
 		// pago sobe os dois no ambiente (ver render.yaml).
 		APIFootballRateLimitPerMin: getEnvInt("API_FOOTBALL_RATE_LIMIT_PER_MIN", 10),
 		SyncMaxPerCycle:            getEnvInt("SYNC_MAX_PER_CYCLE", 50),
+		SyncTimeoutMinutes:         getEnvInt("SYNC_TIMEOUT_MINUTES", 60),
 	}
+}
+
+// Validate recusa uma configuração que só funcionaria em desenvolvimento.
+//
+// POR QUE ISTO EXISTE — caso real, 13/09/2026, primeira execução do Cron Job:
+//
+//	{"level":"WARN","msg":"postgres ainda não respondeu, tentando de novo",
+//	 "erro":"failed to connect to `user=cornerlab database=cornerlab`:
+//	         127.0.0.1:5432 (localhost): connect: connection refused"}
+//	❌ Your cronjob failed because of an error: Exited with status 1
+//
+// O worker não estava tentando falar com o Neon: estava tentando falar com um
+// Postgres local que não existe naquele contêiner. DATABASE_URL chegou vazia e o
+// getEnv abaixo devolveu silenciosamente o padrão de desenvolvimento.
+//
+// O erro resultante descreve um SINTOMA a três passos da causa — quem lê
+// "connection refused em 127.0.0.1" investiga rede, firewall, Neon fora do ar.
+// A causa era uma variável de ambiente faltando, e nada no log dizia isso.
+//
+// Um padrão de desenvolvimento é conveniência em desenvolvimento e armadilha em
+// produção. Aqui ele deixa de ser aceito quando ENVIRONMENT=production: falta de
+// configuração passa a falhar na inicialização, dizendo qual variável falta.
+func (c Config) Validate() error {
+	if c.Environment != "production" {
+		return nil
+	}
+
+	var faltando []string
+	if c.DatabaseURL == "" || strings.Contains(c.DatabaseURL, "localhost") || strings.Contains(c.DatabaseURL, "127.0.0.1") {
+		faltando = append(faltando, "DATABASE_URL (vazia ou apontando para localhost — em produção o banco é remoto)")
+	}
+	if c.JWTSecret == "" || c.JWTSecret == "change-me-in-production" {
+		faltando = append(faltando, "JWT_SECRET (vazio ou ainda no valor de exemplo)")
+	}
+
+	if len(faltando) > 0 {
+		return fmt.Errorf("configuração inválida para ENVIRONMENT=production: %s",
+			strings.Join(faltando, "; "))
+	}
+	return nil
 }
 
 func getEnv(key, fallback string) string {

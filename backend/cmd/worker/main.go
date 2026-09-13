@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,6 +68,13 @@ func main() {
 	cfg := config.Load()
 	appLog := logger.New(cfg.Environment)
 	slog.SetDefault(appLog)
+
+	// Falhar aqui, dizendo QUAL variável falta, em vez de falhar três passos
+	// adiante com "connection refused em 127.0.0.1" — ver config.Validate.
+	if err := cfg.Validate(); err != nil {
+		appLog.Error("worker não vai rodar", "error", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -136,9 +144,14 @@ func main() {
 	// saudável antes do primeiro ciclo de descoberta/atualização.
 	runHealthCheck(ctx, healthUC)
 	cycleStart := time.Now()
-	discoveryResult := runDiscovery(ctx, discoveryUC)
-	updateResult := runUpdate(ctx, updateUC)
-	recordRun(ctx, syncRunRepo, discoveryResult, updateResult, time.Since(cycleStart).Milliseconds())
+	discoveryResult, errDiscovery := runDiscovery(ctx, discoveryUC)
+	updateResult, errUpdate := runUpdate(ctx, updateUC)
+	// O ciclo é registrado SEMPRE, e agora com a distinção entre "completou" e
+	// "foi interrompido". Antes as duas funções engoliam o erro e devolviam
+	// zero-value, então uma falha virava uma linha de aparência normal com
+	// números zerados — indistinguível de um dia em que não havia nada a fazer.
+	recordRun(ctx, syncRunRepo, discoveryResult, updateResult,
+		time.Since(cycleStart).Milliseconds(), motivoDaFalha(errDiscovery, errUpdate))
 	runAnalytics(ctx, analyticsWorker, analyticsRepo)
 	runStrategies(ctx, strategyEngine, analyticsRepo)
 
@@ -216,10 +229,15 @@ func purgeUsageLog(ctx context.Context, repo *postgres.UsageRepo) {
 // inesperada em um ciclo nunca deve derrubar o processo inteiro (regra do critério de
 // aceite: "falhas do provider não podem quebrar a aplicação"). Os resultados voltam
 // (zero-value em caso de panic/erro) para alimentar recordRun.
-func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) (result statsync.DiscoveryResult) {
+//
+// O ERRO TAMBÉM VOLTA, e não só para o log. Enquanto ele era apenas logado, o
+// registro em sync_runs marcava como bem-sucedido um ciclo que tinha morrido: a
+// linha ficava com números zerados, indistinguível de um dia sem nada a fazer.
+// A tela de Integrações lê sync_runs, não os logs do Render — então a falha era
+// invisível exatamente para quem precisava vê-la.
+func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) (result statsync.DiscoveryResult, err error) {
 	defer recoverAndLog("descoberta")
 	start := time.Now()
-	var err error
 	result, err = uc.Run(ctx)
 	fields := []any{
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -234,10 +252,9 @@ func runDiscovery(ctx context.Context, uc *statsync.DiscoveryUsecase) (result st
 	return
 }
 
-func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) (result statsync.UpdateResult) {
+func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) (result statsync.UpdateResult, err error) {
 	defer recoverAndLog("atualização")
 	start := time.Now()
-	var err error
 	result, err = uc.Run(ctx)
 	fields := []any{
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -252,12 +269,39 @@ func runUpdate(ctx context.Context, uc *statsync.UpdateUsecase) (result statsync
 	return
 }
 
+// motivoDaFalha monta a mensagem gravada em sync_runs.error_message. Devolve
+// string vazia quando as duas fases terminaram — é esse vazio que faz recordRun
+// marcar o ciclo como bem-sucedido.
+//
+// As duas fases são reportadas juntas quando ambas falham, porque saber que a
+// descoberta E a atualização caíram aponta para o provedor ou para a rede, não
+// para um defeito específico de uma delas.
+func motivoDaFalha(errDiscovery, errUpdate error) string {
+	var partes []string
+	if errDiscovery != nil {
+		partes = append(partes, "descoberta: "+errDiscovery.Error())
+	}
+	if errUpdate != nil {
+		partes = append(partes, "atualização: "+errUpdate.Error())
+	}
+	return strings.Join(partes, " | ")
+}
+
 // recordRun grava o histórico desta execução (ver domain.SyncRun) para o painel
 // Integrações mostrar "Última sincronização: ...". Nunca derruba o worker por causa
-// de uma falha ao salvar — a sincronização em si já rodou.
-func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.DiscoveryResult, u statsync.UpdateResult, durationMs int64) {
+// de uma falha ao salvar — o ciclo em si já aconteceu, e perder o registro não
+// pode virar um segundo problema.
+//
+// motivo vazio = ciclo completou; motivo preenchido = ciclo interrompido, e o
+// texto vai para sync_runs.error_message.
+func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.DiscoveryResult, u statsync.UpdateResult, durationMs int64, motivo string) {
+	status := domain.SyncStatusSuccess
+	if motivo != "" {
+		status = domain.SyncStatusFailed
+	}
+
 	entry := &domain.SyncRun{
-		TriggeredBy:      "cron",
+		TriggeredBy:      domain.SyncTriggerCron,
 		Targets:          d.Targets,
 		FixturesFound:    d.FixturesFound,
 		FixturesUpserted: d.FixturesUpserted,
@@ -265,9 +309,17 @@ func recordRun(ctx context.Context, repo *postgres.SyncRunRepo, d statsync.Disco
 		MatchesFinalized: u.Finalized,
 		Errors:           d.Errors + u.Errors,
 		DurationMs:       durationMs,
+		Status:           status,
+		ErrorMessage:     motivo,
 	}
-	if err := repo.AddRun(ctx, entry); err != nil {
-		slog.Error("falha ao registrar histórico de sincronização", "error", err)
+
+	// Contexto próprio: quando o ciclo cai porque ctx expirou, gravar com o mesmo
+	// ctx faria o registro da falha falhar junto — perdendo exatamente a
+	// informação que interessa.
+	ctxReg, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := repo.AddRun(ctxReg, entry); err != nil {
+		slog.Error("falha ao registrar histórico de sincronização", "error", err, "status", status)
 	}
 }
 

@@ -54,7 +54,9 @@
           <!-- Por origem. É esta a linha que responde "o worker rodou?". -->
           <div class="mt-2 pt-2 border-t border-slate-700/60 grid gap-1">
             <div>
-              <span class="text-slate-500">Automático (agendado, 08:00):</span>
+              <!-- &nbsp; explícito: o Angular colapsa a quebra de linha entre o span e o
+                   @if, e o resultado saía grudado ("08:00):nunca executou"). -->
+              <span class="text-slate-500">Automático (agendado, 08:00):&nbsp;</span>
               @if (lastCronRun(); as cron) {
                 <span [class]="falhou(cron) ? 'text-red-400' : (cronStale() ? 'text-amber-300' : 'text-emerald-300')">{{ formatRunShort(cron) }}</span>
                 <span [class]="falhou(cron) ? 'text-red-400' : 'text-slate-500'"> — {{ resumoDoCiclo(cron) }}</span>
@@ -66,7 +68,7 @@
               }
             </div>
             <div>
-              <span class="text-slate-500">Manual (este botão):</span>
+              <span class="text-slate-500">Manual (este botão):&nbsp;</span>
               @if (lastManualRun(); as man) {
                 <span [class]="falhou(man) ? 'text-red-400' : 'text-slate-200'">{{ formatRunShort(man) }}</span>
                 <span [class]="falhou(man) ? 'text-red-400' : 'text-slate-500'"> — {{ resumoDoCiclo(man) }}</span>

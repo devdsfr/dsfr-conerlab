@@ -56,12 +56,42 @@ func TestProducaoRecusaJWTSecretDeExemplo(t *testing.T) {
 	cfg := produção()
 	cfg.JWTSecret = "change-me-in-production"
 
-	err := cfg.Validate()
+	err := cfg.ValidateAPI()
 	if err == nil {
-		t.Fatal("Validate aceitou o JWT_SECRET de exemplo em produção")
+		t.Fatal("ValidateAPI aceitou o JWT_SECRET de exemplo em produção")
 	}
 	if !contémTudo(err.Error(), "JWT_SECRET") {
 		t.Errorf("a mensagem precisa nomear JWT_SECRET, veio: %q", err)
+	}
+}
+
+// REGRESSÃO — incidente de 14/09/2026 11:00 UTC.
+//
+// A primeira versão de Validate exigia JWT_SECRET de todo binário. O Cron Job
+// não tem essa variável (e não deve ter: o worker não emite nem valida token),
+// então morreu na largada com "worker não vai rodar: JWT_SECRET (vazio...)".
+// A proteção contra má configuração virou a própria indisponibilidade.
+//
+// Este teste trava a regra correta: Validate valida o que TODO processo usa.
+func TestWorkerSemJWTSecretEhValido(t *testing.T) {
+	cfg := produção()
+	cfg.JWTSecret = "" // o worker não usa JWT
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate recusou a configuração do worker por causa de JWT_SECRET, "+
+			"que o worker não usa: %v", err)
+	}
+}
+
+// E o outro lado da mesma regra: a API continua exigindo o segredo. Aceitar o
+// valor de exemplo significaria aceitar token forjado por qualquer um que leia
+// o repositório.
+func TestAPISemJWTSecretEhInvalida(t *testing.T) {
+	cfg := produção()
+	cfg.JWTSecret = ""
+
+	if err := cfg.ValidateAPI(); err == nil {
+		t.Fatal("ValidateAPI aceitou JWT_SECRET vazio em produção")
 	}
 }
 
@@ -86,15 +116,15 @@ func TestProducaoBemConfiguradaPassa(t *testing.T) {
 
 // Quando falta mais de uma variável, todas aparecem: descobrir uma por deploy
 // transformaria uma correção em três.
-func TestValidateRelataTodosOsProblemasDeUmaVez(t *testing.T) {
+func TestValidateAPIRelataTodosOsProblemasDeUmaVez(t *testing.T) {
 	cfg := Config{Environment: "production"}
 
-	err := cfg.Validate()
+	err := cfg.ValidateAPI()
 	if err == nil {
-		t.Fatal("Validate aceitou configuração de produção completamente vazia")
+		t.Fatal("ValidateAPI aceitou configuração de produção completamente vazia")
 	}
-	if !contémTudo(err.Error(), "DATABASE_URL", "JWT_SECRET") {
-		t.Errorf("a mensagem deveria citar as duas variáveis, veio: %q", err)
+	if !contémTudo(err.Error(), "DATABASE_URL") {
+		t.Errorf("a mensagem deveria citar DATABASE_URL, veio: %q", err)
 	}
 }
 

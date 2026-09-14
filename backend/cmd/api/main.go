@@ -38,10 +38,10 @@ func main() {
 	slog.SetDefault(appLog)
 	devaccess.Configure(cfg.DevPremiumEmails)
 
-	// Mesma proteção do worker: em produção, configuração faltando falha aqui
-	// nomeando a variável, em vez de virar um "connection refused" em localhost
-	// três passos adiante — ver config.Validate.
-	if err := cfg.Validate(); err != nil {
+	// ValidateAPI, e não Validate: a API é o único binário que assina e verifica
+	// JWT, então é o único que pode exigir JWT_SECRET. Exigir isso de todos
+	// derrubou o Cron Job em 14/09 — ver o comentário em config.Validate.
+	if err := cfg.ValidateAPI(); err != nil {
 		appLog.Error("API não vai subir", "error", err)
 		os.Exit(1)
 	}

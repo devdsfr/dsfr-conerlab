@@ -155,6 +155,29 @@ func Load() Config {
 // Um padrão de desenvolvimento é conveniência em desenvolvimento e armadilha em
 // produção. Aqui ele deixa de ser aceito quando ENVIRONMENT=production: falta de
 // configuração passa a falhar na inicialização, dizendo qual variável falta.
+//
+// ---------------------------------------------------------------------------
+// CORREÇÃO DE 14/09/2026 — esta função derrubou o cron que ela existia para
+// proteger.
+//
+// A primeira versão exigia JWT_SECRET de TODO binário. O worker não emite nem
+// valida token nenhum — JWT é assunto exclusivo da API — e o Cron Job, que não
+// tem essa variável configurada (corretamente), passou a morrer na largada:
+//
+//	{"level":"ERROR","msg":"worker não vai rodar",
+//	 "error":"configuração inválida para ENVIRONMENT=production:
+//	          JWT_SECRET (vazio ou ainda no valor de exemplo)"}
+//
+// A lição: uma verificação de configuração precisa validar o que AQUELE processo
+// usa, não a união de tudo que o repositório usa. Validar demais transforma a
+// proteção em indisponibilidade.
+//
+// Daí a separação abaixo: Validate cobre o que todo binário precisa, e
+// ValidateAPI acrescenta o que só a API precisa.
+// ---------------------------------------------------------------------------
+
+// Validate cobre os requisitos de QUALQUER binário (api, worker, sync, seed):
+// sem banco, nenhum deles faz sentido.
 func (c Config) Validate() error {
 	if c.Environment != "production" {
 		return nil
@@ -164,15 +187,42 @@ func (c Config) Validate() error {
 	if c.DatabaseURL == "" || strings.Contains(c.DatabaseURL, "localhost") || strings.Contains(c.DatabaseURL, "127.0.0.1") {
 		faltando = append(faltando, "DATABASE_URL (vazia ou apontando para localhost — em produção o banco é remoto)")
 	}
+
+	return juntarFaltantes(faltando)
+}
+
+// ValidateAPI é o Validate acrescido do que só o servidor HTTP precisa. Só
+// cmd/api chama isto.
+//
+// JWT_SECRET fica aqui, e não em Validate, porque só a API assina e verifica
+// token. Subir a API com o segredo de exemplo em produção significaria aceitar
+// tokens forjados por qualquer um que leia este repositório — por isso continua
+// sendo erro fatal, mas só onde é de fato usado.
+func (c Config) ValidateAPI() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c.Environment != "production" {
+		return nil
+	}
+
+	var faltando []string
 	if c.JWTSecret == "" || c.JWTSecret == "change-me-in-production" {
 		faltando = append(faltando, "JWT_SECRET (vazio ou ainda no valor de exemplo)")
 	}
 
-	if len(faltando) > 0 {
-		return fmt.Errorf("configuração inválida para ENVIRONMENT=production: %s",
-			strings.Join(faltando, "; "))
+	return juntarFaltantes(faltando)
+}
+
+// juntarFaltantes devolve nil para lista vazia. Todas as pendências saem numa
+// mensagem só: descobrir uma variável por deploy transformaria uma correção em
+// várias.
+func juntarFaltantes(faltando []string) error {
+	if len(faltando) == 0 {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("configuração inválida para ENVIRONMENT=production: %s",
+		strings.Join(faltando, "; "))
 }
 
 func getEnv(key, fallback string) string {

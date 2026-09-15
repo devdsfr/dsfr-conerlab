@@ -19,9 +19,21 @@ func NewDashboardUsecase(matches repository.MatchRepository, teams repository.Te
 
 // DashboardResult representa toda a resposta do Módulo 1 (Dashboard Principal).
 type DashboardResult struct {
-	Team           domain.Team            `json:"team"`
-	SampleSize     int                    `json:"sample_size"`
-	Period         string                 `json:"period"` // descreve o período/quantidade de jogos analisados (exigência: sempre exibir o período)
+	Team       domain.Team `json:"team"`
+	SampleSize int         `json:"sample_size"`
+
+	// Period descreve a amostra REALMENTE analisada, não a pedida.
+	//
+	// Antes era sempre "Últimos {limit} jogos", o que produzia a contradição
+	// "Últimos 20 jogos · amostra de 6 jogos" na mesma linha da tela. Pior: numa
+	// temporada recém-começada isso anunciava vinte jogos de evidência onde
+	// existiam seis.
+	Period string `json:"period"`
+
+	// RequestedLimit é a janela que o usuário pediu (5/10/15/20). Fica separada de
+	// SampleSize justamente para a interface poder dizer "6 dos 20 pedidos" em vez
+	// de escolher entre mentir e esconder.
+	RequestedLimit int                    `json:"requested_limit"`
 	RecentMatches  []domain.TeamMatchView `json:"recent_matches"`
 	CornersFor     StatSummary            `json:"corners_for"`
 	CornersAgainst StatSummary            `json:"corners_against"`
@@ -112,6 +124,26 @@ var ShotFrequencyThresholds = []int{16, 18, 20, 22, 24, 26}
 // torno de 6–14. Faixas inteiras.
 var ShotOnTargetFrequencyThresholds = []int{4, 6, 8, 10, 12}
 
+// describePeriod traduz amostra + janela pedida numa frase que não promete mais
+// evidência do que existe.
+//
+//	0 partidas    -> "Nenhuma partida encontrada"
+//	menos que o pedido -> "Últimos 6 jogos (de 20 pedidos)"
+//	exatamente o pedido -> "Últimos 20 jogos"
+//
+// O caso do meio é o que importa: uma temporada recém-começada tem poucos jogos, e
+// anunciar a janela pedida como se fosse a amostra é afirmar evidência inexistente.
+func describePeriod(sample, requested int) string {
+	switch {
+	case sample == 0:
+		return "Nenhuma partida encontrada"
+	case sample < requested:
+		return fmt.Sprintf("Últimos %d jogos (de %d pedidos)", sample, requested)
+	default:
+		return fmt.Sprintf("Últimos %d jogos", sample)
+	}
+}
+
 func (u *DashboardUsecase) GetDashboard(ctx context.Context, teamID int64, leagueID *int64, seasonID *int64, limit int) (*DashboardResult, error) {
 	if limit <= 0 {
 		limit = 10
@@ -159,7 +191,8 @@ func (u *DashboardUsecase) GetDashboard(ctx context.Context, teamID int64, leagu
 	result := &DashboardResult{
 		Team:           *team,
 		SampleSize:     len(views),
-		Period:         fmt.Sprintf("Últimos %d jogos", limit),
+		Period:         describePeriod(len(views), limit),
+		RequestedLimit: limit,
 		RecentMatches:  views,
 		CornersFor:     Summarize(cornersFor),
 		CornersAgainst: Summarize(cornersAgainst),

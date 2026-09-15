@@ -26,7 +26,7 @@
 
     <mat-form-field appearance="outline" class="w-72" [title]="selectedTeamName()">
       <mat-label>{{ teamsLoading() ? 'Carregando equipes…' : 'Equipe' }}</mat-label>
-      <mat-select [(ngModel)]="selectedTeamId" (selectionChange)="syncQueryParams()" panelClass="cl-select-panel" [disabled]="teamsLoading()">
+      <mat-select [(ngModel)]="selectedTeamId" (selectionChange)="onTeamChange()" panelClass="cl-select-panel" [disabled]="teamsLoading()">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
@@ -36,16 +36,15 @@
       }
     </mat-form-field>
 
-    <mat-button-toggle-group [(ngModel)]="limit" (ngModelChange)="syncQueryParams()">
+    <!-- Não existe mais botão "Analisar". Ele só chamava runDashboard(), ou seja,
+         pedia um clique para LER dado que o worker já calculou e persistiu. Agora
+         qualquer mudança de seleção recarrega sozinha. -->
+    <mat-button-toggle-group [(ngModel)]="limit" (ngModelChange)="onLimitChange()">
       <mat-button-toggle [value]="5">5</mat-button-toggle>
       <mat-button-toggle [value]="10">10</mat-button-toggle>
       <mat-button-toggle [value]="15">15</mat-button-toggle>
       <mat-button-toggle [value]="20">20</mat-button-toggle>
     </mat-button-toggle-group>
-
-    <button mat-flat-button color="primary" (click)="runDashboard()" [disabled]="!selectedTeamId || loading() || leaguesLoading() || teamsLoading()">
-      Analisar
-    </button>
   </div>
 
   @if (loading()) {
@@ -56,9 +55,22 @@
     <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
-  @if (!loading() && !error() && !result()) {
+  <!-- Equipe pedida (link do calendário ou URL) que não joga nesta liga+temporada.
+       Dizer isso é obrigatório: a alternativa anterior era trocar de equipe em
+       silêncio e deixar o usuário lendo números de outro time. -->
+  @if (!loading() && !error() && equipePedidaAusente()) {
+    <div class="cl-card p-6 text-center text-sm text-amber-300">
+      A equipe que você abriu não tem partidas registradas em
+      <strong class="text-slate-200">{{ selectedLeagueName() }}</strong> nesta temporada.
+      <div class="mt-1 text-slate-400">
+        Escolha outra temporada no seletor acima, ou selecione uma das equipes que jogam nesta.
+      </div>
+    </div>
+  }
+
+  @if (!loading() && !error() && !result() && !equipePedidaAusente()) {
     <div class="cl-card p-8 text-center text-slate-400">
-      Escolha campeonato, temporada e equipe acima e clique em <strong class="text-slate-200">Analisar</strong> para ver as estatísticas de escanteios.
+      Escolha campeonato, temporada e equipe acima — as estatísticas carregam sozinhas.
     </div>
   }
 
@@ -68,6 +80,9 @@
         <h2 class="text-lg font-medium">{{ r.team.name }}</h2>
         <span class="text-sm text-slate-400">{{ r.period }} · amostra de {{ r.sample_size }} jogos</span>
       </div>
+      @if (avisoAmostraCurta(); as aviso) {
+        <div class="text-xs text-amber-300 mt-2">{{ aviso }}</div>
+      }
       <!-- Aba de métrica: escanteios ou gols (mesma análise, dados já vêm juntos). -->
       <div class="mt-3">
         <mat-button-toggle-group [value]="metric()" (change)="setMetric($event.value)" hideSingleSelectionIndicator>
@@ -87,9 +102,19 @@
 
     @if (view(); as v) {
     @if (v.noData) {
-      <div class="cl-card p-6 text-center text-sm text-slate-400">
-        Sem dados dessa métrica para os jogos desta amostra. O provedor nem sempre publica esse dado — jogos sincronizados recentemente costumam tê-lo.
-      </div>
+      <!-- Duas ausências diferentes, duas frases diferentes. Nenhuma delas é "0". -->
+      @if (v.semPartidas) {
+        <div class="cl-card p-6 text-center text-sm text-amber-300">
+          Nenhuma partida encontrada para esta combinação de campeonato, temporada e equipe.
+          <div class="mt-1 text-slate-400">
+            Não há estatística a exibir — nem zero. Zero seria um resultado observado; aqui não houve observação.
+          </div>
+        </div>
+      } @else {
+        <div class="cl-card p-6 text-center text-sm text-slate-400">
+          Sem dados dessa métrica para os jogos desta amostra. O provedor nem sempre publica esse dado — jogos sincronizados recentemente costumam tê-lo.
+        </div>
+      }
     } @else {
     @if (v.sampleNote) {
       <div class="text-xs text-slate-500">{{ v.sampleNote }}</div>

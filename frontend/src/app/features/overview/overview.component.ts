@@ -162,7 +162,16 @@ export class OverviewComponent implements OnInit {
 
   // Clicar num time do calendário leva direto pro Dashboard já filtrado naquele
   // campeonato/equipe — o calendário é o ponto de partida, não um beco sem saída.
+  //
+  // season_id VAI JUNTO, e isso não é detalhe. Enquanto só liga e equipe eram
+  // enviadas, o Dashboard adivinhava a temporada (pegava a de maior ano). Quando o
+  // palpite não batia com a partida clicada, a equipe não constava daquela
+  // temporada e a tela caía silenciosamente na primeira equipe da lista: clicar no
+  // Athletic Club abria o Alavés. A temporada é um fato da partida clicada, então
+  // quem a conhece é quem manda.
   openTeamDashboard(m: UpcomingMatch, teamId: number): void {
-    this.router.navigate(['/dashboard'], { queryParams: { league_id: m.league_id, team_id: teamId } });
+    this.router.navigate(['/dashboard'], {
+      queryParams: { league_id: m.league_id, season_id: m.season_id, team_id: teamId },
+    });
   }
 }

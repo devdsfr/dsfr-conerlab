@@ -82,6 +82,11 @@ export class DashboardComponent implements OnInit {
   // com a aparência de travado (vazio, sem feedback) durante o fetch inicial.
   leaguesLoading = signal(true);
   teamsLoading = signal(false);
+
+  /** ID da equipe que veio na URL (ou do calendário) e NÃO tem partidas na
+   * liga+temporada resolvidas. Guardado para a tela poder dizer isso em vez de
+   * trocar de equipe por baixo do pano. */
+  equipePedidaAusente = signal<number | null>(null);
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
 
@@ -208,17 +213,34 @@ export class DashboardComponent implements OnInit {
    * (amostra de 0 jogos). */
   private loadTeams(preferredTeamId?: number): void {
     this.teamsLoading.set(true);
+    this.equipePedidaAusente.set(null);
     this.api.listTeams(this.selectedLeagueId, undefined, this.selectedSeasonId).subscribe({
       next: teams => {
         this.teams.set(teams);
-        if (preferredTeamId !== undefined && teams.some(t => t.id === preferredTeamId)) {
+        this.teamsLoading.set(false);
+
+        const pedidaExiste = preferredTeamId !== undefined && teams.some(t => t.id === preferredTeamId);
+
+        if (pedidaExiste) {
           this.selectedTeamId = preferredTeamId;
+        } else if (preferredTeamId !== undefined) {
+          // A equipe pedida NÃO joga nesta liga+temporada. Trocar em silêncio
+          // pela primeira da lista era o pior desfecho possível: a tela passava a
+          // falar de outra equipe com o nome dela no seletor, e o usuário não
+          // tinha como perceber. Agora não há seleção e a tela diz o que houve.
+          this.selectedTeamId = undefined;
+          this.equipePedidaAusente.set(preferredTeamId);
+          this.result.set(null);
+          this.syncQueryParams();
+          return;
         } else {
           this.selectedTeamId = teams.length ? teams[0].id : undefined;
         }
-        this.teamsLoading.set(false);
 
-        if (preferredTeamId !== undefined && this.selectedTeamId === preferredTeamId) {
+        // Dado já persistido carrega sozinho. Não existe motivo para exigir um
+        // clique só para ler o que o worker já calculou — ver a remoção do botão
+        // "Analisar".
+        if (this.selectedTeamId !== undefined) {
           this.runDashboard();
         } else {
           this.result.set(null);
@@ -227,6 +249,17 @@ export class DashboardComponent implements OnInit {
       },
       error: () => this.teamsLoading.set(false),
     });
+  }
+
+  /** Trocar a equipe ou a janela recarrega na hora. Antes só a URL era atualizada
+   * e a tela continuava mostrando o resultado anterior até alguém clicar em
+   * "Analisar" — o usuário mudava de 10 para 20 jogos e nada acontecia. */
+  onTeamChange(): void {
+    this.runDashboard();
+  }
+
+  onLimitChange(): void {
+    if (this.selectedTeamId !== undefined) this.runDashboard();
   }
 
   /** Chamado ao trocar a Temporada sem trocar o Campeonato — a lista de equipes
@@ -373,12 +406,28 @@ export class DashboardComponent implements OnInit {
       totalLabel: b.totalL,
       freqTitle: `Frequências (total de ${b.noun} acima de N)`,
       trendTitle: `Tendência (total de ${b.noun} por jogo)`,
-      // Métricas nullable: amostra própria. Vazia => aviso "sem dados".
-      noData: b.sample === 0,
+      // noData cobre DOIS casos distintos, e a diferença importa:
+      //
+      //  1. r.sample_size === 0 — nenhuma partida nesta liga/temporada/equipe.
+      //     Antes isto NÃO era tratado para escanteios e gols (sample = null para
+      //     elas), então a tela imprimia média 0, máximo 0, mediana 0 e "0/0 =
+      //     0%" — números que parecem observação e são ausência de observação.
+      //  2. b.sample === 0 — a partida existe, mas o provedor não publicou ESTA
+      //     métrica (impedimentos, chutes).
+      noData: r.sample_size === 0 || b.sample === 0,
+      semPartidas: r.sample_size === 0,
       sampleNote: b.sample !== null && b.sample > 0 && b.sample < r.sample_size
         ? `${METRIC_LABELS[m]}: dado disponível em ${b.sample} de ${r.sample_size} jogos.`
         : '',
     };
+  });
+
+  /** Aviso quando a janela pedida é maior que a amostra existente: "você pediu 20,
+   * existem 6". Sem isto a tela dizia "Últimos 20" sobre seis jogos. */
+  readonly avisoAmostraCurta = computed(() => {
+    const r = this.result();
+    if (!r || r.sample_size === 0 || r.sample_size >= r.requested_limit) return '';
+    return `Você pediu os últimos ${r.requested_limit} jogos, mas só existem ${r.sample_size} com estatística nesta temporada. Todos os números abaixo usam essas ${r.sample_size} partidas.`;
   });
 
   // Rótulo de cada linha de frequência: gols e impedimentos usam linha over/under

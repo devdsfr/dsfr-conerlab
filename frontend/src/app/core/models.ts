@@ -11,6 +11,10 @@ export interface UpcomingMatch {
   match_id: number;
   match_date: string;
   league_id: number;
+  /** Temporada à qual esta partida pertence. Vai junto na navegação para o
+   * Dashboard: sem ela o Dashboard adivinhava a temporada e podia acabar
+   * mostrando outra equipe (ver openTeamDashboard). */
+  season_id: number;
   league_name: string;
   round: number;
   home_team_id: number;
@@ -106,8 +110,12 @@ export interface SplitStats {
 
 export interface DashboardResult {
   team: Team;
+  /** Quantidade de partidas que REALMENTE sustentam os números abaixo. */
   sample_size: number;
+  /** Descrição da amostra real (ver describePeriod no backend). */
   period: string;
+  /** Janela pedida pelo usuário (5/10/15/20) — pode ser maior que sample_size. */
+  requested_limit: number;
   recent_matches: TeamMatchView[];
   corners_for: StatSummary;
   corners_against: StatSummary;

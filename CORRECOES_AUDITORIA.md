@@ -14,11 +14,833 @@ Nenhum problema é iniciado antes do anterior estar registrado aqui.
 
 | ID | Severidade | Prioridade | Status | Data |
 |----|------------|-----------|--------|------|
-| AUD-001 | CRITICAL | P0 | ✅ RESOLVIDO (código) · ⏸ MIGRATION PENDENTE DE APROVAÇÃO | 2026-09-09 |
+| AUD-001 | CRITICAL | P0 | ✅ RESOLVIDO (código + migration 013 aplicada — ver reconciliação de 13/09) | 2026-09-09 |
 | AUD-012 | HIGH | P1 | ✅ RESOLVIDO (junto com AUD-001 — mesma linha de código) | 2026-09-09 |
 | AUD-002 | CRITICAL | P0 | ✅ RESOLVIDO (Catálogo v1.1) | 2026-09-09 |
 | AUD-003 | CRITICAL | P0 | ✅ RESOLVIDO | 2026-09-09 |
-| AUD-004 | CRITICAL | P0 | ✅ RESOLVIDO (eixo removido) · ⏸ MIGRATION 014 PENDENTE | 2026-09-09 |
+| AUD-004 | CRITICAL | P0 | ✅ RESOLVIDO (eixo removido + migration 014 aplicada — ver reconciliação de 13/09) | 2026-09-09 |
+| REV-P0 | CRITICAL | P0 | ✅ RESOLVIDO — 12/12 da Definition of Done com evidência (ver passagem de 15/09) | 2026-09-15 |
+| AUD-009 | HIGH | P1 | ✅ RESOLVIDO como efeito do REV-P0 — `worker_runs` = 6, `team_metrics` = 2.495 | 2026-09-15 |
+
+---
+
+## REV-P0 — Integridade e sincronização dos dados
+
+**Data:** 2026-09-13 · **Origem:** Prompt Mestre de Revisão Funcional, prioridade P0.
+Não é item da auditoria original; cruza com AUD-009 (workers nunca executaram).
+
+### Diagnóstico — quatro causas independentes, não uma
+
+O sintoma único ("dados desatualizados", `context deadline exceeded`) escondia quatro
+defeitos distintos. Cada um sozinho já bastaria para parar o pipeline.
+
+**Causa 1 — o Cron Job nunca existiu.** Verificado no painel do Render em 12/09: três
+blueprints na conta (DIZIMAN, dsfr-finance, dsfr-global) e nenhum do dsfr-conerlab; nenhum
+serviço do tipo cron. As 17 linhas de `sync_runs` têm `triggered_by = 'manual'`, sem
+exceção. Todo dado que existe no banco foi produzido por alguém clicando num botão.
+→ **Corrigido:** cron `cornerlab-worker` criado (crn-dair0e95efls73ek3080), 11:00 UTC.
+
+**Causa 2 — o serviço web rodava com os limites do plano gratuito.**
+`API_FOOTBALL_RATE_LIMIT_PER_MIN` e `SYNC_MAX_PER_CYCLE` existiam apenas no bloco do cron
+do `render.yaml` — que nunca foi aplicado. O botão "Sincronizar agora" roda dentro do
+serviço web e usava os padrões: 6,5 s entre chamadas e 50 partidas por ciclo.
+
+Evidência em `api_usage_log` (média de `duration_ms` por endpoint):
+
+| momento | fixtures.lookup | fixtures.statistics | resultado |
+|---|---|---|---|
+| 12/09 17h | 6.577 ms | 6.637 ms | 34 partidas, morreu em `context deadline exceeded` |
+| 13/09 10h | 249 ms | 270 ms | 294 partidas, 0 erros, ciclo completo em 15min18s |
+
+A latência real do provedor é ~250 ms. Os 6,5 s eram estrangulamento nosso, deliberado,
+correto para o plano Free e errado para o plano Pro contratado.
+→ **Corrigido:** as três variáveis configuradas no serviço `cornerlab-backend`.
+
+> **Nota sobre o timeout.** Em 12/09 eu subi `syncTimeout` de 20 para 60 minutos
+> configuráveis. A evidência acima mostra que **o timeout não era o fator limitante**: o
+> ciclo saudável leva 15 min e caberia nos 20. O que matava o ciclo era o estrangulamento
+> de 6,5 s. Mantive os 60 min como margem, mas registro que essa alteração **não foi a
+> correção** — atribuí-la como tal seria transformar coincidência em causa.
+
+**Causa 3 — ciclo que falha não deixava rastro.** `recordRun` só era chamado depois das
+duas fases. O ciclo de 12/09 ~17:00 morreu no meio: `api_usage_log` tem as 17 chamadas
+falhas daquele instante, `sync_runs` não tem linha nenhuma, e a tela seguiu anunciando
+"última sincronização: 11/09 22:40". **Falhar deixava o sistema com aparência melhor do
+que rodar mal.**
+→ **Corrigido:** migration 016 (`status`, `error_message`), gravação no caminho de erro
+tanto no handler quanto no worker, e exibição da falha na tela.
+
+**Causa 4 — `DATABASE_URL` ausente vira "connection refused" em localhost.**
+A primeira execução agendada do cron (13/09 11:00 UTC, gatilho `Scheduled`) morreu em 23 s:
+
+```
+failed to connect to `user=cornerlab database=cornerlab`:
+127.0.0.1:5432 (localhost): connect: connection refused
+❌ Your cronjob failed because of an error: Exited with status 1
+```
+
+`user=cornerlab`, `localhost:5432` é o **valor padrão** de `config.go`. A chave
+`DATABASE_URL` existe no painel do cron, mas o valor não chegou ao contêiner, e `getEnv`
+trocou o vazio pelo padrão de desenvolvimento sem dizer nada. O log resultante descreve um
+sintoma a três passos da causa: quem o lê investiga rede e Neon, não variável de ambiente.
+→ **Corrigido no código:** `config.Validate()` recusa, em `ENVIRONMENT=production`,
+`DATABASE_URL` vazia ou apontando para localhost, e `JWT_SECRET` no valor de exemplo.
+Falha na inicialização nomeando a variável.
+→ **PENDENTE em produção:** o valor precisa ser recolado no painel. Não faço isso —
+é um segredo.
+
+### Arquivos alterados
+
+| Arquivo | O quê |
+|---|---|
+| `migrations/016_sync_runs_status.sql` | novo — `status`, `error_message`, índice por origem |
+| `internal/domain/sync.go` | `Status`, `ErrorMessage` e as constantes de origem/status |
+| `internal/repository/postgres/sync_run_repo.go` | `LastRunBySource`, colunas centralizadas, gravação de falha |
+| `internal/repository/interfaces.go` | `LastRunBySource` na interface |
+| `internal/delivery/http/handlers/sync_handler.go` | registra ciclo interrompido; `/sync/status` separa origens |
+| `cmd/worker/main.go` | erro das fases volta e vira `status='failed'`; `cfg.Validate()` |
+| `cmd/api/main.go` | `cfg.Validate()` |
+| `pkg/config/config.go` | `Validate()` e `SyncTimeoutMinutes` |
+| `render.yaml` | nomes/planos reais; variáveis no serviço web; aviso de risco ao aplicar |
+| `frontend/.../models.ts`, `integrations.component.{ts,html}` | origens separadas, falha visível |
+
+### Testes adicionados
+
+`handlers/sync_status_test.go` (6 casos) e `config/config_validate_test.go` (6 casos).
+Cada um reproduz uma situação observada em produção, não uma hipótese.
+
+**Estado da execução: NÃO EXECUTADOS.** O ambiente Linux desta sessão está inacessível
+desde a atualização do Windows de 08/09 (7 falhas consecutivas de montagem). Os testes
+foram escritos mas nunca compilados. Isto é uma pendência de verificação, não um
+resultado — e a Fase E não pode ser considerada cumprida até alguém rodar
+`go build ./... && go vet ./... && go test ./...`.
+
+### Achados que NÃO foram corrigidos (registrados, não silenciados)
+
+**Fila de atualização pode inanir os jogos mais antigos.** `ListDueForUpdate` usa
+`ORDER BY match_date DESC LIMIT n`. Hoje há 325 partidas vencidas e o teto é 300: as 25
+mais antigas não são alcançadas enquanto existirem 300 mais recentes. Drena sozinho
+conforme a fila diminui, mas volta a acontecer sempre que a fila passar do teto. As mais
+antigas são de 2026-03-15 (MLS). Não alterei — seria um segundo problema no mesmo ciclo.
+
+**Partidas que nunca finalizam são re-consultadas para sempre.** Uma partida cujo
+resultado o provedor nunca publica permanece `AGENDADO` e volta à fila a cada ciclo,
+gastando até 2 requisições por execução, indefinidamente. Não existe marcação de
+"tentada e inviável".
+
+**Proveniência de 2.211 partidas não é auditável.** Das 3.157 finalizadas, 2.211 têm
+escanteios preenchidos e `stats_synced_at` nulo — todas criadas em 2026-07-14, todas com
+`odds_source = 'synthetic'`. Não há registro de quando ou como aquelas estatísticas
+entraram.
+Comparação das distribuições:
+
+| grupo | n | média escanteios | desvio | média gols |
+|---|---|---|---|---|
+| legado (sem `stats_synced_at`) | 2.211 | 9,24 | 3,70 | 2,66 |
+| verificado pelo worker | 946 | 9,98 | 3,63 | 2,76 |
+
+São compatíveis com futebol real e **não há indício de fabricação**. Mas compatível não é
+comprovado: **NA — NÃO FOI POSSÍVEL AUDITAR A PROVENIÊNCIA** desses registros a partir do
+banco. Como são 70% da base histórica, isto merece item próprio.
+
+**Paginação não é lida.** `fixturesResponse` não desserializa o campo `paging` da
+API-Football. Não há evidência de truncamento (3.712 partidas para 12 ligas, ~310 por
+liga, bem acima de um limite de 100 por página), mas a ausência de verificação significa
+que um truncamento futuro passaria despercebido.
+
+**`worker_runs` = 0 e `team_metrics` = 0** (AUD-009) continuam zerados — consequência
+direta da Causa 1. Só serão populados quando o cron executar com sucesso.
+
+**`ERR_BLOCKED_BY_CLIENT`**: classificado como **AMBIENTE DO CLIENTE**. O recurso é
+`pagead2.googlesyndication.com`, bloqueado por extensão do navegador. Nenhuma causa no
+CornerLab.
+
+---
+
+## REV-P0 — segunda passagem de fechamento (13/09/2026, tarde)
+
+**Objetivo:** fechar formalmente o P0. **Resultado: REV-P0 permanece PARCIAL.**
+Nenhum dos 12 itens da Definition of Done pôde ser marcado. Abaixo, o que foi apurado.
+
+### Correção de um diagnóstico da passagem anterior
+
+Na primeira passagem escrevi que `DATABASE_URL` "chegou vazia" ao contêiner e sugeri que o
+valor estivesse em branco no painel. **A evidência nova mostra um mecanismo diferente**, e
+registro isso em vez de reescrever o texto anterior:
+
+1. A chave `DATABASE_URL` existe no cron e o campo de valor aparece preenchido (mascarado).
+2. O botão de salvar variáveis do Cron Job é literalmente
+   **"Save, rebuild, and apply on next run"** — em Cron Job, variável de ambiente só passa
+   a valer depois de um **rebuild**.
+3. A aba Builds do cron tinha **uma única build**: `First Build`, 12/09 17:05 — ou seja,
+   **anterior** à adição das secrets.
+
+Logo, a execução de 13/09 11:00 UTC rodou sobre uma imagem construída antes das variáveis
+existirem, e o `getEnv` devolveu o padrão de desenvolvimento. Não era valor vazio: era
+valor nunca aplicado. A diferença importa porque a ação corretiva é outra — recolar o
+segredo não resolveria nada.
+
+**Ação executada:** disparei um **Manual Build** (cache limpo), concluído em 55,3 s. A
+imagem agora carrega o ambiente atual. Isto **não valida** a conexão: valida apenas que a
+condição que a impedia deixou de existir.
+
+**Não expus, copiei nem registrei o valor de `DATABASE_URL` em nenhum momento.**
+
+### Migration 016 — NÃO APLICADA
+
+Consulta ao schema de produção:
+
+```
+coluna: triggered_by (character varying)      ← única das três que existe
+migrations aplicadas: 010, 011, 012, 013, 014, 015
+```
+
+`status` e `error_message` **não existem** em `sync_runs`. A 016 está escrita e embutida
+via `go:embed`, e será aplicada pelo runner de migrations na primeira subida do código
+novo — mas o código novo não foi publicado. Enquanto isso, o registro de ciclos que falham
+continua inexistente em produção.
+
+### Fase E — BLOQUEADA, não concluída
+
+`go build ./...`, `go vet ./...`, `go test ./...` e o build do frontend **não foram
+executados**. O ambiente Linux desta sessão falhou pela 8ª vez consecutiva com erro de
+montagem (regressão de uma atualização do Windows de 08/09). Não é um resultado "passou com
+ressalvas": é ausência de verificação.
+
+### Execução automática real — a única que houve FALHOU
+
+| campo | valor |
+|---|---|
+| gatilho | `Scheduled` (não manual) |
+| início | 13/09/2026 11:00:05 UTC |
+| término | 13/09/2026 11:00:26 UTC |
+| duração | 23,0 s |
+| ligas processadas | 0 |
+| partidas encontradas / atualizadas / finalizadas | 0 / 0 / 0 |
+| erros | processo encerrado com status 1 |
+| linha em `sync_runs` | **nenhuma** |
+
+O painel do cron exibe **"No successful runs yet."**
+
+Tentei disparar uma execução manual apenas como **diagnóstico da conexão** — não como prova
+do scheduler, que o escopo desta passagem proíbe. O botão "Trigger Run" não iniciou
+execução nas três tentativas. Registro como limitação da minha sessão, não como defeito do
+sistema.
+
+### Itens 5 e 6 — não validáveis nesta passagem
+
+A tela separando automático de manual e o alerta de desatualização estão **escritos mas não
+publicados**. Validar comportamento real exige o deploy. Verificar apenas o código-fonte
+seria trocar "validado" por "parece certo", que é o tipo de conclusão que esta revisão
+existe para evitar.
+
+### Definition of Done — estado real
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | `DATABASE_URL` válida no cron | ⏳ rebuild feito; não comprovado por execução |
+| 2 | cron conecta ao banco | ❌ não comprovado |
+| 3 | migration 016 aplicada | ❌ schema confirma que não |
+| 4 | build passa | ❌ não executado |
+| 5 | vet passa | ❌ não executado |
+| 6 | testes passam | ❌ não executados |
+| 7 | frontend passa | ❌ não executado |
+| 8 | execução automática real ocorreu | ⚠️ ocorreu e **falhou** |
+| 9 | `sync_runs` registrou a automática | ❌ nenhuma linha `cron` |
+| 10 | falhas ficam registradas | ❌ código pronto, não publicado |
+| 11 | tela diferencia automático/manual | ❌ código pronto, não publicado |
+| 12 | alerta de desatualização validado | ❌ não validado |
+
+**REV-P0 = PARCIAL.**
+
+### Caminho crítico para fechar (nesta ordem)
+
+1. `cd backend && go build ./... && go vet ./... && go test ./...` e
+   `cd frontend && npx ng build --configuration production`.
+2. Commit e push. O deploy do `cornerlab-backend` aplica a migration 016 na subida.
+3. Confirmar no banco que `sync_runs` ganhou `status` e `error_message`.
+4. Aguardar a execução agendada de **14/09 11:00 UTC** e conferir a linha
+   `triggered_by = 'cron'`, `status = 'success'`.
+5. Só então reavaliar os 12 itens.
+
+Nada disso pode ser feito daqui: o passo 1 depende de um ambiente que compile, o passo 4
+depende do relógio.
+
+### Escopo preservado
+
+Não foram tocados nesta passagem, conforme instrução: inanição da fila, partidas
+eternamente `AGENDADO`, proveniência das 2.211 legadas, paginação, AUD-007, fonte de odds,
+Dashboard. Nenhum deles bloqueou a validação do worker automático — o bloqueio é
+ambiente de build e relógio.
+
+---
+
+## REV-P0 — terceira passagem (13/09/2026)
+
+**REV-P0 continua PARCIAL.** Esta passagem não avançou nenhum item da Definition of Done,
+e o motivo é um só.
+
+### 1. Comandos executados
+
+| Comando | Resultado |
+|---|---|
+| `go build ./...` | **NÃO EXECUTADO** — ambiente indisponível |
+| `go vet ./...` | **NÃO EXECUTADO** — idem |
+| `go test ./...` | **NÃO EXECUTADO** — idem |
+| `npx ng build --configuration production` | **NÃO EXECUTADO** — idem |
+
+Tentativa registrada às 12h (9ª falha consecutiva nesta sessão):
+
+```
+failed to mount ... /outputs is under Plan9 share "c" which is not mounted
+```
+
+O ambiente Linux desta sessão perdeu o acesso ao disco do usuário após uma atualização do
+Windows de 08/09/2026. Não é lentidão nem timeout: o sistema de arquivos do projeto não é
+montável. Sem compilador não há build, sem build não há push, sem push não há deploy, e
+sem deploy os itens 3 a 12 permanecem inalcançáveis. **O caminho crítico inteiro está
+atrás de um único bloqueio.**
+
+### 2. Commit / deploy / migration
+
+Nada. Nenhum commit, nenhum push, nenhum deploy. `016_sync_runs_status.sql` **continua não
+aplicada** — reconfirmado no schema de produção: `sync_runs` tem `triggered_by` e não tem
+`status` nem `error_message`; `schema_migrations` para em 015.
+
+### 3. Cron
+
+Nenhuma execução nova. A última continua sendo a de 13/09 11:00:05 UTC, `Scheduled`, 23,0 s,
+encerrada com status 1 e sem linha em `sync_runs`. A próxima execução agendada é
+**14/09 11:00 UTC** — depende do relógio, não de mim, e conforme a regra desta revisão
+disparo manual não serve como prova.
+
+O rebuild manual feito na segunda passagem (55,3 s, cache limpo) segue de pé: a imagem do
+cron já carrega o ambiente atual. Isso remove a causa conhecida da falha das 11:00, mas
+**não é evidência de sucesso** até uma execução agendada rodar.
+
+### 4. UI e alerta
+
+Não validáveis sem deploy. Sem alteração desde a segunda passagem.
+
+### Revisão manual, no lugar da compilação
+
+Como não pude compilar, revisei à mão os arquivos alterados pelo REV-P0, procurando
+especificamente erros de compilação. **Isto não substitui `go build` e não está sendo
+apresentado como se substituísse** — é apenas o que foi possível fazer.
+
+Verificado: imports (`strings` e `fmt` em uso onde foram adicionados, `time` ainda em uso em
+`sync_run_repo.go`); a interface anônima `interface{ Scan(...any) error }` é satisfeita por
+`pgx.Row`; o `discoveryResult, err := ...` em `sync_handler.go` redeclara apenas `err`, o
+que é válido por estarem no mesmo bloco; `repoFake` implementa os cinco métodos de
+`SyncRunRepository`; os dois arquivos de teste novos são os únicos em seus pacotes, sem
+colisão de nomes (`repoFake`, `chamarStatus`, `produção`, `contémTudo`); a chamada
+`recordRun` do modo loop do worker descarta os dois retornos como statement, o que é legal.
+
+Nenhum erro encontrado. **Nenhuma garantia oferecida.**
+
+### Risco de ordenação a observar no deploy
+
+`colunasSyncRun` passa a selecionar `status` e `error_message`. Se o binário novo servir
+tráfego antes da migration 016 rodar, **toda leitura de `sync_runs` quebra** — é a mesma
+classe de falha que derrubou produção três vezes com as migrations 013 e 015. O runner de
+migrations roda na subida, antes de servir, justamente por isso. Vale conferir o log do
+deploy: a linha da 016 deve aparecer antes do primeiro request.
+
+### Definition of Done — estado real
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | `DATABASE_URL` válida no cron | ⏳ rebuild aplicado; sem execução que comprove |
+| 2 | cron conecta ao banco | ❌ |
+| 3 | migration 016 aplicada | ❌ |
+| 4 | build backend passa | ❌ não executado |
+| 5 | vet passa | ❌ não executado |
+| 6 | testes backend passam | ❌ não executados |
+| 7 | frontend build passa | ❌ não executado |
+| 8 | execução automática real teve sucesso | ❌ a única falhou |
+| 9 | `sync_runs` registrou a automática | ❌ |
+| 10 | falhas são persistidas | ❌ não publicado |
+| 11 | UI diferencia automático/manual | ❌ não publicado |
+| 12 | alerta de desatualização validado | ❌ |
+
+### Status final
+
+**REV-P0 = PARCIAL.**
+
+Três passagens chegaram ao mesmo ponto de bloqueio. Não há trabalho de análise restante
+neste item: o diagnóstico está fechado e a correção está escrita. O que falta é execução
+num ambiente que compile.
+
+---
+
+## REV-P0 — quarta passagem (13/09/2026, 18h UTC) — DESBLOQUEADO
+
+O bloqueio das três passagens anteriores foi resolvido **pelo Daniel**, fora desta sessão:
+build, push e deploy aconteceram. Esta passagem **verifica em produção** o que antes só
+existia como código.
+
+### 1. Validação de código
+
+Meu ambiente Linux continua inacessível (10ª falha de montagem). Os quatro comandos
+**não foram executados por mim**. O que a evidência de produção permite afirmar:
+
+| Item | Evidência | Conclusão |
+|---|---|---|
+| `go build ./...` | deploy `dbb922a` concluído em 1m08s; o Dockerfile compila os 4 binários | ✅ compila |
+| `npx ng build --configuration production` | frontend novo servindo e renderizando o template novo | ✅ compila |
+| `go vet ./...` | nenhuma — o Dockerfile não roda vet | ⚠️ **não verificado** |
+| `go test ./...` | nenhuma — o Dockerfile não roda testes | ⚠️ **não verificado** |
+
+Um build de Docker bem-sucedido prova compilação; **não prova vet nem testes**. Registro
+como não verificado em vez de inferir.
+
+### 2. Deploy e migration — CONFIRMADOS
+
+- `cornerlab-backend`: deploy `dbb922a`, Auto-Deploy, 1m08s.
+- `cornerlab-worker`: build `dbb922a`, Auto-Deploy, 54,9s — o cron também está no código novo.
+
+Schema de produção consultado às 17:58 UTC:
+
+```
+ultima_migration = 016_sync_runs_status.sql
+```
+
+| coluna | tipo | nulo | default |
+|---|---|---|---|
+| `triggered_by` | character varying | NÃO | — |
+| `status` | text | NÃO | `'success'::text` |
+| `error_message` | text | SIM | — |
+
+**Migration 016 aplicada.** Nenhum incidente de ordenação: o runner rodou antes de servir,
+como projetado.
+
+### 3. Cron — ainda sem execução agendada
+
+`SELECT count(*) FROM sync_runs WHERE triggered_by='cron'` → **0**.
+
+A única execução agendada até aqui foi a de 13/09 11:00 UTC, que falhou (documentada na
+segunda passagem) e é anterior tanto ao rebuild quanto ao deploy do código novo. A próxima
+é **14/09 11:00 UTC**. Não há como antecipá-la sem usar disparo manual, que esta revisão
+não aceita como prova.
+
+### 4. UI em produção — VALIDADA
+
+`https://dsfrcornerlab.com.br/integracoes`, texto real da página:
+
+```
+Última tentativa: 13/09 07:02 (manual, durou 15min 18s)
+Último ciclo que trouxe dado: 13/09 07:02 (manual, durou 15min 18s)
+Automático (agendado, 08:00): nunca executou
+Manual (este botão): 13/09 07:02 · 15min 18s — 3712 jogos novos, 299 finalizados
+A sincronização automática nunca rodou. [...]
+```
+
+`GET /api/v1/sync/status` em produção:
+
+```json
+{ "last_cron_run": null, "cron_never_ran": true, "cron_stale": true,
+  "hours_since_cron": null, "stale": false, "hours_since_success": 7,
+  "last_manual_run": { "status": "success", "fixtures_upserted": 3712,
+                       "matches_finalized": 299 } }
+```
+
+Confere item a item: automática separada da manual; última tentativa automática (ausente,
+e dito explicitamente); última automática bem-sucedida (ausente); status; duração; execução
+manual em linha própria. O campo de erro só aparece quando há erro — e não há, porque
+nenhum ciclo falhou **depois** do deploy.
+
+**Alerta de desatualização — os dois lados validados:**
+- `stale: false` com `hours_since_success: 7` → **nenhum alerta global**, correto: houve
+  ciclo bem-sucedido há 7h e os dados estão em dia.
+- `cron_stale: true` + `cron_never_ran: true` → **aviso persistente** na tela sobre a
+  automação, correto e independente do primeiro.
+
+É exatamente a distinção que a correção existia para criar: dado em dia e automação morta
+podem ser verdade ao mesmo tempo, e agora a tela diz as duas coisas.
+
+### Ajuste cosmético feito nesta passagem
+
+O texto saía grudado — `"08:00):nunca executou"` — porque o Angular colapsa a quebra de
+linha entre o `<span>` e o bloco `@if`. Corrigido com `&nbsp;` explícito nas duas linhas.
+É marcação minha, do próprio REV-P0. **Ainda não publicado** — entra no próximo deploy e
+não bloqueia nada.
+
+### Definition of Done — estado real
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | `DATABASE_URL` válida no cron | ⏳ imagem reconstruída com o ambiente; sem execução que comprove |
+| 2 | cron conecta ao banco | ⏳ aguarda 14/09 11:00 UTC |
+| 3 | migration 016 aplicada | ✅ |
+| 4 | build backend passa | ✅ (via Docker build do deploy) |
+| 5 | vet passa | ⚠️ não verificado |
+| 6 | testes backend passam | ⚠️ não verificado |
+| 7 | frontend build passa | ✅ (servindo em produção) |
+| 8 | execução automática real teve sucesso | ❌ aguarda 14/09 11:00 UTC |
+| 9 | `sync_runs` registrou a automática | ❌ zero linhas `cron` |
+| 10 | falhas são persistidas | ⏳ coluna e código no ar; nenhuma falha ocorreu desde o deploy |
+| 11 | UI diferencia automático/manual | ✅ validado em produção |
+| 12 | alerta de desatualização validado | ✅ validado nos dois estados |
+
+**4 confirmados, 2 não verificados, 4 aguardando o relógio, 2 sem evidência.**
+
+### Status final
+
+**REV-P0 = PARCIAL.**
+
+Saiu de "bloqueado em tudo" para "pendente de duas coisas": a saída de `go vet` e
+`go test`, que só o Daniel tem como produzir, e a execução agendada de 14/09 11:00 UTC.
+Nenhuma das duas depende de mais trabalho de análise.
+
+---
+
+## REV-P0 — quinta passagem (13/09/2026, 18h15 UTC) — reconciliação 013/014
+
+Duas tarefas: reconciliar o estado das migrations 013 e 014, e fechar o que der do REV-P0.
+**Nenhum dado foi modificado nesta passagem** — só medição.
+
+### Reconciliação — a inconsistência era do índice, não do banco
+
+O índice deste documento dizia "MIGRATION PENDENTE" para AUD-001 (013) e AUD-004 (014).
+**Estava desatualizado.** As duas estão aplicadas em produção. O índice foi corrigido; os
+registros históricos que diziam "pendente" permanecem intactos, como manda o formato
+append-only.
+
+`schema_migrations`:
+
+| version | checksum | applied_at |
+|---|---|---|
+| `013_odds_source.sql` | `adotada-sem-verificacao` | 2026-09-12 11:31:36 UTC |
+| `014_tier_nao_classificado.sql` | `adotada-sem-verificacao` | 2026-09-12 11:31:36 UTC |
+| `015_result_odds.sql` | `adotada-sem-verificacao` | 2026-09-12 11:31:36 UTC |
+| `016_sync_runs_status.sql` | `936515e6…0583` | 2026-09-13 12:26:46 UTC |
+
+**Como ler esses carimbos, para não concluir errado.** `adotada-sem-verificacao` é o marcador
+que o runner usa para linhas *adotadas* na criação do ledger — 013, 014 e 015 já tinham sido
+executadas à mão antes de `schema_migrations` existir, e foram inscritas em bloco quando a
+tabela foi criada. **Logo, `applied_at = 12/09 11:31:36` é a data em que o ledger foi
+semeado, não a data em que o SQL rodou.** A 016 é o contraste: checksum real e `applied_at`
+correspondente à execução pelo runner durante o deploy.
+
+Quando as 013/014 realmente rodaram: o histórico do SQL Editor do Neon tem as entradas
+`add odds source column and update matches table` e `add tier_legacy column and migrate tier
+data`, ambas em **09/09/2026, 14:33 e 14:35 (GMT-3)** — compatíveis com aplicação manual pelo
+editor. A 015 aparece em 12/09 08:25 e a criação do ledger em 12/09 08:31 (GMT-3 = 11:31
+UTC, batendo exatamente com `applied_at`).
+
+Resumindo com honestidade: **a migration originalmente aguardava aprovação e foi aplicada
+manualmente via SQL Editor do Neon; a evidência disponível aponta 09/09/2026 para 013 e 014.
+O banco sozinho não permite determinar o instante da execução** — apenas o da adoção no
+ledger.
+
+### Efeitos reais da migration 013
+
+| medida | valor |
+|---|---|
+| `matches.odds_source = 'synthetic'` | **2.558** |
+| `matches.odds_source = 'unknown'` | **3.003** |
+| `matches.odds_source = 'real'` | **0** (a categoria não aparece) |
+| soma | 5.561 = total de `matches`, sem nulos |
+
+Zero odds reais em toda a base. Não é falha da migration: é a consequência, já documentada,
+de a API-Football manter apenas 7 dias de histórico de odds. O rótulo está correto — nenhuma
+odd sintética está se passando por real.
+
+Estratégias:
+
+| origem | ativa | quantidade |
+|---|---|---|
+| `discovery` | `false` | **5** |
+
+É o único grupo existente — não há estratégia de outra origem nem nenhuma ativa. **As 5
+estratégias antigas de Discovery estão despublicadas e continuam no banco.** É exatamente o
+exigido pelo AUD-001: invalidar sem apagar. Nenhuma foi removida.
+
+### Efeitos reais da migration 014
+
+| medida | valor |
+|---|---|
+| `teams` total | 410 |
+| `teams.tier` preenchido | **0** |
+| `teams.tier_legacy` preenchido | **338** |
+
+A coluna `tier_legacy` existe. O tier corrompido foi zerado em todas as 410 equipes, e o
+valor legado foi preservado em 338 — **o dado não foi destruído, foi movido**. As 72 sem
+`tier_legacy` são equipes que nunca tiveram tier atribuído.
+
+### `go vet` e `go test` — continuam NÃO VERIFICADOS
+
+Tentei novamente; 11ª falha consecutiva de montagem do ambiente Linux. Nada mudou. Não uso
+o build do Docker como substituto: ele compila, não roda vet nem testes.
+
+**Isso impede formalmente fechar o P0?** Sim, pelo critério escrito — os itens 5 e 6 da
+Definition of Done exigem evidência e não há nenhuma. Mas é uma pendência de *verificação*,
+não um defeito conhecido: não existe sintoma, falha ou suspeita associada. Basta a saída dos
+dois comandos rodados em qualquer máquina com Go.
+
+### Cron — ainda não ocorreu
+
+Hora da consulta: **13/09/2026 18:15 UTC**. A execução agendada é 14/09 11:00 UTC, daqui a
+~17 horas. `SELECT count(*) FROM sync_runs WHERE triggered_by='cron'` → **0**. Não antecipei
+com disparo manual. `worker_runs` e `team_metrics` seguem em **0**, e só podem mudar depois
+de um ciclo do worker.
+
+### Persistência de falhas
+
+Coluna e código publicados; nenhuma falha ocorreu depois do deploy. Não vou provocar falha
+em produção para gerar evidência. Classificação: **implementado, aguardando evidência
+natural**.
+
+### Definition of Done
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | `DATABASE_URL` funcional no cron | ⏳ aguarda execução agendada |
+| 2 | cron conecta ao banco | ⏳ aguarda execução agendada |
+| 3 | migration 016 aplicada | ✅ |
+| 4 | backend compila | ✅ |
+| 5 | `go vet` passa | ⚠️ **NÃO VERIFICADO** |
+| 6 | `go test` passa | ⚠️ **NÃO VERIFICADO** |
+| 7 | frontend compila | ✅ |
+| 8 | execução automática real tem sucesso | ⏳ 14/09 11:00 UTC |
+| 9 | `sync_runs` registra `triggered_by='cron'` | ⏳ idem |
+| 10 | mecanismo de falha implementado | ✅ implementado, aguardando evidência natural |
+| 11 | UI diferencia automático/manual | ✅ |
+| 12 | alerta de desatualização funciona | ✅ |
+
+**REV-P0 = PARCIAL.** 5 verdes, 2 não verificados, 4 aguardando o relógio, 1 implementado
+sem evidência natural.
+
+Fora do REV-P0, esta passagem fechou uma dívida separada: **AUD-001 e AUD-004 deixam de ter
+migration pendente** — as duas estão aplicadas e seus efeitos foram medidos e conferem com o
+que a auditoria exigia.
+
+---
+
+## REV-P0 — sexta passagem (14/09/2026) — regressão introduzida por mim
+
+### O que aconteceu
+
+A execução agendada de 14/09 11:00 UTC falhou:
+
+```
+{"time":"2026-09-14T11:00:49Z","level":"ERROR","msg":"worker não vai rodar",
+ "error":"configuração inválida para ENVIRONMENT=production:
+          JWT_SECRET (vazio ou ainda no valor de exemplo)"}
+❌ Your cronjob failed because of an error: Exited with status 1
+```
+
+**A causa é o `config.Validate()` que eu escrevi na quarta passagem.** Ele exigia
+`JWT_SECRET` de todo binário. O worker não emite nem valida token — JWT é assunto exclusivo
+da API — e o Cron Job, corretamente, não tem essa variável. A verificação criada para
+impedir má configuração virou ela própria a indisponibilidade.
+
+Não é um efeito colateral distante: é o defeito óbvio de validar a união de tudo que o
+repositório usa em vez do que aquele processo usa.
+
+### O lado bom, e ele é grande
+
+A mensagem cita **apenas** `JWT_SECRET`. Como `Validate` acumula todas as pendências numa
+mensagem só, o silêncio sobre `DATABASE_URL` é informação: **a credencial rotacionada está
+presente, não vazia e não apontando para localhost.**
+
+Isso fecha, por evidência indireta, a pergunta que estava aberta desde 12/09. O que ainda
+falta provar é a conexão efetiva ao Postgres — o processo morreu antes de tentar.
+
+### Correção
+
+`config.go`: a validação foi separada por binário.
+
+| função | valida | quem chama |
+|---|---|---|
+| `Validate()` | `DATABASE_URL` | `cmd/worker` (e qualquer binário) |
+| `ValidateAPI()` | `Validate()` + `JWT_SECRET` | `cmd/api` |
+
+`cmd/api/main.go` passou a chamar `ValidateAPI()`. `cmd/worker/main.go` segue em
+`Validate()`, que agora não exige nada que o worker não use.
+
+### Sobre os testes alterados
+
+`TestProducaoRecusaJWTSecretDeExemplo` passou a chamar `ValidateAPI`, e
+`TestValidateRelataTodosOsProblemasDeUmaVez` virou `TestValidateAPI...`.
+
+**Isto não é alterar teste para fazê-lo passar.** Os testes codificavam uma regra errada —
+"todo binário precisa de JWT_SECRET" —, e a regra é que mudou. O sintoma foi produzido em
+produção antes de qualquer teste ser tocado.
+
+Dois testes novos travam a regra correta nas duas direções:
+
+- `TestWorkerSemJWTSecretEhValido` — reproduz o incidente: falharia com o código anterior.
+- `TestAPISemJWTSecretEhInvalida` — garante que a exigência não foi simplesmente removida;
+  a API continua recusando subir com o segredo de exemplo.
+
+### Estado
+
+Nenhum item da Definition of Done mudou de cor, com uma ressalva: o item 1
+(`DATABASE_URL` funcional no cron) agora tem **evidência indireta forte** — passou na
+validação. Continua ⏳ porque conexão efetiva não foi demonstrada.
+
+O item 8 (execução automática com sucesso) permanece ❌: a de hoje falhou, agora por causa
+desta regressão. A próxima oportunidade é **15/09 11:00 UTC**, e ela depende de o código
+corrigido estar publicado até lá.
+
+**REV-P0 = PARCIAL.**
+
+---
+
+## REV-P0 — sétima passagem (15/09/2026) — RESOLVIDO
+
+Os dois bloqueios que restavam caíram no mesmo dia: o ambiente de build voltou e a
+execução agendada rodou.
+
+### 1. Validação de código — EXECUTADA
+
+O ambiente Linux desta sessão voltou a montar o disco. Go não vinha instalado; instalei a
+toolchain 1.25.1 no diretório do usuário (sem privilégio de root) e rodei de verdade:
+
+```
+$ go build ./...      → exit 0
+$ go vet ./...        → exit 0
+$ go test ./...       → exit 0   (9 pacotes com teste, 0 falhas)
+```
+
+Os 14 testes do REV-P0, verbosos:
+
+```
+ok  pkg/config                                  0.007s
+    PASS TestProducaoRecusaDatabaseURLVazia
+    PASS TestProducaoRecusaBancoEmLocalhost
+    PASS TestProducaoRecusaJWTSecretDeExemplo
+    PASS TestWorkerSemJWTSecretEhValido          ← regressão de 14/09
+    PASS TestAPISemJWTSecretEhInvalida
+    PASS TestDesenvolvimentoAceitaPadroesLocais
+    PASS TestProducaoBemConfiguradaPassa
+    PASS TestValidateAPIRelataTodosOsProblemasDeUmaVez
+ok  internal/delivery/http/handlers              0.013s
+    PASS TestStatusRevelaQueOCicloAutomaticoNuncaRodou
+    PASS TestStatusNaoAlarmaComCicloAutomaticoRecente
+    PASS TestStatusMarcaCicloAutomaticoAtrasado
+    PASS TestCicloInterrompidoEhRegistradoComoFalha
+    PASS TestCicloQueFalhouNaoContaComoBemSucedido
+    PASS TestFalhaAoGravarHistoricoNaoPropaga
+```
+
+`gofmt -l` acusou `cmd/api/main.go` e `cmd/worker/main.go` — ordenação de import herdada de
+quando `migrate` foi adicionado. Corrigido com `gofmt -w`; build, vet e test revalidados
+depois, todos em exit 0. **Não commitado** (junto com este documento, são as únicas
+alterações locais pendentes; nada substantivo).
+
+**Frontend:** `npx ng build --configuration production` → **exit 0**. Só avisos NG8107
+pré-existentes, em `dashboard.component.html` e num trecho de `integrations.component.html`
+anterior ao REV-P0.
+
+> Observação de método: o `node_modules` da pasta do usuário contém binários Windows
+> (esbuild), que o Linux não executa. **Não rodei `npm ci` ali** — isso substituiria os
+> binários dele e quebraria o ambiente local. Copiei o frontend para `/tmp` sem
+> `node_modules`, instalei lá e compilei. A pasta do usuário ficou intocada.
+
+### 2. Execução automática real — SUCESSO
+
+Render, aba Runs: gatilho **`Scheduled`**, duração **17m33s**, 15/09 11:00 UTC.
+Correspondência em `sync_runs`:
+
+| campo | valor |
+|---|---|
+| id | 21 |
+| `triggered_by` | **`cron`** |
+| `status` | **`success`** |
+| início (UTC) | 15/09 11:00 |
+| fim (UTC) | 15/09 11:13 |
+| duração | 775 s (12min 55s) |
+| ligas processadas (`targets`) | 12 |
+| fixtures encontradas | 3.712 |
+| fixtures gravadas | 3.712 |
+| partidas verificadas | 15 |
+| partidas finalizadas | 9 |
+| erros | **0** |
+
+A diferença entre os 17m33s do Render e os 775 s da linha é esperada: `sync_runs` cronometra
+descoberta + atualização; o processo ainda roda analytics, strategy engine e discovery
+engine depois disso.
+
+**`DATABASE_URL` validada indiretamente, sem exposição:** o processo subiu, passou pelo
+`Validate()`, conectou ao Postgres, aplicou migrations e gravou a linha 21. Nenhum dos
+quatro é possível com credencial ausente ou inválida. O valor nunca foi exibido nem
+registrado.
+
+**Por que o cron voltou a funcionar:** a correção do `ValidateAPI` foi publicada no commit
+`fcf8c7d` (auto-deploy, build de 58,0 s). O Cron Job **não** tem `JWT_SECRET` configurada —
+conferido — o que confirma que a solução foi a separação por binário, e não o paliativo de
+espalhar o segredo.
+
+### 3. Antes / depois
+
+| medida | antes (13/09) | depois (15/09) |
+|---|---|---|
+| `worker_runs` | **0** | **6** |
+| `team_metrics` | **0** | **2.495** |
+| `sync_runs` | 17 | 21 |
+| `sync_runs` com `triggered_by='cron'` | 0 | 2 |
+| partidas `AGENDADO` vencidas | 325 | **6** |
+| partidas `FINALIZADO` | 3.157 | 3.508 |
+
+**AUD-009 fecha junto.** As camadas RAW/ANALYTICS estavam vazias porque nenhum worker jamais
+tinha executado; agora executaram. `team_metrics` saiu de zero para 2.495 registros
+pré-calculados. A fila de partidas vencidas caiu de 325 para 6 — a inanição descrita na
+primeira passagem drenou sozinha, como previsto.
+
+### 4. Interface em produção
+
+```
+Última tentativa: 15/09 08:13 (automática, durou 12min 55s)
+Último ciclo que trouxe dado: 15/09 08:13 (automática, durou 12min 55s)
+Automático (agendado, 08:00): 15/09 08:13 · 12min 55s — 3712 jogos novos, 9 finalizados
+Manual (este botão): 14/09 09:37 · 12min 20s — 3712 jogos novos, 17 finalizados
+```
+
+Origens separadas, nenhum alerta indevido (o ciclo automático está fresco), e a palavra
+"automática" aparecendo pela primeira vez desde que o projeto existe.
+
+### Ressalva de leitura, registrada como backlog
+
+`triggered_by='cron'` significa **"gravado por `cmd/worker`"**, não "disparado pelo
+scheduler". A linha 19 (14/09) tem `triggered_by='cron'` mas veio de um *Trigger Run*
+manual no Render. Sozinha, a coluna não distingue as duas coisas.
+
+A prova do item 8 não dependeu disso: veio do cruzamento entre o gatilho `Scheduled`
+registrado pelo Render e o horário da linha 21. Mas o rótulo é ambíguo e merece um campo
+próprio um dia. **Não corrigido agora** — fora do escopo desta passagem.
+
+### Definition of Done — FINAL
+
+| # | Item | Estado | Evidência |
+|---|---|---|---|
+| 1 | `DATABASE_URL` funcional no cron | ✅ | processo conectou e gravou a linha 21 |
+| 2 | cron conecta ao banco | ✅ | idem |
+| 3 | migration 016 aplicada | ✅ | `schema_migrations`, checksum real, 13/09 12:26 UTC |
+| 4 | backend compila | ✅ | `go build ./...` exit 0 |
+| 5 | `go vet` passa | ✅ | `go vet ./...` exit 0 |
+| 6 | `go test` passa | ✅ | `go test ./...` exit 0, 9 pacotes, 0 falhas |
+| 7 | frontend compila | ✅ | `ng build --configuration production` exit 0 |
+| 8 | execução automática real tem sucesso | ✅ | Render `Scheduled` 11:00 + linha 21 |
+| 9 | `sync_runs` registra `triggered_by='cron'` | ✅ | id 19 e id 21 |
+| 10 | mecanismo de falha implementado | ✅ | migration 016 + gravação nos dois caminhos, publicado |
+| 11 | UI diferencia automático/manual | ✅ | texto de produção acima |
+| 12 | alerta de desatualização funciona | ✅ | validado nos dois estados em 13/09 |
+
+## REV-P0 = RESOLVIDO
+
+Doze de doze com evidência. O item 10 está implementado e publicado; ainda não houve falha
+natural que o exercite em produção — quando houver, a linha aparecerá com
+`status='failed'` e a mensagem, em vez de sumir como sumiu em 12/09.
+
+### REV-P1 começa aqui (ver seção própria ao final do documento)
+
+### Pendências fora do REV-P0 (backlog, intocadas)
+
+Inanição da fila sob backlog alto; partidas eternamente `AGENDADO` reconsultadas para
+sempre; proveniência não auditável de 2.211 partidas legadas; paginação não lida;
+ambiguidade de `triggered_by`; AUD-005, 006, 007, 008, 010, 021, 023; coleta de odds reais.
 
 ---
 
@@ -943,3 +1765,399 @@ antes de implementar:
 2. Decidir se `team_season_tier` entra no backlog.
 
 ---
+
+## REV-P0 — sétima passagem (14/09/2026, ~11:50 UTC) — verificação independente da execução agendada
+
+**Nota de ordem.** Esta passagem foi executada pela tarefa agendada de validação, em
+paralelo com a sexta passagem acima, e **sem conhecimento dela** até o momento de gravar.
+As duas apuraram o mesmo incidente por caminhos independentes e chegaram ao mesmo log. O
+que segue é a medição feita no painel e no banco, mais dois achados que a sexta passagem
+não registra: o estado dos contadores e **o fato de a correção ainda não estar publicada**.
+
+Esta passagem tinha um único objetivo: colher a primeira execução agendada válida do cron
+`cornerlab-worker` (14/09 11:00 UTC) e, com ela, fechar os quatro itens da Definition of
+Done que dependiam do relógio.
+
+**A execução ocorreu, foi de fato agendada, e falhou. Nenhum item foi fechado.
+REV-P0 permanece PARCIAL.** Nenhum disparo manual foi usado como prova e nada foi
+modificado no banco ou no serviço — esta passagem é só medição.
+
+### Render — a execução de hoje
+
+Painel do Cron Job `crn-dair0e95efls73ek3080`, aba Runs. Build corrente **`80a494c`**,
+branch `main`, marcado `Latest` — é a reconstrução feita após a rotação da credencial.
+
+| execução | gatilho | duração | resultado |
+|---|---|---|---|
+| **14/09 11:00 UTC** | **Scheduled** | **24,7s** | ❌ **falha** |
+| 13/09 11:00 UTC | Scheduled | 23,0s | ❌ falha |
+
+Total de execuções registradas no serviço: **2**. O painel exibe, no cabeçalho, a frase
+**"No successful runs yet."** — ou seja, o cron **nunca teve uma execução bem-sucedida**,
+nem antes nem depois do rebuild.
+
+O gatilho da execução de hoje é **"Scheduled"**, não manual. A prova exigida pelo REV-P0
+era essa; ela foi produzida, e o que ela prova é que o cron ainda não funciona.
+
+### O erro exato, como o log diz
+
+Log do serviço, 14/09 (o painel exibe em GMT-3; o carimbo dentro da linha JSON é UTC):
+
+```
+08:00:44 AM  ==> Cron job run started
+08:00:49 AM  {"time":"2026-09-14T11:00:49.006369054Z","level":"ERROR",
+              "msg":"worker não vai rodar",
+              "error":"configuração inválida para ENVIRONMENT=production: JWT_SECRET (vazio ou ainda no valor de exemplo)"}
+08:01:08 AM  ❌ Your cronjob failed because of an error: Exited with status 1
+```
+
+Três observações, e nenhuma além disso:
+
+1. **A causa nomeada pelo log é `JWT_SECRET`**, não `DATABASE_URL`. A mensagem diz
+   "vazio ou ainda no valor de exemplo" e não distingue entre os dois casos.
+2. **O log não menciona `DATABASE_URL`.** Conferi o motivo no código antes de tirar
+   conclusão: `Validate` acumula todas as pendências numa lista (`faltando`) e devolve
+   **uma mensagem só**. Como `DATABASE_URL` vazia ou apontando para `localhost`/`127.0.0.1`
+   entraria nessa mesma lista e não entrou, o silêncio é informação: a variável está
+   presente e não aponta para máquina local. **Isso não é conexão efetiva** — o processo
+   morreu antes de tentar abrir o Postgres. É a mesma leitura da sexta passagem, e a
+   sustento.
+3. O processo morreu **5 segundos** após o início, na validação de configuração. Os 24,7s
+   de duração são do ciclo de vida do container, não de trabalho realizado.
+
+Não investiguei o ambiente do serviço nem examinei valores de variáveis — nenhuma
+credencial foi lida, exibida ou registrada.
+
+### Banco — nenhum vestígio da execução
+
+`sync_runs`, três últimas linhas (consulta às ~11:45 UTC de 14/09):
+
+| id | triggered_by | status | erro | quando | targets | achadas | gravadas | checadas | finalizadas | erros | duration_ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 18 | `manual` | success | — | 13/09 18:56:28 | 12 | 3.712 | 3.712 | 300 | 294 | 0 | 900.210 |
+| 17 | `manual` | success | — | 13/09 10:02:52 | 12 | 3.712 | 3.712 | 300 | 299 | 0 | 917.502 |
+| 16 | `manual` | success | — | 12/09 01:40:03 | 12 | 0 | 0 | 50 | 0 | 62 | 402.069 |
+
+**Não existe nenhuma linha com `triggered_by='cron'`.** A execução de hoje não gravou
+nada: nem sucesso, nem falha. Coerente com o log — o processo saiu antes de tocar o banco.
+
+A linha mais recente continua sendo o disparo manual de 13/09 18:56. Logo, **os dados de
+produção não são atualizados automaticamente desde sempre**, e a última atualização de
+qualquer origem tem ~17 horas no momento desta consulta.
+
+### Contadores
+
+| medida | valor |
+|---|---|
+| `worker_runs` | **0** |
+| `team_metrics` | **0** |
+| `matches` AGENDADO com `match_date` vencido há +3h | **54** |
+
+`worker_runs` e `team_metrics` **continuam zerados** — não saíram de zero. Registro o fato
+e não investigo: é pendência de outra prioridade.
+
+As 54 partidas agendadas vencidas são consequência direta de não haver ciclo automático
+finalizando resultados.
+
+### Efeito sobre o item 10 (persistência de falhas)
+
+Uma falha real ocorreu hoje e **não gerou linha em `sync_runs`**. Pelo que o log mostra, o
+processo encerrou na validação de configuração, antes de abrir conexão com o banco — um
+mecanismo que registra falhas *no banco* não tem como capturar uma falha que acontece
+antes do banco existir para o processo. O item continua **implementado, sem evidência**;
+esta execução não serviu como evidência natural e não deve ser contada como tal.
+
+### Definition of Done — estado real
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | `DATABASE_URL` funcional no cron | ⏳ **evidência indireta** — passou na validação; conexão não demonstrada |
+| 2 | cron conecta ao banco | ⚠️ **SEM EVIDÊNCIA** — processo abortou antes de tentar |
+| 3 | migration 016 aplicada | ✅ |
+| 4 | backend compila | ✅ |
+| 5 | `go vet` passa | ⚠️ **NÃO VERIFICADO** |
+| 6 | `go test` passa | ⚠️ **NÃO VERIFICADO** |
+| 7 | frontend compila | ✅ |
+| 8 | execução automática real tem sucesso | ❌ **FALHOU** — 14/09 11:00 UTC, Scheduled, exit 1 |
+| 9 | `sync_runs` registra `triggered_by='cron'` | ❌ **NÃO OCORREU** — zero linhas |
+| 10 | mecanismo de falha implementado | ✅ implementado, **sem evidência** |
+| 11 | UI diferencia automático/manual | ✅ |
+| 12 | alerta de desatualização funciona | ✅ |
+
+**REV-P0 = PARCIAL.** 5 verdes, 2 não verificados, 1 com evidência indireta, 1 sem
+evidência, 2 falhados, 1 implementado sem evidência.
+
+Os itens 8 e 9 mudam de categoria: deixam de ser "aguardando o relógio" e passam a ser
+**falha observada**. O relógio chegou. A resposta foi negativa.
+
+### A correção da regressão NÃO está publicada
+
+Este é o achado que me parece mais consequente, e não o encontrei registrado na sexta
+passagem. Aba **Builds** do Cron Job, no momento desta consulta:
+
+| build | gatilho | commit | quando |
+|---|---|---|---|
+| 4 | Manual | **`80a494c`** | 17h atrás — **é o build corrente, marcado `Latest`** |
+| 3 | Auto-Deploy | `dbb922a` | 23h atrás |
+| 2 | Manual | `1a3f3ab` | 23h atrás |
+| 1 | First Build | `1a3f3ab` | 1d atrás |
+
+**Nenhum build depois de `80a494c`.** A separação `Validate` / `ValidateAPI` existe no
+repositório local — conferi `pkg/config/config.go`, e `Validate` hoje só checa
+`DATABASE_URL` —, mas **a imagem que o cron executa ainda é a de 17 horas atrás**, com a
+validação antiga.
+
+Consequência direta, e é melhor dizê-la agora do que descobri-la amanhã: **se nada for
+publicado, a execução de 15/09 11:00 UTC falha exatamente igual.** A correção só passa a
+valer depois de um novo build.
+
+### O que mudou desde a quinta passagem
+
+- A hipótese de que bastava esperar a execução agendada está **derrubada**. O cron roda,
+  é agendado, e falha na largada.
+- A causa de falha mudou de identidade: era "imagem construída antes das variáveis
+  existirem"; agora é **regressão da própria validação de configuração** introduzida na
+  quarta passagem. Sintoma novo, build novo, causa nova.
+- `go vet` e `go test` permanecem **NÃO VERIFICADOS**. Nada nesta passagem os toca, e o
+  build do Docker continua não servindo de substituto. Vale registrar que os quatro testes
+  citados na sexta passagem (`TestWorkerSemJWTSecretEhValido`,
+  `TestAPISemJWTSecretEhInvalida` e os dois renomeados) **também não foram executados** —
+  existem no arquivo, não há saída de `go test` para nenhum deles.
+
+### Pendências, sem ordem de prioridade atribuída aqui
+
+1. **Publicar** a correção de `config.go`. Sem novo build, 15/09 repete 14/09.
+2. Só depois disso a próxima execução agendada volta a ser prova útil para os itens 1, 2,
+   8 e 9 — e nem essa fecha o P0 sozinha, porque 5 e 6 continuam dependendo da saída de
+   `go vet` e `go test` colada por alguém com Go na máquina.
+3. Não iniciei o P1 (Dashboard) nem qualquer outra prioridade.
+
+---
+
+## REV-P1 — Dashboard / Visão Geral
+
+**Data:** 2026-09-15 · **Status:** ⚠️ PARCIAL — correções implementadas e validadas em
+build/teste, aguardando deploy para validação ponta a ponta em produção.
+
+---
+
+### A — Investigação
+
+Reproduzido no sistema atual, já com o pipeline do REV-P0 funcionando. **O problema
+relatado NÃO desapareceu** — mudou de forma.
+
+#### Caso reproduzido: clicar numa equipe e chegar em outra
+
+Navegando para o mesmo endereço que o calendário gera (`/dashboard?league_id=8&team_id=442`,
+Athletic Club na La Liga), a tela abriu assim:
+
+```
+Campeonato: La Liga   Temporada: 2026   Equipe: Alaves
+"Escolha campeonato, temporada e equipe acima e clique em Analisar..."
+URL reescrita para: ?league_id=8&team_id=454&season_id=33&limit=10
+```
+
+Pedi o time 442 e recebi o 454. A própria URL foi reescrita, apagando o rastro do que fora
+pedido. Se o usuário clicasse em "Analisar" ali, analisaria o Alavés acreditando estar
+vendo o Athletic Club.
+
+**Rastreamento camada a camada:**
+
+| camada | o que faz | resultado |
+|---|---|---|
+| UI (calendário) | `openTeamDashboard()` navega com `league_id` + `team_id` | **sem `season_id`** |
+| modelo | `UpcomingMatch` | **não tem `season_id`** |
+| backend (overview) | `ListUpcoming` não seleciona `m.season_id` | temporada nunca sai do banco |
+| UI (dashboard) | sem temporada, adivinha `MAX(year)` | escolhe 2026 |
+| `GET /teams?league_id=8&season_id=33` | `JOIN matches ... WHERE league_id AND season_id` | 20 equipes, sem o Athletic |
+| UI (dashboard) | equipe pedida ausente → `teams[0]` | **troca silenciosa** |
+
+Confirmação no banco: o Athletic Club tem 38 partidas finalizadas na La Liga **2025** e
+**nenhuma linha em 2026** — foi rebaixado. A troca não era um bug aleatório: era a
+consequência inevitável de adivinhar a temporada.
+
+#### Caso reproduzido: a tela anuncia mais evidência do que tem
+
+`GET /dashboard?team_id=455&league_id=8&season_id=33&limit=20` (Celta Vigo, La Liga 2026):
+
+```json
+{ "sample_size": 6, "period": "Últimos 20 jogos" }
+```
+
+E na tela: `Últimos 10 jogos · amostra de 6 jogos` — contradição na mesma linha.
+`Period` vinha de `fmt.Sprintf("Últimos %d jogos", limit)`, a janela PEDIDA.
+
+#### Caso reproduzido: ausência virando zero
+
+`GET /dashboard?team_id=442&league_id=8&season_id=33&limit=20`:
+
+```json
+{ "sample_size": 0, "period": "Últimos 20 jogos",
+  "total_corners": { "count": 0, "mean": 0, "max": 0, "min": 0 },
+  "balance": 0, "frequencies": [{ "threshold": 4, "count": 0, "total": 0, "pct": 0 }] }
+```
+
+HTTP 200, zeros por toda parte. No frontend, `noData` era `b.sample === 0`, e escanteios e
+gols usam `sample: null` — logo `null === 0` é falso e **a tela renderizaria média 0,
+mediana 0, moda 0 e "0/0 = 0%"**. Números com cara de observação onde não houve observação.
+
+#### O que NÃO estava quebrado
+
+- **Carregamento automático funciona** quando a equipe existe na temporada resolvida:
+  abrir `?league_id=8&team_id=455` já mostrou o Celta sem nenhum clique.
+- **`sample_size` sempre foi o número real** de partidas — o defeito estava em `Period` e
+  na renderização, não na contagem.
+- **Nenhum número inventado** foi encontrado: médias, frequências e denominadores batem
+  com a amostra.
+- Os leilões de IDs interno × externo estão corretos: o Dashboard trafega apenas IDs
+  internos; `external_id` não aparece em nenhuma rota dessa tela.
+
+#### Botão "Analisar" — evidência
+
+`(click)="runDashboard()"`, e `runDashboard()` faz um único `GET /api/v1/dashboard`.
+Nenhum processamento, nenhum efeito colateral, nenhuma chamada a IA. **É um botão que pede
+um clique para ler dado que o worker já calculou e persistiu.**
+
+Pior: trocar a equipe ou a janela (5/10/15/20) chamava só `syncQueryParams()`. O usuário
+mudava de 10 para 20 jogos e a tela continuava mostrando o resultado anterior — o "clico e
+nada acontece" relatado, ao contrário: mudava a seleção e nada acontecia.
+
+---
+
+### B — Causa raiz
+
+Três defeitos independentes, todos na fronteira entre camadas:
+
+1. **A temporada não trafega.** O calendário conhece a temporada da partida clicada e não a
+   transmite; o backend do calendário nem a devolve. O Dashboard preenche a lacuna com um
+   palpite (`MAX(year)`) e, quando erra, **substitui a equipe em silêncio**.
+   *Camada: domínio + repositório (overview) + navegação Angular.*
+
+2. **`Period` descrevia o pedido, não o dado.** *Camada: usecase (backend).*
+
+3. **`noData` não cobria amostra zero** para escanteios e gols. *Camada: componente Angular.*
+
+---
+
+### C — Implementação
+
+| arquivo | alteração | por quê |
+|---|---|---|
+| `internal/domain/overview.go` | `UpcomingMatch.SeasonID` | a temporada é um fato da partida |
+| `internal/repository/postgres/match_repo.go` | `ListUpcoming` passa a selecionar `m.season_id` | idem |
+| `internal/usecase/dashboard_usecase.go` | `describePeriod()`; campo `RequestedLimit` | separar amostra real de janela pedida |
+| `frontend/core/models.ts` | `UpcomingMatch.season_id`, `DashboardResult.requested_limit` | contrato |
+| `features/overview/overview.component.ts` | `openTeamDashboard` envia `season_id` | elimina o palpite na origem |
+| `features/dashboard/dashboard.component.ts` | sem troca silenciosa; `equipePedidaAusente`; `noData` cobre `sample_size === 0`; `avisoAmostraCurta`; `onTeamChange`/`onLimitChange` recarregam | honestidade + carregamento automático |
+| `features/dashboard/dashboard.component.html` | **botão "Analisar" removido**; estados de ausência distintos | ler dado persistido não precisa de clique |
+
+**Decisão sobre o "Analisar": REMOVIDO.** A evidência é inequívoca — ele só chamava
+`runDashboard()`. Qualquer mudança de campeonato, temporada, equipe ou janela agora
+recarrega sozinha. Se um dia existir explicação narrativa por IA, será outro botão, com
+outro nome, separado das estatísticas.
+
+**Três ausências, três frases diferentes — nenhuma delas "0":**
+
+- equipe pedida não joga nesta liga/temporada → aviso âmbar nomeando a liga, **sem trocar
+  de equipe**;
+- nenhuma partida na combinação → *"Nenhuma partida encontrada... Zero seria um resultado
+  observado; aqui não houve observação."*;
+- métrica não publicada pelo provedor (impedimentos/chutes) → mensagem própria, já existente.
+
+**Zero real continua zero:** um time que não fez escanteio em três jogos mantém média 0 com
+amostra 3. Há teste para isso.
+
+---
+
+### D — Testes e validação de código
+
+`backend/internal/usecase/dashboard_sample_test.go` (7 casos), todos derivados de números
+medidos em produção, não de hipótese:
+
+```
+--- PASS: TestPeriodoDescreveAAmostraRealENaoAPedida
+--- PASS: TestPeriodoSemPartidasNaoDizUltimosNJogos
+--- PASS: TestPeriodoComAmostraCompletaNaoPoluiComRessalva
+--- PASS: TestPeriodoNuncaAnunciaMenosDoQueAnalisou
+--- PASS: TestResumoDeAmostraVaziaNaoInventaObservacao
+--- PASS: TestZeroObservadoContinuaSendoZero
+--- PASS: TestFrequenciaSemAmostraNaoInventaDenominador
+```
+
+Comandos executados nesta sessão:
+
+```
+go build ./...                          → exit 0
+go vet ./...                            → exit 0
+go test ./...                           → exit 0  (9 pacotes, 0 falhas)
+gofmt -l internal cmd pkg               → vazio
+npx ng build --configuration production → exit 0
+```
+
+O projeto **não tem suíte de testes de frontend** configurada (sem `ng test` utilizável);
+registrado como ausência, não como aprovação.
+
+---
+
+### E — Validação com dados reais (BANCO × BACKEND)
+
+| CASO | Banco | Backend | Resultado |
+|---|---|---|---|
+| **1. Celta Vigo · La Liga · 2025** (`limit=20`) | 38 finalizadas, 38 com escanteios | `sample_size` 20, `recent_matches` 20 | **CORRETO** (janela de 20 sobre 38 disponíveis) |
+| **2. Celta Vigo · La Liga · 2026** (`limit=20`) | 6 finalizadas, 6 com escanteios | `sample_size` 6, `recent_matches` 6 | **CORRETO** na contagem; `period` era a mentira, agora corrigido |
+| **3. Flamengo · Brasileirão Série A · 2026** (`limit=20` e `limit=5`) | 27 finalizadas, 27 com escanteios | 20 e 5, `count` 20 | **CORRETO** — a janela é respeitada nos dois sentidos |
+| **4. Athletic Club · La Liga · 2026** | **nenhuma partida** (rebaixado; 38 em 2025) | `sample_size` 0 com médias 0 | **ERA INCORRETO** na apresentação; agora bloqueado por `noData` |
+
+**Antes → depois (comportamento):**
+
+| situação | antes | depois |
+|---|---|---|
+| clicar em equipe rebaixada no calendário | abre outra equipe, sem aviso | abre a temporada da partida; se ainda faltar, avisa sem trocar |
+| Celta 2026 com janela 20 | "Últimos 20 jogos · amostra de 6" | "Últimos 6 jogos (de 20 pedidos)" + aviso explicativo |
+| combinação sem partidas | médias 0, moda 0, "0/0 = 0%" | "Nenhuma partida encontrada" |
+| trocar equipe ou janela | nada acontece até clicar em "Analisar" | recarrega sozinho |
+
+---
+
+### Definition of Done — REV-P1
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | fluxo Calendário → Dashboard validado | ✅ reproduzido e corrigido |
+| 2 | league/season/team corretos | ✅ `season_id` trafega ponta a ponta |
+| 3 | dados existentes carregam automaticamente | ✅ botão removido |
+| 4 | banco → backend → frontend rastreável | ✅ 4 casos em tabela |
+| 5 | ausência de dados não aparece como zero | ✅ `noData` cobre `sample_size === 0` |
+| 6 | tamanho real da amostra exibido/respeitado | ✅ `describePeriod` + `requested_limit` |
+| 7 | filtros não vazam estado | ✅ sem troca silenciosa de equipe |
+| 8 | botão "Analisar" removido ou legítimo | ✅ removido, com evidência |
+| 9 | nenhuma estatística inventada | ✅ nada hardcoded, nenhum fallback |
+| 10 | backend build passa | ✅ exit 0 |
+| 11 | backend vet passa | ✅ exit 0 |
+| 12 | backend tests passam | ✅ exit 0 |
+| 13 | frontend production build passa | ✅ exit 0 |
+| 14 | ≥3 casos reais ponta a ponta | ⚠️ **PARCIAL** — BANCO × BACKEND validado em 4 casos; **FRONTEND não**, porque o código corrigido ainda não está publicado |
+| 15 | documentação atualizada | ✅ esta seção |
+
+**REV-P1 = PARCIAL.**
+
+Falta um único item, e ele depende de deploy: a coluna "Frontend" das tabelas acima foi
+medida contra o código ANTIGO, que é o que está no ar. Depois de publicar, é preciso
+repetir os quatro casos na interface e confirmar que a tela mostra o que o backend devolve.
+
+---
+
+### Pendências descobertas, fora do escopo do P1 (não corrigidas)
+
+- **`GET /teams?league_id&season_id` inclui partidas AGENDADO.** Por isso o Celta aparece
+  na lista de 2026 mesmo com só 6 jogos disputados. É provavelmente o comportamento
+  desejado (o time joga a temporada), mas significa que "estar na lista" não garante
+  amostra — quem garante é `sample_size`.
+- **Ligas sem nenhuma partida** (Liga Portugal, Segunda División, Ligue 2, Serie B, EFL
+  Championship, Liga Profesional, Primera Nacional, USL, 2. Bundesliga) têm temporada
+  cadastrada e zero jogos. Não aparecem em `/leagues`, então não afetam o Dashboard hoje.
+- **UEFA Champions League tem a temporada 2025 vazia** (0 partidas) além da 2026 com 234.
+- **Sem suíte de testes no frontend.** As correções de apresentação só têm cobertura
+  indireta, via o contrato do backend.
+- Avisos `NG8107` pré-existentes em `dashboard.component.html` e `integrations.component.html`.
+

@@ -269,7 +269,7 @@ func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []
 // necessidade real para uma tela de calendário.
 func (r *MatchRepo) ListUpcoming(ctx context.Context) ([]domain.UpcomingMatch, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT m.id, m.match_date, m.league_id, l.name, m.round,
+		SELECT m.id, m.match_date, m.league_id, m.season_id, l.name, m.round,
 		       m.home_team_id, ht.name, m.away_team_id, at.name
 		FROM matches m
 		JOIN leagues l ON l.id = m.league_id
@@ -288,7 +288,7 @@ func (r *MatchRepo) ListUpcoming(ctx context.Context) ([]domain.UpcomingMatch, e
 	matches := make([]domain.UpcomingMatch, 0)
 	for rows.Next() {
 		var m domain.UpcomingMatch
-		if err := rows.Scan(&m.MatchID, &m.MatchDate, &m.LeagueID, &m.LeagueName, &m.Round,
+		if err := rows.Scan(&m.MatchID, &m.MatchDate, &m.LeagueID, &m.SeasonID, &m.LeagueName, &m.Round,
 			&m.HomeTeamID, &m.HomeTeamName, &m.AwayTeamID, &m.AwayTeamName); err != nil {
 			return nil, err
 		}

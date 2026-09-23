@@ -17,6 +17,7 @@ import { DashboardResult, League, Season, Team, TeamMatchView } from '../../core
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
+import { resolverEquipe, resolverTemporada } from './season-resolution';
 
 const VALID_LIMITS = [5, 10, 15, 20];
 
@@ -87,6 +88,10 @@ export class DashboardComponent implements OnInit {
    * liga+temporada resolvidas. Guardado para a tela poder dizer isso em vez de
    * trocar de equipe por baixo do pano. */
   equipePedidaAusente = signal<number | null>(null);
+
+  /** ID da temporada que veio na URL e NÃO existe nesta liga. Mesma regra da
+   * equipe: não se troca por outra em silêncio — avisa-se. */
+  temporadaPedidaAusente = signal<number | null>(null);
   error = signal<string | null>(null);
   result = signal<DashboardResult | null>(null);
 
@@ -184,23 +189,46 @@ export class DashboardComponent implements OnInit {
   onLeagueChange(presetSeasonId?: number, presetTeamId?: number): void {
     if (!this.selectedLeagueId) return;
     this.selectedSeasonId = undefined;
+    this.temporadaPedidaAusente.set(null);
     this.teamsLoading.set(true);
+
+    // includeAll quando a URL pede uma temporada específica.
+    //
+    // listSeasons() esconde temporadas anteriores ao ano corrente — filtro de
+    // interface, para os seletores não encherem de histórico. Era ELE, e não a
+    // regra de precedência, que descartava `season_id=12` (La Liga 2025): o
+    // componente procurava a temporada pedida numa lista da qual ela já havia
+    // sido removida, não achava, e caía no fallback MAX(year).
+    //
+    // Com pedido explícito a lista vem inteira, então a temporada pedida existe
+    // para ser encontrada — e também aparece no seletor, permitindo ao usuário
+    // voltar para ela.
+    const pedidoExplicito = presetSeasonId !== undefined;
     // Temporada é resolvida ANTES de buscar as equipes (não mais em paralelo):
     // a lista de equipes depende de qual temporada fica selecionada por padrão,
     // senão equipes de temporadas passadas (ex: rebaixadas) aparecem como se
     // ainda estivessem na liga atual — ver loadTeams().
-    this.api.listSeasons(this.selectedLeagueId).subscribe({
+    this.api.listSeasons(this.selectedLeagueId, pedidoExplicito).subscribe({
       next: seasons => {
         this.seasons.set(seasons);
-        // Evita o campo "Temporada" ficar vazio (tela morta ao clicar em
-        // Analisar sem nenhuma seleção visível): assume a mais recente por
-        // padrão. "Todas" continua disponível como opção explícita. Se veio
-        // um valor restaurado da URL (voltando de outra aba), prevalece.
-        if (presetSeasonId !== undefined && seasons.some(s => s.id === presetSeasonId)) {
-          this.selectedSeasonId = presetSeasonId;
-        } else if (seasons.length) {
-          this.selectedSeasonId = seasons.reduce((a, b) => (a.year > b.year ? a : b)).id;
+
+        // Precedência em resolverTemporada (unidade pura, testada): pedido
+        // explícito válido vence; MAX(year) é apenas fallback.
+        const r = resolverTemporada(seasons, presetSeasonId);
+        this.selectedSeasonId = r.seasonId;
+
+        if (r.pedidaAusente) {
+          // Temporada pedida não existe nesta liga. Não escolher outra é o
+          // ponto: seguir com a mais recente seria responder uma pergunta
+          // diferente da que foi feita, sem avisar.
+          this.temporadaPedidaAusente.set(presetSeasonId ?? null);
+          this.teams.set([]);
+          this.selectedTeamId = undefined;
+          this.result.set(null);
+          this.teamsLoading.set(false);
+          return;
         }
+
         this.loadTeams(presetTeamId);
       },
       error: () => this.teamsLoading.set(false),
@@ -219,22 +247,21 @@ export class DashboardComponent implements OnInit {
         this.teams.set(teams);
         this.teamsLoading.set(false);
 
-        const pedidaExiste = preferredTeamId !== undefined && teams.some(t => t.id === preferredTeamId);
+        // Precedência em resolverEquipe (unidade pura, testada): equipe pedida
+        // válida vence; sem pedido, a primeira da lista serve de ponto de
+        // partida; pedido inválido NÃO vira substituição silenciosa.
+        const eq = resolverEquipe(teams, preferredTeamId);
+        this.selectedTeamId = eq.teamId;
 
-        if (pedidaExiste) {
-          this.selectedTeamId = preferredTeamId;
-        } else if (preferredTeamId !== undefined) {
+        if (eq.pedidaAusente) {
           // A equipe pedida NÃO joga nesta liga+temporada. Trocar em silêncio
           // pela primeira da lista era o pior desfecho possível: a tela passava a
           // falar de outra equipe com o nome dela no seletor, e o usuário não
           // tinha como perceber. Agora não há seleção e a tela diz o que houve.
-          this.selectedTeamId = undefined;
-          this.equipePedidaAusente.set(preferredTeamId);
+          this.equipePedidaAusente.set(preferredTeamId ?? null);
           this.result.set(null);
           this.syncQueryParams();
           return;
-        } else {
-          this.selectedTeamId = teams.length ? teams[0].id : undefined;
         }
 
         // Dado já persistido carrega sozinho. Não existe motivo para exigir um

@@ -58,6 +58,18 @@
   <!-- Equipe pedida (link do calendário ou URL) que não joga nesta liga+temporada.
        Dizer isso é obrigatório: a alternativa anterior era trocar de equipe em
        silêncio e deixar o usuário lendo números de outro time. -->
+  <!-- Temporada pedida pela URL que não existe nesta liga. Mesma regra da equipe:
+       não se troca por outra em silêncio. -->
+  @if (!loading() && !error() && temporadaPedidaAusente()) {
+    <div class="cl-card p-6 text-center text-sm text-amber-300">
+      A temporada solicitada não existe em
+      <strong class="text-slate-200">{{ selectedLeagueName() }}</strong>.
+      <div class="mt-1 text-slate-400">
+        Nenhuma outra foi escolhida no lugar. Selecione uma temporada no seletor acima.
+      </div>
+    </div>
+  }
+
   @if (!loading() && !error() && equipePedidaAusente()) {
     <div class="cl-card p-6 text-center text-sm text-amber-300">
       A equipe que você abriu não tem partidas registradas em
@@ -68,7 +80,7 @@
     </div>
   }
 
-  @if (!loading() && !error() && !result() && !equipePedidaAusente()) {
+  @if (!loading() && !error() && !result() && !equipePedidaAusente() && !temporadaPedidaAusente()) {
     <div class="cl-card p-8 text-center text-slate-400">
       Escolha campeonato, temporada e equipe acima — as estatísticas carregam sozinhas.
     </div>

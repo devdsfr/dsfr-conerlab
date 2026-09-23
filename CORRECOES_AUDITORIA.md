@@ -2161,3 +2161,226 @@ repetir os quatro casos na interface e confirmar que a tela mostra o que o backe
   indireta, via o contrato do backend.
 - Avisos `NG8107` pré-existentes em `dashboard.component.html` e `integrations.component.html`.
 
+
+---
+
+## REV-P1 — validação do item 14 em produção (22/09/2026)
+
+Commit `fad19be` publicado. Backend e frontend confirmados como código novo:
+`requested_limit` presente na resposta, textos novos na tela, botão "Analisar" ausente.
+
+> **Nota de método:** as primeiras leituras da API devolveram payload ANTIGO (sem
+> `requested_limit`). Era cache HTTP do navegador — repetido com `cache:'no-store'` e
+> cache-buster, veio o payload novo. Todas as medições abaixo usam cache desligado.
+> O console do Neon não está autenticado nesta sessão, então a coluna BANCO foi medida
+> pelo backend com janela ampla (`limit=500`), que lê `matches` direto. **Não é consulta
+> SQL direta** — está registrado como tal.
+
+### Casos validados — BANCO → BACKEND → FRONTEND
+
+| CASO | Banco (janela ampla) | Backend | Frontend (tela publicada) | Resultado |
+|---|---|---|---|---|
+| **1. Celta Vigo · La Liga · 2025 · limit 20** | 38 finalizadas, 38 com escanteios | `sample_size` 20, `requested_limit` 20, `period` "Últimos 20 jogos" | — (ver divergência) | **NÃO VALIDADO NA TELA** |
+| **2. Celta Vigo · La Liga · 2026 · limit 20** | 7 finalizadas, 7 com escanteios | `sample_size` 7, `requested_limit` 20, `period` "Últimos 7 jogos (de 20 pedidos)" | "Últimos 7 jogos (de 20 pedidos) · amostra de 7 jogos" + aviso "Você pediu os últimos 20 jogos, mas só existem 7…"; frequências com denominador 7 (`6/7`, `4/7`, `2/7`); 7 partidas listadas | **CORRETO** |
+| **3. Flamengo · Série A · 2026 · limit 20** | 28 finalizadas, 28 com escanteios | `sample_size` 20, `period` "Últimos 20 jogos" | "Últimos 20 jogos · amostra de 20 jogos" | **CORRETO** |
+| **3b. Flamengo · limit 5 (clique no seletor)** | idem | `sample_size` 5 | amostra passou de 20 → 5 sozinha, `period` "Últimos 5 jogos", URL virou `limit=5`, nova requisição disparada | **CORRETO** |
+| **4. Athletic Club (442) · La Liga · 2026** | 0 partidas | `sample_size` 0, `period` "Nenhuma partida encontrada" | campo Equipe **vazio** + "A equipe que você abriu não tem partidas registradas em La Liga nesta temporada." | **CORRETO — sem substituição** |
+
+### Confirmações pedidas
+
+| verificação | resultado |
+|---|---|
+| `requested_limit` presente | ✅ |
+| `period` representa a amostra real | ✅ |
+| Celta 2026 não anuncia 20 jogos | ✅ "Últimos 7 jogos (de 20 pedidos)" |
+| Athletic Club não é substituído silenciosamente | ✅ equipe some da URL e a tela explica; **antes** virava `team_id=454` (Alavés) |
+| ausência de partidas não aparece como zero | ⚠️ parcial — ver abaixo |
+| zero real continua zero | ⚠️ não reproduzido na tela — ver abaixo |
+| 5/10/15/20 recarregam automaticamente | ✅ medido com clique real |
+| botão "Analisar" removido | ✅ inexistente no DOM |
+| calendário envia `season_id` | ✅ payload do `/overview/upcoming` traz `season_id`; clique real gerou `?league_id=19&season_id=27&team_id=398&limit=10` |
+
+### DIVERGÊNCIA — `season_id` da URL é ignorado quando não é a temporada mais recente
+
+Reproduzido três vezes, com evidência de rede:
+
+```
+Navegação:  /dashboard?league_id=8&season_id=12&team_id=455&limit=15
+Requisição: /api/v1/teams?league_id=8&season_id=33
+            /api/v1/dashboard?team_id=455&limit=15&league_id=8&season_id=33
+Tela:       Temporada 2026
+URL final:  ?league_id=8&season_id=33&...        (reescrita)
+```
+
+`limit=15` foi respeitado na mesma navegação, então o problema é específico de
+`season_id`. O Dashboard continua resolvendo para `MAX(year)`.
+
+**Consequência para o REV-P1:** o lado do calendário foi corrigido — ele agora ENVIA a
+temporada — mas o Dashboard a DESCARTA. Para partida da temporada corrente os dois
+coincidem e nada aparenta estar errado (foi o que ocorreu no teste do calendário:
+Criciúma, Série B, season 27, que também é a mais recente). Para partida de temporada
+anterior — exatamente o cenário que motivou a correção — o comportamento antigo persiste.
+
+**Hipótese não comprovada** (registrada como hipótese, não como causa): o handler
+`(selectionChange)="onLeagueChange()"` do seletor de campeonato dispara sem argumentos
+depois da chamada com presets, sobrescrevendo a temporada. A contagem de requisições
+`/teams` repetidas em algumas cargas é compatível com isso. **Não investiguei a fundo nem
+corrigi** — fora do escopo desta passagem, que era só validar.
+
+### Itens não reproduzíveis na interface hoje
+
+- **Ausência virando zero:** o único caminho alcançável é o de equipe ausente, e esse foi
+  validado. Uma combinação com equipe válida e zero partidas não é produzível pela tela,
+  porque o Dashboard descarta a equipe antes. Coberto pelo backend
+  (`period: "Nenhuma partida encontrada"`, `sample_size: 0`) e por teste unitário.
+- **Zero real continua zero:** não encontrei em produção equipe com escanteios observados
+  iguais a zero. Coberto por `TestZeroObservadoContinuaSendoZero`.
+
+Registro como cobertura indireta, não como validação de tela.
+
+### Correção de um erro meu na passagem anterior
+
+Afirmei que o Athletic Club "foi rebaixado". **Estava errado.** Existem DOIS registros com
+esse nome:
+
+| id | nome | país | temporada |
+|---|---|---|---|
+| 442 | Athletic Club | **Brazil** | La Liga 2025 |
+| 1198 | Athletic Club | Espanha | La Liga 2026 |
+
+É duplicidade/rotulagem incorreta de equipe, não rebaixamento. O caso de teste continua
+válido (442 não tem partidas em 2026), mas a explicação que dei era inferência apresentada
+como fato. Fica registrado como pendência nova, **fora do escopo do P1**.
+
+### Definition of Done — REV-P1
+
+Item 14: ⚠️ **PARCIAL** — quatro casos medidos ponta a ponta, três corretos na tela, um
+(Celta 2025) não validável enquanto `season_id` for ignorado. Demais itens seguem ✅.
+
+## REV-P1 = PARCIAL
+
+Falta uma coisa só, e é concreta: **o Dashboard precisa respeitar `season_id` da URL**.
+Enquanto isso não acontecer, a correção do calendário funciona por coincidência na
+temporada corrente e falha na anterior.
+
+### Pendências novas (não corrigidas)
+
+- `season_id` da URL descartado quando não é `MAX(year)`.
+- Equipes duplicadas com o mesmo nome e países diferentes (ex.: Athletic Club 442/1198).
+- Respostas da API servidas de cache HTTP com payload antigo após deploy.
+
+---
+
+## REV-P1 — causa raiz do `season_id` descartado (22/09/2026)
+
+### Fase A — a hipótese anterior estava ERRADA
+
+Na passagem anterior registrei como hipótese que `(selectionChange)="onLeagueChange()"`
+estaria disparando sem argumentos e sobrescrevendo o preset. **Não é isso.** A hipótese foi
+descartada por observação direta.
+
+**O experimento que resolveu:** abri o Dashboard em La Liga e abri o seletor "Temporada".
+As opções eram:
+
+```
+["Todas", "2026"]
+```
+
+**A temporada 2025 não está na lista.** Não há o que "sobrescrever": o componente procura a
+temporada pedida numa lista da qual ela já foi removida.
+
+**Causa raiz — `ApiService.listSeasons()`:**
+
+```ts
+const currentYear = new Date().getFullYear();      // 2026
+const recent = seasons.filter(s => s.year >= currentYear);
+return recent.length ? recent : seasons;
+```
+
+É um filtro de interface, criado para os seletores não encherem de histórico. Hoje é 2026,
+então La Liga 2025 (`year: 2025`) é descartada **antes de o componente ver a resposta**.
+
+Cadeia completa, agora comprovada:
+
+| passo | o que acontece |
+|---|---|
+| URL | `season_id=12` |
+| `ngOnInit` | lê corretamente → `presetSeasonId = 12` |
+| `listSeasons(8)` | API devolve `[33 (2026), 12 (2025)]` |
+| filtro do ApiService | **remove 2025** → `[33]` |
+| `seasons.some(s => s.id === 12)` | **false** |
+| fallback | `MAX(year)` → 33 |
+| `/teams` e `/dashboard` | `season_id=33` |
+
+Isso também explica por que `limit=15` sobrevivia: nada o filtra. A leitura dos query
+params sempre funcionou; o defeito estava na lista contra a qual a comparação era feita.
+
+### Fase B — correção
+
+Menor alteração que ataca a causa, sem tocar na precedência nem no filtro (que continua
+válido para navegação normal):
+
+1. **`season-resolution.ts` (novo)** — `resolverTemporada` e `resolverEquipe` extraídas do
+   componente como funções puras. Precedência explícita: pedido válido vence; `MAX(year)`
+   só como fallback; pedido inválido **não** vira substituição silenciosa.
+2. **`dashboard.component.ts`** — `listSeasons(liga, includeAll)` passa `includeAll = true`
+   **quando existe pedido explícito de temporada**. A lista chega inteira, a temporada
+   pedida é encontrada e também aparece no seletor, permitindo voltar a ela.
+3. Temporada pedida inexistente na liga → nada é selecionado e a tela avisa
+   (`temporadaPedidaAusente`), em vez de escolher outra.
+
+Nenhum `setTimeout`, nenhuma flag de corrida: o problema não era temporal.
+
+O filtro de `listSeasons` foi **preservado** para o caminho sem pedido explícito — mexer
+nele afetaria também o Simulador de Filtros, fora do escopo.
+
+### Fase C — testes
+
+O projeto não tem runner de testes Angular (sem karma/jest/vitest em `package.json`). Em
+vez de impor um runner novo, a lógica crítica virou unidade pura e o teste usa só
+`node:assert`, com o comando documentado no cabeçalho do arquivo.
+
+`frontend/src/app/features/dashboard/season-resolution.spec.ts` — **executado**:
+
+```
+PASS  URL com temporada atual -> preservada
+PASS  URL com temporada historica valida -> preservada (nao vira MAX(year))
+PASS  URL sem season_id -> fallback MAX(year)
+PASS  season_id inexistente na liga -> nao troca em silencio
+PASS  troca manual de campeonato -> assume a mais recente da nova liga
+PASS  troca manual de temporada -> nova temporada respeitada
+PASS  liga sem temporadas -> nada selecionado, sem alarme falso
+PASS  team_id valido -> preservado
+PASS  team_id ausente -> nao substitui por teams[0]
+PASS  sem team_id -> primeira da lista como ponto de partida
+PASS  sem equipes na temporada -> nada selecionado
+PASS  inicializacao assincrona nao troca a temporada no caminho
+
+12/12 passaram
+```
+
+`tsconfig.app.json` já excluía `src/**/*.spec.ts`, então o arquivo não entra no bundle —
+confirmado pelo build de produção abaixo.
+
+Validação de código:
+
+```
+go build ./...                          → exit 0
+go vet ./...                            → exit 0
+go test ./...                           → exit 0  (9 pacotes)
+npx ng build --configuration production → exit 0
+```
+
+(`gofmt -l` acusa `internal/usecase/filter_usecase.go`, arquivo não tocado por este ciclo.)
+
+### Fase D — PENDENTE
+
+Commit `344126d` criado localmente. **Não publicado**: o ambiente não tem credencial do
+GitHub e credencial não é algo que eu manipule. A validação em produção dos quatro casos
+depende do push.
+
+## REV-P1 = PARCIAL
+
+Item 14 continua ⚠️. A causa raiz está identificada com evidência e corrigida no código,
+com teste executado — mas a regra do REV-P1 é evidência de tela publicada, e o código ainda
+não está no ar.

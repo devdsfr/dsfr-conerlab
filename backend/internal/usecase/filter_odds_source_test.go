@@ -44,6 +44,13 @@ func (s *stubMatchRepo) GetMatchTeams(context.Context, []int64) (map[int64]domai
 	return map[int64]domain.Match{}, nil
 }
 
+// HeadToHead entrou na interface com o REV-P2 (Comparador). Este stub não
+// exercita confronto direto, então devolve lista vazia — nunca nil disfarçado
+// de resultado.
+func (s *stubMatchRepo) HeadToHead(context.Context, int64, int64, *int64, *int64) ([]domain.Match, error) {
+	return []domain.Match{}, nil
+}
+
 func (s *stubMatchRepo) ListUpcoming(context.Context) ([]domain.UpcomingMatch, error) {
 	return nil, nil
 }

@@ -2654,3 +2654,131 @@ Fatia 1 (integridade) implementada e verificada em build/teste. Falta: publicar 
 e a fatia 2 — métricas (gols, finalizações, finalizações no alvo, impedimentos),
 Geral/Casa/Fora, Produzido/Concedido/Total, frequências por faixa, H2H, evolução
 identificada por partida.
+
+### B.2 — Implementação (fatia 2: funcional)
+
+#### Métricas realmente suportadas, com origem provada
+
+| métrica | colunas em `matches` | `TeamMatchView` | nulável? | cobertura medida em produção (23/09) |
+|---|---|---|---|---|
+| Escanteios | `home_corners`, `away_corners` | `CornersFor/Against` | **não** | 7/7, 38/38, 28/28, 24/24 |
+| Gols | `home_goals`, `away_goals` | `GoalsFor/Against` | **não** | 7/7, 38/38, 28/28, 24/24 |
+| Finalizações | `home_shots`, `away_shots` | `ShotsFor/Against` | sim | 7/7, 38/38, 28/28, 24/24 |
+| Finalizações no alvo | `home_shots_on_target`, `away_shots_on_target` | `ShotsOnTargetFor/Against` | sim | 7/7, 38/38, 28/28, 24/24 |
+| Impedimentos | `home_offsides`, `away_offsides` | `OffsidesFor/Against` | sim | **7/7, 0/38, 9/28, 24/24** |
+
+Recortes medidos: Celta/La Liga 2026, Celta/La Liga 2025, Flamengo/Brasileirão 2026,
+Seattle Sounders/MLS 2026.
+
+**Impedimentos é a métrica irregular** — zero cobertura em toda a La Liga 2025, 9 de 28 no
+Flamengo. É exatamente o caso que o enunciado previu: a resposta traz
+`metric_available=false` e a tela diz *"Esta estatística não está disponível para a amostra
+selecionada"*, sem nenhum zero no lugar.
+
+#### Contrato adicionado
+
+`GET /api/v1/comparator` passa a aceitar `venue`, `metric` e `perspective` (além de
+`season_id` da fatia 1). Resposta reestruturada:
+
+```
+venue · metric · perspective · frequencies_available · frequencies_note
+team_a/team_b: sample_size · metric_sample_size · metric_available · period
+               summary · frequencies[] · evolution[]
+h2h: match_count · matches[]
+```
+
+- `sample_size` = partidas do recorte; `metric_sample_size` = quantas têm a métrica. Os
+  dois divergem sempre que o provedor não publica o dado em todo jogo.
+- `Trend []int` **foi substituído** por `evolution []MatchPoint`, com `match_id`, data,
+  adversário, mando, valor e placar. O gráfico antes rotulava o eixo X como `1..N`; um
+  ponto que não identifica a observação não é auditável.
+- `FrequencyBand` traz `threshold`, `hits`, `sample` e `percentage` — a tela mostra
+  `13/20 — 65%`, nunca só o percentual.
+- `H2HMatch` traz `match_id`, data, liga, temporada, mando, placar e a métrica pelos dois
+  lados.
+
+#### Decisões que precisam ficar registradas
+
+**Faixas de frequência existem apenas para a perspectiva "total da partida".** Os limites
+(`4,5,6,7,8,9,10` para escanteios; `0..4` para gols; `16..26` para finalizações; `4..12`
+para finalizações no alvo; `0..5` para impedimentos) vêm do Dashboard, onde foram
+definidos para o total dos dois times. Aplicá-los a produzido/concedido erraria a ordem de
+grandeza — escanteios de UMA equipe giram em torno da metade do total, e "acima de 8"
+produziria percentuais artificialmente baixos com aparência de estatística.
+
+Não existe definição de produto para faixas por perspectiva individual. Em vez de inventar,
+a resposta devolve `frequencies_available=false` com a nota explicando.
+**Pendência registrada, não resolvida.**
+
+**Total exige as duas pontas.** Se o provedor publicou só o lado da equipe, `total` é
+`null` — devolver a metade disponível seria inventar a soma.
+
+**H2H respeita campeonato + temporada**, conforme sua preferência explícita. Ampliar
+silenciosamente para temporadas anteriores quebraria a reprodutibilidade a partir dos
+filtros da tela.
+
+**"Casa" é por equipe:** A mandante no lado A, B mandante no lado B. Cruzar "A em casa"
+contra "B fora" é outra pergunta e fica como decisão de produto separada.
+
+#### Arquivos alterados
+
+`internal/usecase/comparator_metrics.go` (novo) · `internal/usecase/comparator_usecase.go`
+(reescrito) · `internal/repository/interfaces.go` · `internal/repository/postgres/match_repo.go`
+(`HeadToHead`) · `internal/delivery/http/handlers/comparator_handler.go` ·
+`internal/delivery/http/handlers/export_handler.go` · `frontend/core/models.ts` ·
+`frontend/core/api.service.ts` · `features/comparator/comparator.component.{ts,html}` ·
+stubs de teste (`filter_odds_source_test.go`, `discovery/outofsample_test.go`) para a
+interface nova.
+
+### C.2 — Testes da fatia 2
+
+`comparator_metrics_test.go` (13 casos) + `comparator_sample_test.go` (6), **executados**:
+
+```
+--- PASS: TestPerspectivaComEquipeMandante              (6 / 4 / 10)
+--- PASS: TestPerspectivaComEquipeVisitanteNaoInverte   (mesmo 6 / 4 / 10 jogando fora)
+--- PASS: TestPerspectivaEmGols
+--- PASS: TestMetricaAusenteNaoViraZero
+--- PASS: TestTotalComApenasUmaPontaPublicadaEhIndisponivel
+--- PASS: TestFrequenciaTrazNumeradorEDenominador        (>5 em 4,6,8 -> 2/3 = 66.67%)
+--- PASS: TestFrequenciaLimiteExatoNaoConta              (5,5,6 acima de 5 -> 1)
+--- PASS: TestFrequenciaSemValoresTemDenominadorZero
+--- PASS: TestFaixasSoExistemParaTotalDaPartida
+--- PASS: TestFaixasNaoSeMisturamEntreMetricas
+--- PASS: TestPadroesSegurosDosEixos
+--- PASS: TestH2HOrientaPeloMandoENaoPelaEquipeConsultada
+--- PASS: TestH2HMetricaAusenteContinuaNil
+--- PASS: TestCadaLadoDescreveASuaPropriaAmostra
+--- PASS: TestMediaDeAmostraConhecida                    (4,6,8 -> 6)
+--- PASS: TestProduzidoConcedidoETotalNaoSeConfundem
+--- PASS: TestZeroObservadoNoComparador
+```
+
+Regressão:
+
+```
+go build ./...                          → exit 0
+go vet ./...                            → exit 0
+go test ./...                           → exit 0  (9 pacotes; P0 e P1 sem regressão)
+gofmt -l (arquivos do P2)               → vazio
+npx ng build --configuration production → exit 0
+```
+
+**O projeto continua sem runner de testes Angular.** A UI do Comparador **não tem
+cobertura automatizada** — registrado como ausência, não como aprovação.
+
+### Requisitos do enunciado NÃO implementados, e por quê
+
+| requisito | situação |
+|---|---|
+| Faixas para produzido/concedido | **não implementado** — sem definição de produto; inventar limites daria percentuais enganosos |
+| Drill-down para a partida | **não implementado** — não existe rota de detalhe de partida no app; criar link falso é pior que não ter |
+| Gráfico de distribuição observada | **não implementado nesta passagem** — `evolution` já carrega os valores necessários; falta a visualização |
+| Fullscreen/modal dos gráficos | **não implementado** |
+| Tooltip nativo do gráfico | parcial — o componente `cl-simple-chart` não expõe tooltip customizado; a identificação de cada ponto está numa lista expansível abaixo do gráfico (data, mando, adversário, valor, placar) |
+
+## REV-P2 = PARCIAL — código completo aguardando deploy/validação
+
+Fatias 1 e 2 implementadas, com build, vet, testes e build de produção verdes localmente.
+**Falta:** `git push`, deploy e a validação dos três casos reais em produção. Nenhum dos 25
+itens da Definition of Done está marcado — nenhum tem evidência de produção ainda.

@@ -38,12 +38,43 @@
       </mat-select>
     </mat-form-field>
 
-    <mat-button-toggle-group [(ngModel)]="limit">
+    <mat-button-toggle-group [(ngModel)]="limit" (ngModelChange)="onAxisChange()">
       <mat-button-toggle [value]="5">5</mat-button-toggle>
       <mat-button-toggle [value]="10">10</mat-button-toggle>
       <mat-button-toggle [value]="15">15</mat-button-toggle>
       <mat-button-toggle [value]="20">20</mat-button-toggle>
     </mat-button-toggle-group>
+
+    <!-- Os tres eixos do REV-P2. LOCAL recorta quais partidas entram; METRICA
+         escolhe o que e contado; PERSPECTIVA escolhe de quem e o numero. -->
+    <mat-form-field appearance="outline" class="w-40">
+      <mat-label>Local</mat-label>
+      <mat-select [(ngModel)]="venue" (selectionChange)="onAxisChange()" panelClass="cl-select-panel">
+        <mat-option value="geral">Geral</mat-option>
+        <mat-option value="casa">Casa</mat-option>
+        <mat-option value="fora">Fora</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-56">
+      <mat-label>Metrica</mat-label>
+      <mat-select [(ngModel)]="metric" (selectionChange)="onAxisChange()" panelClass="cl-select-panel">
+        <mat-option value="corners">Escanteios</mat-option>
+        <mat-option value="goals">Gols</mat-option>
+        <mat-option value="shots">Finalizacoes</mat-option>
+        <mat-option value="shots_on_target">Finalizacoes no alvo</mat-option>
+        <mat-option value="offsides">Impedimentos</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-52">
+      <mat-label>Perspectiva</mat-label>
+      <mat-select [(ngModel)]="perspective" (selectionChange)="onAxisChange()" panelClass="cl-select-panel">
+        <mat-option value="produzido">Produzido</mat-option>
+        <mat-option value="concedido">Concedido</mat-option>
+        <mat-option value="total">Total da partida</mat-option>
+      </mat-select>
+    </mat-form-field>
 
     <div class="flex flex-col gap-1">
       <button mat-flat-button color="primary" (click)="runCompare()" [disabled]="!teamAId || !teamBId || loading()">
@@ -86,7 +117,7 @@
   }
 
   @if (result(); as r) {
-    <p class="text-sm text-slate-400">{{ r.period }}</p>
+    <p class="text-sm text-slate-400">{{ r.period }} · {{ descricaoRecorte() }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       @for (side of [{ data: r.team_a, chart: chartA() }, { data: r.team_b, chart: chartB() }]; track side.data.team.id) {
@@ -103,16 +134,106 @@
               <span class="block text-slate-400 mt-1">Não há estatística a exibir — nem zero.</span>
             </p>
           } @else {
+          @if (!side.data.metric_available) {
+            <p class="text-sm text-amber-300">
+              Esta estatística não está disponível para a amostra selecionada.
+              <span class="block text-slate-400 mt-1">
+                A fonte não publicou {{ metricLabel().toLowerCase() }} em nenhuma das
+                {{ side.data.sample_size }} partidas deste recorte. Nenhum zero foi inventado no lugar.
+              </span>
+            </p>
+          } @else {
+          @if (side.data.metric_sample_size < side.data.sample_size) {
+            <p class="text-xs text-amber-300 mb-2">
+              {{ metricLabel() }}: dado disponível em {{ side.data.metric_sample_size }}
+              de {{ side.data.sample_size }} partidas. Os números abaixo usam
+              {{ side.data.metric_sample_size }}.
+            </p>
+          }
           <dl class="grid grid-cols-2 gap-y-1 text-sm mb-3">
-            <dt class="text-slate-400">Média (total)</dt><dd>{{ side.data.total_corners.mean }}</dd>
-            <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.total_corners.std_dev }}</dd>
-            <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.total_corners.consistency_index }}</dd>
-            <dt class="text-slate-400">Média casa</dt><dd>{{ side.data.home?.mean ?? '—' }}</dd>
-            <dt class="text-slate-400">Média fora</dt><dd>{{ side.data.away?.mean ?? '—' }}</dd>
+            <dt class="text-slate-400">Média</dt><dd>{{ side.data.summary.mean }}</dd>
+            <dt class="text-slate-400">Mediana</dt><dd>{{ side.data.summary.median }}</dd>
+            <dt class="text-slate-400">Maior</dt><dd>{{ side.data.summary.max }}</dd>
+            <dt class="text-slate-400">Menor</dt><dd>{{ side.data.summary.min }}</dd>
+            <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.summary.std_dev }}</dd>
+            <dt class="text-slate-400">Consistência <span class="cl-help" tabindex="0" [matTooltip]="consistencyTooltip">?</span></dt><dd>{{ side.data.summary.consistency_index }}</dd>
           </dl>
+
+          <!-- Frequências observadas: numerador, denominador e percentual.
+               Nunca só o percentual. -->
+          @if (r.frequencies_available && side.data.frequencies?.length) {
+            <table class="w-full text-xs mb-3">
+              <thead><tr class="text-slate-400 text-left"><th>Faixa</th><th>Ocorrências</th></tr></thead>
+              <tbody>
+                @for (b of side.data.frequencies; track b.threshold) {
+                  <tr><td class="text-slate-400">Acima de {{ b.threshold }}</td><td>{{ faixaTexto(b) }}</td></tr>
+                }
+              </tbody>
+            </table>
+          } @else if (!r.frequencies_available) {
+            <p class="text-xs text-slate-500 mb-3">{{ r.frequencies_note }}</p>
+          }
+
           <cl-simple-chart type="line" [labels]="side.chart.labels" [datasets]="side.chart.datasets"></cl-simple-chart>
+
+          <!-- Cada ponto do gráfico identificado: data, mando, adversário, valor
+               e placar. Sem rota de detalhe da partida no app, não há link —
+               link falso seria pior que a ausência dele. -->
+          <details class="mt-2">
+            <summary class="text-xs text-slate-400 cursor-pointer">Partidas do gráfico ({{ side.data.evolution.length }})</summary>
+            <ul class="mt-1 text-xs text-slate-400 space-y-0.5">
+              @for (p of side.data.evolution; track p.match_id) {
+                <li>{{ descricaoPonto(p) }}</li>
+              }
+            </ul>
+          </details>
+          }
           }
         </div>
+      }
+    </div>
+
+    <!-- CONFRONTO DIRETO — seção separada. Nunca substitui as estatísticas
+         individuais acima: são amostras diferentes respondendo perguntas
+         diferentes. Respeita campeonato + temporada selecionados, para a
+         comparação inteira continuar reproduzível a partir dos filtros. -->
+    <div class="cl-card p-4">
+      <h2 class="text-lg font-medium">Confronto direto</h2>
+      @if (r.h2h.match_count === 0) {
+        <p class="text-sm text-amber-300 mt-2">
+          Nenhum confronto direto encontrado para os filtros selecionados.
+          <span class="block text-slate-400 mt-1">
+            Nenhum número foi exibido no lugar — não houve confronto a resumir.
+          </span>
+        </p>
+      } @else {
+        <p class="text-xs text-slate-400 mt-1">
+          {{ r.h2h.match_count }} confronto(s) neste campeonato e temporada.
+        </p>
+        <table class="w-full text-xs mt-2">
+          <thead>
+            <tr class="text-slate-400 text-left">
+              <th>Data</th><th>Mandante</th><th>Placar</th><th>Visitante</th><th>{{ metricLabel() }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (m of r.h2h.matches; track m.match_id) {
+              <tr>
+                <td class="text-slate-400">{{ m.date | date: 'dd/MM/yyyy' }}</td>
+                <td>{{ m.home_team_name }}</td>
+                <td>{{ m.home_goals }} - {{ m.away_goals }}</td>
+                <td>{{ m.away_team_name }}</td>
+                <td>
+                  @if (m.home_value === null || m.away_value === null) {
+                    <span class="text-slate-500">sem dado</span>
+                  } @else {
+                    {{ m.home_value }} - {{ m.away_value }}
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
       }
     </div>
 

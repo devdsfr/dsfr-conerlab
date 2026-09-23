@@ -214,6 +214,60 @@ func (r *MatchRepo) TeamMatches(ctx context.Context, f repository.MatchFilter) (
 // motor de filtros/backtesting. Mesma razão do filtro em TeamMatches: partidas
 // 'AGENDADO' ainda não têm escanteios reais, e entrariam no backtest com 0/0
 // distorcendo qualquer resultado.
+// HeadToHead — confrontos diretos FINALIZADOS entre duas equipes.
+//
+// Cobre os dois mandos numa consulta só: A em casa contra B, ou B em casa
+// contra A. Sem odds no SELECT — o confronto direto é leitura estatística, e o
+// Comparador não toca em nada financeiro (regra 13 do REV-P2).
+func (r *MatchRepo) HeadToHead(ctx context.Context, teamA, teamB int64, leagueID, seasonID *int64) ([]domain.Match, error) {
+	query := `
+		SELECT id, league_id, season_id, round, match_date, home_team_id, away_team_id,
+		       home_corners, away_corners, home_goals, away_goals,
+		       home_offsides, away_offsides,
+		       home_shots, away_shots, home_shots_on_target, away_shots_on_target
+		FROM matches
+		WHERE status = 'FINALIZADO'
+		  AND ((home_team_id = $1 AND away_team_id = $2)
+		    OR (home_team_id = $2 AND away_team_id = $1))
+	`
+	args := []any{teamA, teamB}
+	argN := 3
+
+	if leagueID != nil {
+		query += " AND league_id = $" + strconv.Itoa(argN)
+		args = append(args, *leagueID)
+		argN++
+	}
+	// A temporada é aplicada quando informada. O Comparador sempre informa: um
+	// H2H que ampliasse para temporadas anteriores mostraria confrontos que os
+	// filtros da tela não pedem, e a comparação deixaria de ser reproduzível.
+	if seasonID != nil {
+		query += " AND season_id = $" + strconv.Itoa(argN)
+		args = append(args, *seasonID)
+	}
+	query += " ORDER BY match_date DESC"
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	matches := make([]domain.Match, 0)
+	for rows.Next() {
+		var m domain.Match
+		if err := rows.Scan(&m.ID, &m.LeagueID, &m.SeasonID, &m.Round, &m.MatchDate,
+			&m.HomeTeamID, &m.AwayTeamID,
+			&m.HomeCorners, &m.AwayCorners, &m.HomeGoals, &m.AwayGoals,
+			&m.HomeOffsides, &m.AwayOffsides,
+			&m.HomeShots, &m.AwayShots, &m.HomeShotsOnTarget, &m.AwayShotsOnTarget); err != nil {
+			return nil, err
+		}
+		matches = append(matches, m)
+	}
+	return matches, rows.Err()
+}
+
 func (r *MatchRepo) AllMatches(ctx context.Context, leagueID int64, seasonIDs []int64) ([]domain.Match, error) {
 	query := `
 		SELECT id, league_id, season_id, round, match_date, home_team_id, away_team_id,

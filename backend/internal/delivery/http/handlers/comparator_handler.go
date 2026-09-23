@@ -25,6 +25,9 @@ func NewComparatorHandler(comparator *usecase.ComparatorUsecase) *ComparatorHand
 // @Param league_id query int false "ID do campeonato"
 // @Param season_id query int false "ID da temporada — sem ele a amostra atravessa temporadas"
 // @Param limit query int false "Quantidade de jogos. Padrão 10"
+// @Param venue query string false "geral | casa | fora. Padrão geral"
+// @Param metric query string false "corners | goals | shots | shots_on_target | offsides. Padrão corners"
+// @Param perspective query string false "produzido | concedido | total. Padrão total"
 // @Success 200 {object} usecase.ComparisonResult
 // @Router /api/v1/comparator [get]
 func (h *ComparatorHandler) Compare(c *gin.Context) {
@@ -68,7 +71,18 @@ func (h *ComparatorHandler) Compare(c *gin.Context) {
 		}
 	}
 
-	result, err := h.comparator.Compare(c.Request.Context(), teamA, teamB, leagueID, seasonID, limit)
+	result, err := h.comparator.Compare(c.Request.Context(), usecase.ComparatorQuery{
+		TeamAID:  teamA,
+		TeamBID:  teamB,
+		LeagueID: leagueID,
+		SeasonID: seasonID,
+		Limit:    limit,
+		// Os três eixos têm padrão seguro: valor desconhecido cai em
+		// geral/escanteios/total, que é o comportamento anterior do Comparador.
+		Venue:       usecase.ParseVenue(c.Query("venue")),
+		Metric:      usecase.ParseMetric(c.Query("metric")),
+		Perspective: usecase.ParsePerspective(c.Query("perspective")),
+	})
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

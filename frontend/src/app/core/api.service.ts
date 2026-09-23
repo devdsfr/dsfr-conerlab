@@ -8,6 +8,9 @@ import {
   Team,
   DashboardResult,
   ComparisonResult,
+  ComparatorVenue,
+  ComparatorMetric,
+  ComparatorPerspective,
   FilterRunRequest,
   BacktestResult,
   UsageSummaryResponse,
@@ -109,14 +112,30 @@ export class ApiService {
   }
 
   // Módulo 2
-  compare(teamA: number, teamB: number, leagueId?: number, limit = 10, seasonId?: number): Observable<ComparisonResult> {
-    let url = `${this.base}/comparator?team_a=${teamA}&team_b=${teamB}&limit=${limit}`;
-    if (leagueId) url += `&league_id=${leagueId}`;
+  compare(opts: {
+    teamA: number;
+    teamB: number;
+    leagueId?: number;
+    seasonId?: number;
+    limit?: number;
+    venue?: ComparatorVenue;
+    metric?: ComparatorMetric;
+    perspective?: ComparatorPerspective;
+  }): Observable<ComparisonResult> {
+    const p = new URLSearchParams({
+      team_a: String(opts.teamA),
+      team_b: String(opts.teamB),
+      limit: String(opts.limit ?? 10),
+      venue: opts.venue ?? 'geral',
+      metric: opts.metric ?? 'corners',
+      perspective: opts.perspective ?? 'total',
+    });
+    if (opts.leagueId) p.set('league_id', String(opts.leagueId));
     // Sem season_id a amostra atravessa temporadas: em 23/09/2026 o Celta Vigo
     // devolvia 20 jogos que eram 7 de 2026 + 13 de 2025, com média que não
     // correspondia a nenhuma das duas.
-    if (seasonId) url += `&season_id=${seasonId}`;
-    return this.http.get<ComparisonResult>(url);
+    if (opts.seasonId) p.set('season_id', String(opts.seasonId));
+    return this.http.get<ComparisonResult>(`${this.base}/comparator?${p.toString()}`);
   }
 
   // Módulo 3

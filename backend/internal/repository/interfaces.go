@@ -48,6 +48,19 @@ type MatchRepository interface {
 	// ListUpcoming retorna as próximas partidas AGENDADO das ligas com dado real
 	// (external_id preenchido), para o calendário da página "Visão Geral".
 	ListUpcoming(ctx context.Context) ([]domain.UpcomingMatch, error)
+
+	// HeadToHead retorna as partidas FINALIZADAS entre duas equipes, das mais
+	// recentes para as mais antigas.
+	//
+	// Devolve domain.Match (bruto, com as duas equipes) e não TeamMatchView de
+	// propósito: o confronto direto precisa ser auditável — mando, placar e
+	// temporada de cada jogo —, e a visão por equipe perde justamente o lado do
+	// adversário.
+	//
+	// leagueID e seasonID são opcionais, mas o Comparador SEMPRE os envia: um
+	// H2H que ampliasse silenciosamente para outras temporadas deixaria de ser
+	// reproduzível a partir dos filtros da tela.
+	HeadToHead(ctx context.Context, teamA, teamB int64, leagueID, seasonID *int64) ([]domain.Match, error)
 }
 
 type UserRepository interface {

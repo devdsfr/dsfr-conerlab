@@ -171,27 +171,79 @@ export interface DashboardResult {
   sot_sample_size: number;
 }
 
+/** Ponto da evolução COM identidade: sem match_id, data e adversário não há
+ * como auditar o que o gráfico desenha. */
+export interface MatchPoint {
+  match_id: number;
+  date: string;
+  opponent_id: number;
+  opponent_name: string;
+  is_home: boolean;
+  /** null = o provedor não publicou a métrica nesta partida (não é zero). */
+  value: number | null;
+  goals_for: number;
+  goals_against: number;
+}
+
+export interface FrequencyBand {
+  threshold: number;
+  hits: number;
+  sample: number;
+  percentage: number;
+}
+
 export interface TeamComparisonSide {
   team: Team;
-  /** Partidas que realmente sustentam os números DESTA equipe. */
+  /** Partidas do recorte (liga+temporada+local) desta equipe. */
   sample_size: number;
+  /** Quantas dessas partidas têm a métrica escolhida — pode ser menor. */
+  metric_sample_size: number;
+  metric_available: boolean;
   /** Descrição da amostra real desta equipe — os dois lados podem divergir. */
   period: string;
-  total_corners: StatSummary;
-  corners_for: StatSummary;
-  corners_against: StatSummary;
-  home?: SplitStats;
-  away?: SplitStats;
-  trend: number[];
+  summary: StatSummary;
+  frequencies: FrequencyBand[] | null;
+  evolution: MatchPoint[];
 }
+
+export interface H2HMatch {
+  match_id: number;
+  date: string;
+  league_id: number;
+  season_id: number;
+  home_team_id: number;
+  home_team_name: string;
+  away_team_id: number;
+  away_team_name: string;
+  home_goals: number;
+  away_goals: number;
+  home_value: number | null;
+  away_value: number | null;
+}
+
+export interface HeadToHead {
+  match_count: number;
+  matches: H2HMatch[];
+}
+
+export type ComparatorVenue = 'geral' | 'casa' | 'fora';
+export type ComparatorMetric = 'corners' | 'goals' | 'shots' | 'shots_on_target' | 'offsides';
+export type ComparatorPerspective = 'produzido' | 'concedido' | 'total';
 
 export interface ComparisonResult {
   /** Janela PEDIDA, rotulada como pedido. A amostra real de cada equipe está
    * em team_a.period / team_b.period — elas podem ser diferentes. */
   period: string;
   requested_limit: number;
+  venue: ComparatorVenue;
+  metric: ComparatorMetric;
+  perspective: ComparatorPerspective;
+  /** false quando não há definição de faixas para métrica+perspectiva. */
+  frequencies_available: boolean;
+  frequencies_note?: string;
   team_a: TeamComparisonSide;
   team_b: TeamComparisonSide;
+  h2h: HeadToHead;
 }
 
 export interface FilterRunRequest {

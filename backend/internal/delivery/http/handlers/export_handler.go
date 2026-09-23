@@ -141,24 +141,43 @@ func (h *ExportHandler) ComparatorCSV(c *gin.Context) {
 		}
 	}
 
-	result, err := h.comparator.Compare(c.Request.Context(), teamA, teamB, leagueID, seasonID, limit)
+	// O CSV exporta o MESMO recorte da tela — liga, temporada, local, métrica e
+	// perspectiva. Um arquivo que respondesse a outra pergunta seria pior que
+	// não exportar nada.
+	q := usecase.ComparatorQuery{
+		TeamAID:     teamA,
+		TeamBID:     teamB,
+		LeagueID:    leagueID,
+		SeasonID:    seasonID,
+		Limit:       limit,
+		Venue:       usecase.ParseVenue(c.Query("venue")),
+		Metric:      usecase.ParseMetric(c.Query("metric")),
+		Perspective: usecase.ParsePerspective(c.Query("perspective")),
+	}
+	result, err := h.comparator.Compare(c.Request.Context(), q)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	rows := [][]string{
-		{result.TeamA.Team.Name, "Total (média)", floatStr(result.TeamA.TotalCorners.Mean)},
-		{result.TeamA.Team.Name, "A favor (média)", floatStr(result.TeamA.CornersFor.Mean)},
-		{result.TeamA.Team.Name, "Sofridos (média)", floatStr(result.TeamA.CornersAgainst.Mean)},
-		{result.TeamB.Team.Name, "Total (média)", floatStr(result.TeamB.TotalCorners.Mean)},
-		{result.TeamB.Team.Name, "A favor (média)", floatStr(result.TeamB.CornersFor.Mean)},
-		{result.TeamB.Team.Name, "Sofridos (média)", floatStr(result.TeamB.CornersAgainst.Mean)},
+	// A amostra vai junto em cada linha: sem ela, duas médias lado a lado podem
+	// vir de 20 e de 7 jogos sem que o arquivo revele isso.
+	rows := [][]string{}
+	for _, side := range []usecase.TeamComparisonSide{result.TeamA, result.TeamB} {
+		if !side.MetricAvailable {
+			rows = append(rows, []string{side.Team.Name, "Métrica indisponível na amostra", "—", "0"})
+			continue
+		}
+		rows = append(rows,
+			[]string{side.Team.Name, "Média", floatStr(side.Summary.Mean), strconv.Itoa(side.MetricSampleSize)},
+			[]string{side.Team.Name, "Mediana", floatStr(side.Summary.Median), strconv.Itoa(side.MetricSampleSize)},
+			[]string{side.Team.Name, "Desvio padrão", floatStr(side.Summary.StdDev), strconv.Itoa(side.MetricSampleSize)},
+		)
 	}
 
 	writeTable(c, "comparador_"+sanitizeFilename(result.TeamA.Team.Name)+"_vs_"+sanitizeFilename(result.TeamB.Team.Name), export.Table{
 		SheetName: "Comparador",
-		Headers:   []string{"Equipe", "Métrica", "Valor"},
+		Headers:   []string{"Equipe", "Medida", "Valor", "Amostra"},
 		Rows:      rows,
 	})
 }

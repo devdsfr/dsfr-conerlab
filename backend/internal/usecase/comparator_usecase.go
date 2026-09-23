@@ -18,8 +18,18 @@ func NewComparatorUsecase(matches repository.MatchRepository, teams repository.T
 }
 
 type TeamComparisonSide struct {
-	Team           domain.Team `json:"team"`
-	SampleSize     int         `json:"sample_size"`
+	Team       domain.Team `json:"team"`
+	SampleSize int         `json:"sample_size"`
+
+	// Period descreve a amostra REAL desta equipe, e fica DENTRO do lado porque
+	// as duas equipes podem ter amostras diferentes.
+	//
+	// Antes havia um único `period` no topo, com a janela pedida: dois times com
+	// 20 e 13 jogos apareciam ambos sob "Últimos 20 jogos". Comparar médias de
+	// amostras diferentes já exige cuidado; esconder que são diferentes torna a
+	// comparação enganosa.
+	Period string `json:"period"`
+
 	TotalCorners   StatSummary `json:"total_corners"`
 	CornersFor     StatSummary `json:"corners_for"`
 	CornersAgainst StatSummary `json:"corners_against"`
@@ -29,38 +39,52 @@ type TeamComparisonSide struct {
 }
 
 type ComparisonResult struct {
-	Period string             `json:"period"`
-	TeamA  TeamComparisonSide `json:"team_a"`
-	TeamB  TeamComparisonSide `json:"team_b"`
+	// Period do conjunto: a janela PEDIDA, explicitamente rotulada como pedido.
+	// A amostra real de cada equipe está em TeamA.Period / TeamB.Period.
+	Period         string             `json:"period"`
+	RequestedLimit int                `json:"requested_limit"`
+	TeamA          TeamComparisonSide `json:"team_a"`
+	TeamB          TeamComparisonSide `json:"team_b"`
 }
 
-func (u *ComparatorUsecase) Compare(ctx context.Context, teamAID, teamBID int64, leagueID *int64, limit int) (*ComparisonResult, error) {
+func (u *ComparatorUsecase) Compare(ctx context.Context, teamAID, teamBID int64, leagueID *int64, seasonID *int64, limit int) (*ComparisonResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 
-	sideA, err := u.buildSide(ctx, teamAID, leagueID, limit)
+	sideA, err := u.buildSide(ctx, teamAID, leagueID, seasonID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("equipe A: %w", err)
 	}
-	sideB, err := u.buildSide(ctx, teamBID, leagueID, limit)
+	sideB, err := u.buildSide(ctx, teamBID, leagueID, seasonID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("equipe B: %w", err)
 	}
 
 	return &ComparisonResult{
-		Period: fmt.Sprintf("Últimos %d jogos", limit),
-		TeamA:  *sideA,
-		TeamB:  *sideB,
+		Period:         fmt.Sprintf("Janela pedida: últimos %d jogos", limit),
+		RequestedLimit: limit,
+		TeamA:          *sideA,
+		TeamB:          *sideB,
 	}, nil
 }
 
-func (u *ComparatorUsecase) buildSide(ctx context.Context, teamID int64, leagueID *int64, limit int) (*TeamComparisonSide, error) {
+// seasonID é repassado ao repositório. Sem ele, "últimos 20 jogos da La Liga"
+// atravessava a fronteira de temporada: em 23/09/2026 o Celta Vigo devolvia 20
+// jogos que eram 7 de 2026 + 13 de 2025, com média 7.9 — número que não
+// corresponde a nenhuma das duas temporadas (2026: 8.0; 2025: 8.15). Misturar
+// temporadas sem dizer é apresentar um recorte que não existe.
+func (u *ComparatorUsecase) buildSide(ctx context.Context, teamID int64, leagueID *int64, seasonID *int64, limit int) (*TeamComparisonSide, error) {
 	team, err := u.teams.GetByID(ctx, teamID)
 	if err != nil {
 		return nil, err
 	}
-	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{TeamID: teamID, LeagueID: leagueID, Limit: limit})
+	views, err := u.matches.TeamMatches(ctx, repository.MatchFilter{
+		TeamID:   teamID,
+		LeagueID: leagueID,
+		SeasonID: seasonID,
+		Limit:    limit,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +111,11 @@ func (u *ComparatorUsecase) buildSide(ctx context.Context, teamID int64, leagueI
 	}
 
 	return &TeamComparisonSide{
-		Team:           *team,
-		SampleSize:     len(views),
+		Team:       *team,
+		SampleSize: len(views),
+		// Mesma semântica consolidada no REV-P1 (describePeriod): a frase
+		// descreve o que foi analisado, não o que foi pedido.
+		Period:         describePeriod(len(views), limit),
 		TotalCorners:   Summarize(total),
 		CornersFor:     Summarize(forVals),
 		CornersAgainst: Summarize(againstVals),

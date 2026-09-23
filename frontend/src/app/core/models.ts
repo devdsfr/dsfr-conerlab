@@ -173,7 +173,10 @@ export interface DashboardResult {
 
 export interface TeamComparisonSide {
   team: Team;
+  /** Partidas que realmente sustentam os números DESTA equipe. */
   sample_size: number;
+  /** Descrição da amostra real desta equipe — os dois lados podem divergir. */
+  period: string;
   total_corners: StatSummary;
   corners_for: StatSummary;
   corners_against: StatSummary;
@@ -183,7 +186,10 @@ export interface TeamComparisonSide {
 }
 
 export interface ComparisonResult {
+  /** Janela PEDIDA, rotulada como pedido. A amostra real de cada equipe está
+   * em team_a.period / team_b.period — elas podem ser diferentes. */
   period: string;
+  requested_limit: number;
   team_a: TeamComparisonSide;
   team_b: TeamComparisonSide;
 }

@@ -126,6 +126,14 @@ func (h *ExportHandler) ComparatorCSV(c *gin.Context) {
 		id, _ := strconv.ParseInt(v, 10, 64)
 		leagueID = &id
 	}
+	// O CSV precisa exportar EXATAMENTE o mesmo recorte que a tela mostra —
+	// inclusive a temporada. Exportar uma amostra diferente da exibida seria
+	// entregar ao usuário um arquivo que contradiz o que ele acabou de ver.
+	var seasonID *int64
+	if v := c.Query("season_id"); v != "" {
+		id, _ := strconv.ParseInt(v, 10, 64)
+		seasonID = &id
+	}
 	limit := 10
 	if v := c.Query("limit"); v != "" {
 		if l, err := strconv.Atoi(v); err == nil {
@@ -133,7 +141,7 @@ func (h *ExportHandler) ComparatorCSV(c *gin.Context) {
 		}
 	}
 
-	result, err := h.comparator.Compare(c.Request.Context(), teamA, teamB, leagueID, limit)
+	result, err := h.comparator.Compare(c.Request.Context(), teamA, teamB, leagueID, seasonID, limit)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

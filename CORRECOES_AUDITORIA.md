@@ -2478,3 +2478,179 @@ Os três IDs chegaram **intactos** do calendário até a chamada final. **CORRET
 - `/teams?league_id&season_id` conta partidas `AGENDADO`.
 - Ligas sem partidas; Champions 2025 vazia; ausência de runner de testes Angular; avisos
   NG8107; demais itens do backlog da auditoria.
+
+---
+
+## REV-P2 — Comparador
+
+**Data:** 2026-09-23 · **Status:** ⏳ Fase A concluída; implementação não iniciada.
+
+### A — Investigação
+
+Rastreamento completo. O Comparador é muito mais raso que o Dashboard: 99 linhas de
+usecase, 64 de handler, 151 de componente.
+
+**Cadeia:** `comparator.component.ts` → `ApiService.compare()` →
+`GET /api/v1/comparator?team_a&team_b&league_id&limit` → `ComparatorHandler.Compare` →
+`ComparatorUsecase.Compare` → `buildSide()` por equipe → `MatchRepo.TeamMatches` →
+tabela `matches`.
+
+**O que está correto:**
+
+- `TeamMatches` filtra `m.status = 'FINALIZADO'` — partidas AGENDADO **não** entram.
+- Usa IDs internos em toda a cadeia; `external_id` não aparece.
+- `sample_size` é calculado por equipe, independentemente (`len(views)` de cada lado).
+- Nenhum valor hardcoded nas estatísticas; `Summarize` é o mesmo do Dashboard.
+- Nenhum cálculo pesado no navegador; nenhuma chamada a OpenAI, Discovery ou Backtest.
+- `MatchFilter` **já suporta** `SeasonID`, `HomeOnly` e `AwayOnly` — o Comparador
+  simplesmente não os usa.
+
+#### Defeito 1 — temporadas misturadas (o mais grave)
+
+`ComparatorHandler` não aceita `season_id`, e `buildSide` monta
+`MatchFilter{TeamID, LeagueID, Limit}` sem temporada. "Últimos 20 jogos da La Liga"
+atravessa a fronteira de temporada sem avisar.
+
+**Prova numérica (produção, 23/09/2026, Celta Vigo · La Liga · limit 20):**
+
+| fonte | amostra | média do total de escanteios |
+|---|---|---|
+| Comparador (sem temporada) | 20 | **7.9** |
+| Dashboard · temporada 2026 | 7 | 8.0 |
+| Dashboard · temporada 2025 | 20 | 8.15 |
+
+Os 20 jogos do Comparador são 7 de 2026 + 13 de 2025. A média 7.9 **não corresponde a
+nenhuma temporada** — é uma mistura apresentada como se fosse um recorte único. Viola a
+regra 6 do REV-P2.
+
+#### Defeito 2 — substituição silenciosa de equipes
+
+`comparator.component.ts`:
+
+```ts
+if (teams.length >= 2) {
+  this.teamAId = teams[0].id;
+  this.teamBId = teams[1].id;
+}
+```
+
+É literalmente o padrão proibido pelo enunciado ("Nunca: teamA = teams[0], teamB =
+teams[1]"). Além disso `listTeams(leagueId)` é chamado **sem temporada**, então cai no
+vínculo histórico `league_teams` e lista equipes que não jogam a temporada corrente — o
+mesmo defeito de fundo corrigido no Dashboard pelo REV-P1.
+
+#### Defeito 3 — `period` mente e a amostra não é exibida
+
+`Period: fmt.Sprintf("Últimos %d jogos", limit)` — a janela pedida, não a amostra real;
+mesmo defeito corrigido no Dashboard. Pior: é **um único `period` para dois lados** que
+podem ter amostras diferentes.
+
+E o template **não renderiza `sample_size` em lugar nenhum** (confirmado por leitura do
+HTML: só `r.period` e as médias). O payload traz a amostra de cada equipe; a tela a
+esconde.
+
+#### Defeito 4 — ausência virando zero dentro do gráfico
+
+```ts
+data: [ ..., res.team_a.home?.mean ?? 0, res.team_a.away?.mean ?? 0 ]
+```
+
+Equipe sem jogos em casa na janela vira **barra de altura 0** — ausência desenhada como
+observação. O texto ao lado usa `?? '—'` corretamente, então **gráfico e texto discordam
+sobre o mesmo dado**. Viola as regras 2 e 10.
+
+#### Defeito 5 — conceitos incomparáveis no mesmo eixo
+
+O gráfico de barras põe lado a lado `['Total', 'A favor', 'Sofridos', 'Casa', 'Fora']`.
+"A favor"/"Sofridos" são produzido/concedido da equipe; "Casa"/"Fora" são médias do
+**total da partida**. São grandezas semanticamente diferentes no mesmo eixo, sem rótulo
+que avise. Viola a Fase A.2.
+
+#### Defeito 6 — evolução sem identidade da partida
+
+`labels: res.team_a.trend.map((_, i) => i + 1)` — o eixo X é 1..N. O backend devolve
+`Trend []int`, sem data, adversário ou mando, então **não há como** montar o tooltip
+exigido (adversário, data, casa/fora, placar). É limitação de contrato, não só de UI.
+
+#### Defeito 7 — ausências estruturais
+
+Não existem, nem no backend nem na UI: seletor de temporada; filtro Geral/Casa/Fora;
+métricas além de escanteios (gols, finalizações, finalizações no alvo, impedimentos);
+dimensão Produzido/Concedido/Total selecionável; frequências por faixa com
+numerador/denominador; seção H2H; estado na URL (o componente não injeta `ActivatedRoute`
+— recarregar perde tudo e não há link compartilhável).
+
+### Escopo da implementação
+
+O Comparador atual atende a uma fração do modelo funcional pedido. Fechar o REV-P2 exige
+reconstruir o contrato (temporada, local, métrica, perspectiva, frequências, H2H,
+evolução identificada por partida), a UI e o estado na URL — além dos 25 casos de teste,
+deploy e validação em produção.
+
+Fase A registrada. Implementação aguardando definição de corte com o Daniel.
+
+### B — Implementação (fatia 1: integridade)
+
+Corte acordado com o Daniel: primeiro tudo que **mente**; métricas novas, H2H,
+perspectivas e frequências ficam para a fatia 2.
+
+| arquivo | alteração |
+|---|---|
+| `internal/usecase/comparator_usecase.go` | `seasonID` no `MatchFilter`; `Period` por lado via `describePeriod`; `RequestedLimit` no resultado |
+| `internal/delivery/http/handlers/comparator_handler.go` | aceita `season_id` |
+| `internal/delivery/http/handlers/export_handler.go` | CSV usa o mesmo recorte da tela, inclusive temporada |
+| `frontend/core/models.ts` | `period` por lado, `requested_limit` |
+| `frontend/core/api.service.ts` | `compare(..., seasonId)` |
+| `features/comparator/comparator.component.ts` | seletor de temporada; fim de `teams[0]/teams[1]`; estado na URL; gráfico sem zero artificial |
+| `features/comparator/comparator.component.html` | seletor de temporada; amostra por equipe; avisos de ausência |
+
+Decisões que merecem registro:
+
+- **`teams[0]`/`teams[1]` eliminados.** Sem pedido explícito, a Equipe A recebe a primeira
+  da lista como ponto de partida e a **Equipe B fica vazia de propósito** — escolher a
+  segunda por conta própria é inventar metade da comparação.
+- **Casa/Fora saíram do gráfico de barras.** `home?.mean ?? 0` desenhava ausência como
+  barra zero, contradizendo o `'—'` que a tabela ao lado já exibia para o mesmo dado. E as
+  barras misturavam produzido/concedido com médias do total da partida. Sobraram três
+  barras da mesma família.
+- **Reuso de `resolverTemporada`/`resolverEquipe`** do REV-P1, incluindo o `includeAll`
+  que impede o filtro de recência de descartar temporada histórica pedida.
+
+### C — Testes
+
+`backend/internal/usecase/comparator_sample_test.go` (6 casos), **executados**:
+
+```
+--- PASS: TestCadaLadoDescreveASuaPropriaAmostra
+--- PASS: TestLadoSemPartidasNaoAnunciaJanela
+--- PASS: TestMediaDeAmostraConhecida            (4,6,8 -> média 6)
+--- PASS: TestFrequenciaDeAmostraConhecida       (>5 em 4,6,8 -> 2/3 = 66.67%)
+--- PASS: TestProduzidoConcedidoETotalNaoSeConfundem   (6 / 4 / 10)
+--- PASS: TestZeroObservadoNoComparador
+```
+
+Regressão:
+
+```
+go build ./...                          → exit 0
+go vet ./...                            → exit 0
+go test ./...                           → exit 0  (inclui P0 e P1, sem regressão)
+gofmt -l (arquivos do P2)               → vazio
+npx ng build --configuration production → exit 0
+```
+
+**Testes de frontend: o projeto não tem runner Angular.** A lógica crítica reutilizada
+(`season-resolution`) tem os 12 casos do REV-P1 executados; o restante da UI do Comparador
+**não tem cobertura automatizada** — registrado como ausência, não como aprovação.
+
+### D — Validação em produção: PENDENTE
+
+Commit local. Falta `git push` (o ambiente não tem credencial do GitHub) e, depois do
+deploy, os três casos ponta a ponta.
+
+## REV-P2 = PARCIAL
+
+Fatia 1 (integridade) implementada e verificada em build/teste. Falta: publicar e validar;
+e a fatia 2 — métricas (gols, finalizações, finalizações no alvo, impedimentos),
+Geral/Casa/Fora, Produzido/Concedido/Total, frequências por faixa, H2H, evolução
+identificada por partida.

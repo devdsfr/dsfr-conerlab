@@ -109,9 +109,13 @@ export class ApiService {
   }
 
   // Módulo 2
-  compare(teamA: number, teamB: number, leagueId?: number, limit = 10): Observable<ComparisonResult> {
+  compare(teamA: number, teamB: number, leagueId?: number, limit = 10, seasonId?: number): Observable<ComparisonResult> {
     let url = `${this.base}/comparator?team_a=${teamA}&team_b=${teamB}&limit=${limit}`;
     if (leagueId) url += `&league_id=${leagueId}`;
+    // Sem season_id a amostra atravessa temporadas: em 23/09/2026 o Celta Vigo
+    // devolvia 20 jogos que eram 7 de 2026 + 13 de 2025, com média que não
+    // correspondia a nenhuma das duas.
+    if (seasonId) url += `&season_id=${seasonId}`;
     return this.http.get<ComparisonResult>(url);
   }
 

@@ -11,9 +11,18 @@
       </mat-select>
     </mat-form-field>
 
+    <mat-form-field appearance="outline" class="w-40">
+      <mat-label>Temporada</mat-label>
+      <mat-select [(ngModel)]="selectedSeasonId" (selectionChange)="onSeasonChange()" panelClass="cl-select-panel">
+        @for (s of seasons(); track s.id) {
+          <mat-option [value]="s.id">{{ s.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
     <mat-form-field appearance="outline" class="w-64">
       <mat-label>Equipe A</mat-label>
-      <mat-select [(ngModel)]="teamAId" panelClass="cl-select-panel">
+      <mat-select [(ngModel)]="teamAId" (selectionChange)="syncQueryParams()" panelClass="cl-select-panel">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
@@ -22,7 +31,7 @@
 
     <mat-form-field appearance="outline" class="w-64">
       <mat-label>Equipe B</mat-label>
-      <mat-select [(ngModel)]="teamBId" panelClass="cl-select-panel">
+      <mat-select [(ngModel)]="teamBId" (selectionChange)="syncQueryParams()" panelClass="cl-select-panel">
         @for (t of teams(); track t.id) {
           <mat-option [value]="t.id">{{ t.name }}</mat-option>
         }
@@ -53,9 +62,26 @@
     <div role="alert" class="cl-card p-4 text-red-400">{{ error() }}</div>
   }
 
-  @if (!loading() && !error() && !result()) {
+  <!-- Pedidos vindos da URL que não existem no recorte. Avisar é obrigatório: a
+       versão anterior caía em teams[0]/teams[1] e o usuário comparava equipes
+       que nunca escolheu. -->
+  @if (!loading() && temporadaPedidaAusente()) {
+    <div class="cl-card p-6 text-center text-sm text-amber-300">
+      A temporada solicitada não existe em <strong class="text-slate-200">{{ selectedLeagueName() }}</strong>.
+      <div class="mt-1 text-slate-400">Nenhuma outra foi escolhida no lugar. Selecione uma temporada acima.</div>
+    </div>
+  }
+  @if (!loading() && equipesPedidasAusentes().length) {
+    <div class="cl-card p-6 text-center text-sm text-amber-300">
+      {{ equipesPedidasAusentes().length === 1 ? 'Uma das equipes solicitadas não tem' : 'As equipes solicitadas não têm' }}
+      partidas registradas em <strong class="text-slate-200">{{ selectedLeagueName() }}</strong> nesta temporada.
+      <div class="mt-1 text-slate-400">Nenhuma equipe foi escolhida no lugar. Selecione acima.</div>
+    </div>
+  }
+
+  @if (!loading() && !error() && !result() && !temporadaPedidaAusente() && !equipesPedidasAusentes().length) {
     <div class="cl-card p-8 text-center text-slate-400">
-      Escolha campeonato e as duas equipes acima e clique em <strong class="text-slate-200">Comparar</strong> para ver a comparação lado a lado.
+      Escolha campeonato, temporada e as duas equipes acima e clique em <strong class="text-slate-200">Comparar</strong> para ver a comparação lado a lado.
     </div>
   }
 
@@ -66,6 +92,17 @@
       @for (side of [{ data: r.team_a, chart: chartA() }, { data: r.team_b, chart: chartB() }]; track side.data.team.id) {
         <div class="cl-card p-4">
           <h2 class="text-lg font-medium mb-2">{{ side.data.team.name }} <span class="text-xs text-slate-400">({{ side.data.team.tier }})</span></h2>
+          <!-- Amostra POR EQUIPE. Os dois lados podem divergir, e comparar médias
+               de amostras diferentes sem dizer isso é enganoso. -->
+          <p class="text-xs mb-2" [class]="side.data.sample_size < r.requested_limit ? 'text-amber-300' : 'text-slate-400'">
+            {{ side.data.period }} · amostra de {{ side.data.sample_size }} jogos
+          </p>
+          @if (side.data.sample_size === 0) {
+            <p class="text-sm text-amber-300">
+              Nenhuma partida encontrada para os filtros selecionados.
+              <span class="block text-slate-400 mt-1">Não há estatística a exibir — nem zero.</span>
+            </p>
+          } @else {
           <dl class="grid grid-cols-2 gap-y-1 text-sm mb-3">
             <dt class="text-slate-400">Média (total)</dt><dd>{{ side.data.total_corners.mean }}</dd>
             <dt class="text-slate-400">Desvio padrão <span class="cl-help" tabindex="0" [matTooltip]="stdDevTooltip">?</span></dt><dd>{{ side.data.total_corners.std_dev }}</dd>
@@ -74,6 +111,7 @@
             <dt class="text-slate-400">Média fora</dt><dd>{{ side.data.away?.mean ?? '—' }}</dd>
           </dl>
           <cl-simple-chart type="line" [labels]="side.chart.labels" [datasets]="side.chart.datasets"></cl-simple-chart>
+          }
         </div>
       }
     </div>

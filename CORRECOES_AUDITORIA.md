@@ -2384,3 +2384,97 @@ depende do push.
 Item 14 continua ⚠️. A causa raiz está identificada com evidência e corrigida no código,
 com teste executado — mas a regra do REV-P1 é evidência de tela publicada, e o código ainda
 não está no ar.
+
+---
+
+## REV-P1 — Fase D: validação em produção (23/09/2026)
+
+Commit `c3e23e1` publicado (`origin/main` confirmado por `git ls-remote`). Medições com
+cache desabilitado; para cada caso: URL inicial → estado da UI → requisição de rede →
+conteúdo renderizado.
+
+### CASO 1 — Celta Vigo · La Liga · **2025** · limit 20 *(era impossível antes)*
+
+| camada | valor |
+|---|---|
+| URL inicial | `?league_id=8&season_id=12&team_id=455&limit=20` |
+| URL final | **idêntica — não reescrita** |
+| Seletores na tela | La Liga · **2025** · Celta Vigo |
+| Rede | `/teams?league_id=8&season_id=12` · `/dashboard?team_id=455&limit=20&league_id=8&season_id=12` |
+| Tela | "Últimos 20 jogos · amostra de 20 jogos"; média total **8.15**; frequências `19/20`, `16/20`, `10/20` |
+
+**CORRETO.** Antes: `season_id=33`, temporada 2026, URL reescrita.
+
+Bônus observado no mesmo caso: "Escanteios conquistados · **Menor 0**" — zero REAL,
+observado em partida existente, exibido como `0`. É a contraprova na tela de que a
+correção de "ausência ≠ zero" não engoliu o zero legítimo.
+
+### CASO 2 — Celta Vigo · La Liga · 2026 · limit 20
+
+| camada | valor |
+|---|---|
+| URL | `?league_id=8&season_id=33&team_id=455&limit=20` (preservada) |
+| Rede | `/dashboard?team_id=455&limit=20&league_id=8&season_id=33` |
+| Tela | "Últimos 7 jogos (de 20 pedidos) · amostra de 7 jogos" |
+| Aviso | "Você pediu os últimos 20 jogos, mas só existem 7 com estatística nesta temporada. Todos os números abaixo usam essas 7 partidas." |
+
+**CORRETO.**
+
+### CASO 3 — Flamengo · Série A · 2026 · limit 20 → 5
+
+| momento | URL | rede | tela |
+|---|---|---|---|
+| carga | `...&limit=20` | `/dashboard?team_id=365&limit=20&league_id=18&season_id=26` | "Últimos 20 jogos · amostra de 20 jogos" |
+| clique em "5" | `...&limit=5` | `/dashboard?team_id=365&limit=5&league_id=18&season_id=26` | "Últimos 5 jogos · amostra de 5 jogos" |
+
+Recarregou sozinho, sem clique extra. `Analisar` ausente do DOM. **CORRETO.**
+
+### CASO 4 — Calendário → Dashboard
+
+Clique real em "Seattle Sounders" na Visão Geral:
+
+| camada | valor |
+|---|---|
+| URL gerada | `?league_id=2&season_id=6&team_id=2367&limit=10` |
+| Seletores | MLS · 2026 · Seattle Sounders |
+| Rede | `/dashboard?team_id=2367&limit=10&league_id=2&season_id=6` |
+| Tela | "Últimos 10 jogos · amostra de 10 jogos" |
+
+Os três IDs chegaram **intactos** do calendário até a chamada final. **CORRETO.**
+
+### Estados de ausência — nenhuma substituição silenciosa
+
+| entrada | resultado na tela |
+|---|---|
+| `?league_id=8&season_id=33&team_id=442` (equipe não joga a temporada) | seletor Equipe **vazio**; "A equipe que você abriu não tem partidas registradas em La Liga nesta temporada."; `team_id` some da URL em vez de virar outro time |
+| `?league_id=8&season_id=99999&team_id=455` (temporada inexistente) | seletor Temporada **vazio**; "A temporada solicitada não existe em La Liga. Nenhuma outra foi escolhida no lugar." |
+
+### Definition of Done — REV-P1
+
+| # | Item | Estado |
+|---|---|---|
+| 1 | fluxo Calendário → Dashboard validado | ✅ clique real, IDs intactos |
+| 2 | league/season/team corretos | ✅ inclusive temporada histórica |
+| 3 | dados existentes carregam automaticamente | ✅ |
+| 4 | banco → backend → frontend rastreável | ✅ 4 casos, camada a camada |
+| 5 | ausência de dados não aparece como zero | ✅ dois estados distintos na tela |
+| 6 | tamanho real da amostra exibido/respeitado | ✅ "Últimos 7 jogos (de 20 pedidos)" |
+| 7 | filtros não vazam estado | ✅ sem troca silenciosa de equipe nem de temporada |
+| 8 | botão "Analisar" removido ou legítimo | ✅ removido |
+| 9 | nenhuma estatística inventada | ✅ zero real preservado (Menor 0 com amostra 20) |
+| 10 | backend build passa | ✅ exit 0 |
+| 11 | backend vet passa | ✅ exit 0 |
+| 12 | backend tests passam | ✅ exit 0 |
+| 13 | frontend production build passa | ✅ exit 0 |
+| 14 | ≥3 casos reais ponta a ponta | ✅ **4 casos validados na interface publicada** |
+| 15 | documentação atualizada | ✅ |
+
+## REV-P1 = RESOLVIDO — 15/15 da Definition of Done com evidência
+
+### Pendências separadas, intocadas
+
+- Duplicidade/rotulagem de equipes (Athletic Club 442 "Brazil" × 1198 "Espanha").
+- Cache HTTP servindo payload antigo após deploy.
+- `/teams?league_id&season_id` conta partidas `AGENDADO`.
+- Ligas sem partidas; Champions 2025 vazia; ausência de runner de testes Angular; avisos
+  NG8107; demais itens do backlog da auditoria.

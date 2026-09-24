@@ -120,7 +120,7 @@
     <p class="text-sm text-slate-400">{{ r.period }} · {{ descricaoRecorte() }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      @for (side of [{ data: r.team_a, chart: chartA() }, { data: r.team_b, chart: chartB() }]; track side.data.team.id) {
+      @for (side of [{ data: r.team_a, chart: chartA(), dist: distA() }, { data: r.team_b, chart: chartB(), dist: distB() }]; track side.data.team.id) {
         <div class="cl-card p-4">
           <h2 class="text-lg font-medium mb-2">{{ side.data.team.name }} <span class="text-xs text-slate-400">({{ side.data.team.tier }})</span></h2>
           <!-- Amostra POR EQUIPE. Os dois lados podem divergir, e comparar médias
@@ -179,6 +179,26 @@
           <!-- Cada ponto do gráfico identificado: data, mando, adversário, valor
                e placar. Sem rota de detalhe da partida no app, não há link —
                link falso seria pior que a ausência dele. -->
+          <!-- DISTRIBUIÇÃO OBSERVADA: valor -> nº de partidas com aquele valor.
+               Só valores realmente observados entram; lacunas não viram barra de
+               zero, porque a ausência de barra já diz "não aconteceu" sem fingir
+               observação. Denominador = partidas COM a métrica. -->
+          <div class="mt-3">
+            <h3 class="text-sm text-slate-300">Distribuição observada</h3>
+            <p class="text-xs text-slate-400 mb-1">
+              {{ tituloMetrica() }} · amostra de {{ side.data.metric_sample_size }} partidas
+            </p>
+            <cl-simple-chart type="bar" [labels]="side.dist.labels" [datasets]="side.dist.datasets"></cl-simple-chart>
+            <table class="w-full text-xs mt-2">
+              <thead><tr class="text-slate-400 text-left"><th>Valor</th><th>Partidas</th></tr></thead>
+              <tbody>
+                @for (b of side.data.distribution; track b.value) {
+                  <tr><td class="text-slate-400">{{ b.value }}</td><td>{{ baldeTexto(b) }}</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
           <details class="mt-2">
             <summary class="text-xs text-slate-400 cursor-pointer">Partidas do gráfico ({{ side.data.evolution.length }})</summary>
             <ul class="mt-1 text-xs text-slate-400 space-y-0.5">

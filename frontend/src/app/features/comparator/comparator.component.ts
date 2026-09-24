@@ -12,7 +12,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { ApiService } from '../../core/api.service';
-import { ComparatorMetric, ComparatorPerspective, ComparatorVenue, ComparisonResult, League, MatchPoint, Season, Team } from '../../core/models';
+import { ComparatorMetric, ComparatorPerspective, ComparatorVenue, ComparisonResult, DistributionBucket, League, MatchPoint, Season, Team } from '../../core/models';
 import { resolverEquipe, resolverTemporada } from '../dashboard/season-resolution';
 import { SimpleChartComponent } from '../../shared/simple-chart.component';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
@@ -96,6 +96,12 @@ export class ComparatorComponent implements OnInit {
   chartA = signal<ChartData>({ labels: [], datasets: [] });
   chartB = signal<ChartData>({ labels: [], datasets: [] });
   barChart = signal<ChartData>({ labels: [], datasets: [] });
+
+  // Distribuição observada de cada lado. Gráficos separados porque os dois times
+  // podem ter conjuntos de valores diferentes — forçá-los num eixo comum exigiria
+  // preencher lacunas com zeros que ninguém observou.
+  distA = signal<ChartData>({ labels: [], datasets: [] });
+  distB = signal<ChartData>({ labels: [], datasets: [] });
 
   readonly consistencyTooltip =
     'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo. Valores baixos indicam resultados mais imprevisíveis.';
@@ -256,6 +262,17 @@ export class ComparatorComponent implements OnInit {
         }
         this.barChart.set({ labels: [this.tituloMetrica()], datasets: barras });
 
+        // Distribuição: valor observado -> nº de partidas. Só entram valores que
+        // realmente apareceram; lacunas entre eles NÃO são preenchidas com zero,
+        // porque zero ali significaria "observei zero vezes esse valor" e a
+        // ausência de barra já diz isso sem fingir observação.
+        const dist = (lado: typeof res.team_a): ChartData => ({
+          labels: lado.distribution.map(b => b.value),
+          datasets: [{ label: lado.team.short_name, data: lado.distribution.map(b => b.count) }],
+        });
+        this.distA.set(dist(res.team_a));
+        this.distB.set(dist(res.team_b));
+
         this.loading.set(false);
       },
       error: err => {
@@ -303,6 +320,11 @@ export class ComparatorComponent implements OnInit {
    * percentual. */
   faixaTexto(b: { hits: number; sample: number; percentage: number }): string {
     return `${b.hits}/${b.sample} — ${b.percentage}%`;
+  }
+
+  /** "7/20 — 35%": frequência absoluta e percentual, com denominador à vista. */
+  baldeTexto(b: DistributionBucket): string {
+    return `${b.count}/${b.sample} — ${b.percentage}%`;
   }
 
   selectedLeagueName(): string {

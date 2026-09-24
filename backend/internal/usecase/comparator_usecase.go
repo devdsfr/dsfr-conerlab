@@ -56,7 +56,12 @@ type TeamComparisonSide struct {
 
 	Summary     StatSummary     `json:"summary"`
 	Frequencies []FrequencyBand `json:"frequencies"`
-	Evolution   []MatchPoint    `json:"evolution"`
+
+	// Distribution é a distribuição OBSERVADA (valor -> nº de partidas), montada
+	// sobre as mesmas observações de Summary. Denominador = MetricSampleSize.
+	Distribution []DistributionBucket `json:"distribution"`
+
+	Evolution []MatchPoint `json:"evolution"`
 }
 
 // H2HMatch é um confronto direto, com tudo que permite auditá-lo.
@@ -211,7 +216,10 @@ func (u *ComparatorUsecase) buildSide(ctx context.Context, teamID int64, q Compa
 		MetricAvailable:  len(valores) > 0,
 		Period:           describePeriod(len(views), q.Limit),
 		Summary:          Summarize(valores),
-		Evolution:        evolution,
+		// `valores` já exclui as partidas sem a métrica, então ausência nunca
+		// entra como zero e zero observado entra normalmente.
+		Distribution: buildDistribution(valores),
+		Evolution:    evolution,
 	}
 
 	if thresholds, ok := frequencyThresholds(q.Metric, q.Perspective); ok {

@@ -192,6 +192,15 @@ export interface FrequencyBand {
   percentage: number;
 }
 
+/** Um valor observado e quantas partidas tiveram exatamente esse valor.
+ * `sample` é metric_sample_size (partidas COM a métrica), não sample_size. */
+export interface DistributionBucket {
+  value: number;
+  count: number;
+  sample: number;
+  percentage: number;
+}
+
 export interface TeamComparisonSide {
   team: Team;
   /** Partidas do recorte (liga+temporada+local) desta equipe. */
@@ -203,6 +212,8 @@ export interface TeamComparisonSide {
   period: string;
   summary: StatSummary;
   frequencies: FrequencyBand[] | null;
+  /** Distribuição observada, ordenada por valor crescente. */
+  distribution: DistributionBucket[];
   evolution: MatchPoint[];
 }
 

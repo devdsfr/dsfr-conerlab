@@ -2782,3 +2782,79 @@ cobertura automatizada** — registrado como ausência, não como aprovação.
 Fatias 1 e 2 implementadas, com build, vet, testes e build de produção verdes localmente.
 **Falta:** `git push`, deploy e a validação dos três casos reais em produção. Nenhum dos 25
 itens da Definition of Done está marcado — nenhum tem evidência de produção ainda.
+
+### B.3 — Distribuição observada (24/09/2026)
+
+Último requisito funcional da fatia 2 com dados suficientes para ser implementado.
+
+**Formato escolhido: valor observado → nº de partidas.** Sem bins. Escanteios, gols,
+finalizações, finalizações no alvo e impedimentos são contagens inteiras pequenas, então
+cada valor observado já é a própria faixa. Agrupar em intervalos acrescentaria uma escolha
+arbitrária entre o dado e quem lê, sem ganho.
+
+Contrato (`DistributionBucket`): `value`, `count`, `sample`, `percentage` — os quatro
+campos pedidos. `sample` viaja dentro de cada balde de propósito: quem lê "7 partidas"
+precisa do denominador ao lado para saber se são 7 de 13 ou 7 de 40.
+
+**A distribuição é montada sobre a MESMA fatia que alimenta média e frequências** — aquela
+que só contém partidas onde a métrica existe. Daí as duas propriedades centrais saírem de
+graça, sem código defensivo:
+
+- **ausência não entra**: a partida sem a métrica nem chega ao `buildDistribution`, então
+  não existe balde de valor 0 representando "não publicado";
+- **zero real entra**: é uma observação como qualquer outra.
+
+Por isso `sample` é `metric_sample_size`, nunca `sample_size`. Os filtros (liga, temporada,
+equipe, local, métrica, perspectiva, janela) são respeitados por construção: `valores` já
+é o resultado deles.
+
+Na tela: seção "Distribuição observada" com métrica, perspectiva, amostra usada, gráfico de
+barras e tabela `valor → count/sample — %`. Com `metric_available=false` a seção inteira
+não é renderizada; aparece a mensagem de indisponibilidade. Lacunas entre valores
+observados **não** viram barras de zero — a ausência de barra já diz "não aconteceu" sem
+fingir observação.
+
+#### Origem dos thresholds de `frequencies` — documentada, não alterada
+
+Os limites vêm do Dashboard (`DefaultFrequencyThresholds`, `GoalFrequencyThresholds`,
+`ShotFrequencyThresholds`, `ShotOnTargetFrequencyThresholds`, `OffsideFrequencyThresholds`)
+e foram definidos ali para o **total da partida**.
+
+São **limiares descritivos de frequência histórica** — nada além disso. Não são ótimos, não
+são recomendados, não são probabilidades, não são preditivos e não têm relação com
+lucratividade. Descrevem quantas vezes, na amostra observada, o valor ficou acima de cada
+limite. Não foram alterados nesta passagem.
+
+#### Testes da distribuição
+
+`comparator_distribution_test.go` (7 casos), **executados**:
+
+```
+--- PASS: TestDistribuicaoDeAmostraConhecida        ([4,6,6,8] -> 4:1/4=25%, 6:2/4=50%, 8:1/4=25%)
+--- PASS: TestDistribuicaoSaiOrdenadaPorValor
+--- PASS: TestZeroObservadoEntraNaDistribuicao
+--- PASS: TestMetricaAusenteNaoViraBaldeZero        (5 partidas, 3 com dado -> sample=3, sem balde 0)
+--- PASS: TestDenominadorDaDistribuicaoBateComOResumo
+--- PASS: TestDistribuicaoSemAmostraNaoInventaBalde
+--- PASS: TestDistribuicoesPorPerspectivaSaoCoerentes (6 / 4 / 10)
+```
+
+Regressão completa:
+
+```
+go build ./...                          → exit 0
+go vet ./...                            → exit 0
+go test ./...                           → exit 0  (9 pacotes)
+gofmt -l (arquivos alterados)           → vazio
+npx ng build --configuration production → exit 0
+```
+
+Frontend continua **sem runner de testes Angular** — ausência registrada, não aprovação.
+
+## REV-P2 = PARCIAL — implementação local completa aguardando deploy/validação
+
+Nenhum dos 25 itens da Definition of Done está marcado: nenhum tem evidência de produção.
+Pendências conhecidas e não implementadas: faixas de frequência para
+produzido/concedido (sem definição de produto), drill-down para a partida (não existe rota
+de detalhe no app), fullscreen/modal dos gráficos e tooltip nativo do componente de
+gráfico.

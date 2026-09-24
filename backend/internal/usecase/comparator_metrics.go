@@ -1,6 +1,10 @@
 package usecase
 
-import "github.com/devdsfr/cornerlab/internal/domain"
+import (
+	"sort"
+
+	"github.com/devdsfr/cornerlab/internal/domain"
+)
 
 // Vocabulário do Comparador (REV-P2, fatia 2).
 //
@@ -180,6 +184,60 @@ func frequencyThresholds(m Metric, p Perspective) ([]int, bool) {
 	default:
 		return DefaultFrequencyThresholds, true
 	}
+}
+
+// DistributionBucket é UM valor observado e quantas vezes ele apareceu.
+//
+// `Sample` viaja dentro de cada balde de propósito: quem lê "count = 7" precisa
+// do denominador ao lado para saber se são 7 de 13 ou 7 de 40. Percentual sem
+// denominador é o tipo de número que parece informação e não é.
+type DistributionBucket struct {
+	Value      int     `json:"value"`
+	Count      int     `json:"count"`
+	Sample     int     `json:"sample"`
+	Percentage float64 `json:"percentage"`
+}
+
+// buildDistribution monta a distribuição OBSERVADA: valor -> quantas partidas.
+//
+// Recebe exatamente a mesma fatia que alimenta média e frequências — aquela que
+// só contém partidas onde a métrica existe. Duas consequências que são o ponto
+// do REV-P2:
+//
+//	ausência  não entra (a partida nem chega aqui, então não vira zero);
+//	zero real entra normalmente (é uma observação como qualquer outra).
+//
+// Por isso `sample` é metric_sample_size, e não sample_size.
+//
+// Sem bins: escanteios, gols, finalizações e impedimentos são contagens inteiras
+// pequenas, então cada valor observado é a própria faixa. Agrupar em intervalos
+// só acrescentaria uma escolha arbitrária entre o dado e o leitor.
+func buildDistribution(values []int) []DistributionBucket {
+	if len(values) == 0 {
+		return []DistributionBucket{}
+	}
+
+	contagem := map[int]int{}
+	for _, v := range values {
+		contagem[v]++
+	}
+
+	valores := make([]int, 0, len(contagem))
+	for v := range contagem {
+		valores = append(valores, v)
+	}
+	sort.Ints(valores) // ordem crescente: o eixo precisa ser lido como escala
+
+	out := make([]DistributionBucket, 0, len(valores))
+	for _, v := range valores {
+		out = append(out, DistributionBucket{
+			Value:      v,
+			Count:      contagem[v],
+			Sample:     len(values),
+			Percentage: round2(100 * float64(contagem[v]) / float64(len(values))),
+		})
+	}
+	return out
 }
 
 // buildFrequencies conta, para cada limite, quantos valores são ESTRITAMENTE

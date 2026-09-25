@@ -4437,3 +4437,178 @@ runner Angular **NA — inexistente**.
 | 7 | ⚠️ | ⚠️ — parte do Simulador corrigida localmente; parte do pipeline segue como backlog |
 
 ## REV-P3 = PARCIAL — itens 7 e 33 corrigidos localmente, aguardando deploy final e validação de provenance
+
+---
+
+## REV-P3 — Validação final: itens 7, 33, 29 e 30
+
+Data: **25/09/2026**. Escopo: validar em produção as correções dos itens 7 e 33 e,
+com sessão autenticada, os itens 29 e 30. Os demais itens mantêm a evidência anterior.
+
+### Deploy
+
+| Item | Valor |
+|---|---|
+| Branch | `main` |
+| Código dos itens 7 e 33 | `28dc417` ("fix") — commit e push feitos pelo Daniel |
+| Restauração do registro | `84f6a8e` — commit meu, push feito pelo Daniel |
+| origin/main | `84f6a8e` |
+| Backend | sem alteração nesta passagem (último deploy de backend: `25931e5`) |
+| Frontend | **no ar** — a mensagem nova do item 33 aparece em produção |
+| Migration | nenhuma |
+| Erros | nenhum |
+
+⚠️ Mensagem do commit `28dc417` ("fix") não descreve a mudança.
+
+### Item 33 — produção
+
+**Com filtro de equipe, métrica totalmente ausente.**
+`/filtros?league=23&seasons=37&team=4748&metric=offsides&threshold=1&last_n=0&stake=100`
+(Champions 2026, Egnatia Rrogozhinë, impedimentos). Backend: `matches_in_window 108 ·
+observations_in_window 4 · excluded_no_metric 4`. UI:
+
+> O recorte selecionado tem **4** partidas, mas o provedor não publicou esta métrica em
+> nenhuma delas.
+
+"108" não aparece na página.
+
+**Exclusão mista.** Mesmo caso com `home_away=home`: `observations 4 · excluded_by_venue 2
+· excluded_no_metric 2`. UI:
+
+> O recorte selecionado tem 4 partidas; em 2 delas o provedor não publicou esta métrica,
+> e as demais ficaram de fora por outros critérios.
+
+Não afirma "nenhuma delas".
+
+**Sem filtro de equipe — sem regressão.** Brasileirão 2026, impedimentos > 2: "100
+partidas no recorte · 87 analisadas · 13 fora: 13 sem a estatística publicada pelo
+provedor"; tabela com 87 linhas, média de impedimentos 3,02.
+
+### Item 7 — produção (parte do Simulador)
+
+Brasileirão 2026, tabela renderizada no navegador (200 linhas por mercado):
+
+| Mercado | Cabeçalhos | Card de média | Taxa de acerto | Mando |
+|---|---|---|---|---|
+| vitória (odd 1,80) | Data · Equipe · Adversário · Mando · Resultado · Odd · Resultado (stake) | ausente | 35 % (70/130) | 100 Casa + 100 Fora |
+| empate (odd 3,20) | idem | ausente | 30 % (60/140) | 100 + 100 |
+| não perde (odd 1,30) | idem | ausente | 65 % (130/70) | 100 + 100 |
+
+Não aparecem coluna numérica "Vitória/Empate/Não perde" nem "Média de vitória/empate/não
+perde". Acerto/Erro na partida 16442 (vitória do mandante): vitória Casa Acerto / Fora
+Erro; empate Erro / Erro; não perde Casa Acerto / Fora Erro. Consistência:
+não perde 130 = vitória 70 + empate 60.
+
+Financeiro conferido: empate `60 × 220 − 140 × 100 = −800` → −4 %; não perde
+`130 × 30 − 70 × 100 = −3.100` → −15,5 %. UI idem.
+
+**Zero real numérico preservado.** Gols > 0: 100 linhas, **9** com "0" (ex.:
+`2026-07-23 | Botafogo | Vitoria | 0 | Erro | 1.2 fixa | −100`), média de gols 2,68.
+
+### Itens 29 e 30 — provenance autenticada
+
+**Como foi obtida a evidência.** Eu não faço login com senha. O Daniel executou os
+passos na **sessão dele, no Chrome**, por meio da extensão Claude in Chrome, com um roteiro
+que eu escrevi: salvar pela tela do Simulador e depois ler a API. As respostas JSON abaixo
+foram coletadas lá e coladas aqui. São evidência de produção, mas **não observadas
+diretamente por mim**. O token não foi exibido em nenhum momento.
+
+**A — salva pela tela do Simulador** (Brasileirão 2026, escanteios > 8, odd 1,50, stake 100):
+
+```json
+{"id":43,"owner_id":3,"name":"REV-P3 teste provenance A — pode excluir",
+ "description":"Criada a partir do Simulador de Filtros (Escanteios)",
+ "origin":"simulator","visibility":"private","active":true,"favorite":false,
+ "created_at":"2026-09-25T21:43:13.582924Z"}
+```
+Bundle: `{strategy, backtests: []}` — sem `health`, sem `scores`.
+
+**B — tentativa de forjar `origin:"discovery"` via `POST /api/v1/strategies`:**
+
+```json
+{"status_http":201,
+ "resposta":{"id":44,"owner_id":3,"name":"REV-P3 teste provenance B — pode excluir",
+  "origin":"user","visibility":"private","active":true,"favorite":false,
+  "created_at":"2026-09-25T21:43:34.391814Z"}}
+```
+
+O servidor **aceitou a requisição e ignorou a origem forjada**: gravou `user`, não
+`discovery`. Bundle também só com `{strategy, backtests: []}`.
+
+**Na tela `/estrategias`:** A com etiqueta **"Do simulador"**, B sem etiqueta. No
+detalhe de B, DSFR Score, Health, Ciclo de vida, Confiança, Robustez, Volatilidade, Risco
+e Ranking aparecem "—", e o histórico de execuções está em 0. As 5 estratégias
+anteriores continuam como "Pausada"/"Descoberta".
+
+**Significado de `active: true`, provado.** O contrato de `Strategy` não tem nenhum campo
+de etapa, validação ou aprovação (nenhum `stage`, `validated` ou `approved`). O que
+indicaria avaliação quantitativa — `backtests`, `health`, `scores` — está vazio ou
+ausente nas duas. Portanto `active` só quer dizer "aparece na lista do usuário"; salvar
+não roda backtest, não gera score e não promove nada.
+
+As estratégias 43 e 44 continuam na conta do Daniel, com "pode excluir" no nome. Eu não
+as excluí.
+
+**Observação.** No Passo 1 a extensão registrou 277 partidas encontradas, contra 100 nas
+validações anônimas. É o esperado: usuário com assinatura não tem o limite de 90 dias.
+
+### Achado de usabilidade (fora dos 40 itens)
+
+**O Simulador não tem formulário de login.** O formulário só existe em Gestão de Banca,
+Assinatura e Projeções. Um usuário anônimo que queira salvar uma estratégia pelo Simulador
+não encontra onde entrar — foi o que travou esta validação. Registrado como backlog, não
+corrigido.
+
+### Regressão (commit `84f6a8e` = origin/main, árvore limpa)
+
+| Comando | Resultado |
+|---|---|
+| `gofmt -l internal/ pkg/ cmd/` | vazio |
+| `go build ./...` · `go vet ./...` | OK · OK |
+| `go test -count=1 ./...` | 9 pacotes `ok` |
+| `npx ng build --configuration production` | OK — 642,16 kB |
+| `sample-state.spec.ts` | 28/28 |
+| `simulator-url-state.spec.ts` | 11/11 |
+| Runner de componente Angular | **NA — inexistente** |
+
+### Reavaliação dos itens 7, 29, 30 e 33
+
+| # | Item | Antes | Agora | Evidência |
+|---|---|---|---|---|
+| 33 | Metric-unavailable explícito | ⚠️ | ✅ | Egnatia: "tem 4 partidas", sem 108; exclusão mista sem "nenhuma delas"; sem filtro de equipe inalterado |
+| 29 | Save com provenance correto | ⚠️ | ✅ | id 43: `origin "simulator"`, `private`, `owner_id 3`; etiqueta "Do simulador" |
+| 30 | Save não vira validada | ⚠️ | ✅ | id 44: `origin "discovery"` forjado gravado como `user`; nenhum campo de aprovação; `backtests []`, sem health/scores; scores "—" na UI |
+| 7 | Ausência ≠ zero | ⚠️ | ⚠️ | Parte do Simulador **resolvida** (categóricos sem zero artificial; estados vazio/indisponível; odd e financeiro nulos). **Resta** escanteios NULL → 0 (abaixo) |
+
+### Por que o item 7 continua ⚠️
+
+A correção que dependia do Simulador foi feita e validada. O que resta nasce na
+**ingestão**: `sync_usecase.go:119-124` grava 0 quando o provedor não publica
+escanteios, e o schema é `NOT NULL DEFAULT 0`. O Simulador **continua exibindo** esses
+valores como zero observado — em produção, a partida 16451 (2026-07-21, Atlético-MG ×
+Bahia) aparece com 0 escanteios totais, e a 16476 com 1.
+
+Isso é backlog estrutural separado: migration, `*int` no domínio, propagação por P1/P2, e
+histórico irrecuperável. Não foi reaberto, conforme instruído. Mas o item diz "ausência ≠
+zero", e para escanteios isso **ainda não é verdade** na tela. Marcá-lo ✅ seria forçar o
+fechamento.
+
+### Novo total dos 40 itens
+
+- ✅ **36** — os 33 anteriores + 29, 30, 33
+- ⚠️ **1** — 7
+- ❌ **0**
+- NA **3** — 15 (produzido/concedido é do Comparador), 18 (não há amostra `synthetic` em
+  produção), 26 (scores são do Strategy Engine)
+
+### Status final
+
+**Único bloqueio:** item 7, na forma do backlog estrutural "escanteios NULL → 0". Não é
+defeito do Simulador corrigível dentro do escopo autorizado, mas afeta o que o Simulador
+mostra.
+
+Se o Daniel decidir **aceitar formalmente** essa limitação como fora do REV-P3 e movê-la
+para um item próprio, os 39 itens restantes estão sustentados por evidência de produção
+(36 ✅ + 3 NA justificados). Essa é uma decisão de escopo que cabe a ele — não a mim.
+
+## REV-P3 = PARCIAL — 36 ✅ / 1 ⚠️ / 0 ❌ / 3 NA. Único bloqueio: item 7 (escanteios NULL → 0, backlog estrutural fora do escopo autorizado).

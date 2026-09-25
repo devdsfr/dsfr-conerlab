@@ -2858,3 +2858,233 @@ Pendências conhecidas e não implementadas: faixas de frequência para
 produzido/concedido (sem definição de produto), drill-down para a partida (não existe rota
 de detalhe no app), fullscreen/modal dos gráficos e tooltip nativo do componente de
 gráfico.
+
+---
+
+## REV-P2 — Fase D: deploy e validação em produção (24/09/2026)
+
+### Deploy
+
+| item | valor |
+|---|---|
+| commit | `fdcc23e` |
+| branch | `main` |
+| `origin/main` | `fdcc23e3451188bd17f838a284b6f709c4d05012` — confirmado por `git ls-remote` |
+| backend | publicado; `GET /api/v1/comparator` devolve o contrato novo |
+| frontend | publicado; os sete seletores (incl. Local/Métrica/Perspectiva) renderizam |
+| migration | **nenhuma** — o REV-P2 não alterou schema |
+| erros no deploy | nenhum |
+
+Contrato confirmado em produção (topo): `period · requested_limit · venue · metric ·
+perspective · frequencies_available · team_a · team_b · h2h`. Por lado: `team ·
+sample_size · metric_sample_size · metric_available · period · summary · frequencies ·
+distribution · evolution`.
+
+### Casos reais — geral/corners/total, limit 20
+
+| | CASO A · Brasileirão 2026 | CASO B · La Liga 2026 | CASO C · La Liga 2025 |
+|---|---|---|---|
+| league_id / season_id | 18 / 26 | 8 / 33 | 8 / 12 |
+| team_a | 365 Flamengo | 455 Celta Vigo | 455 Celta Vigo |
+| team_b | 375 Corinthians | 454 Alaves | 442 Athletic Club |
+| sample A / B | 20 / 20 | **7 / 7** | 20 / 20 |
+| metric_sample A / B | 20 / 20 | 7 / 7 | 20 / 20 |
+| período A | Últimos 20 jogos | **Últimos 7 jogos (de 20 pedidos)** | Últimos 20 jogos |
+| média A / B | 9.65 / 10.05 | 8.0 / 9.43 | 8.15 / 9.4 |
+| freq >4 (A) | 19/20 = 95% | 6/7 = 85.71% | 19/20 = 95% |
+| distribuição A | 11 baldes | 5 baldes | 10 baldes |
+| H2H | **2 confrontos** (16611, 9859) | **0 confrontos** | **2 confrontos** (10848, 10645) |
+
+O CASO B cobre dois requisitos de uma vez: **amostra parcial** (7 de 20 pedidos) e **H2H
+inexistente**.
+
+### Auditoria matemática manual — CASO C, Celta Vigo
+
+Valores das 20 partidas realmente usadas (total de escanteios por jogo):
+
+```
+7, 12, 11, 8, 10, 4, 9, 16, 7, 7, 5, 6, 5, 8, 12, 6, 10, 8, 5, 7
+```
+
+| medida | backend | recalculado à mão | confere |
+|---|---|---|---|
+| metric_sample_size | 20 | 20 | ✅ |
+| média | 8.15 | 163/20 = 8.15 | ✅ |
+| frequência "acima de 6" | 14/20 = 70% | 14 valores > 6 → 14/20 = 70% | ✅ |
+| distribuição | `4:1 5:3 6:2 7:4 8:3 9:1 10:2 11:1 12:2 16:1` | idêntica | ✅ |
+| SUM(count) | 20 | = metric_sample_size | ✅ |
+| SUM(percentage) | 100.0 | ≈ 100% | ✅ |
+
+**Cross-check independente:** os mesmos 20 valores obtidos pelo endpoint do Dashboard
+(`/api/v1/dashboard`, outro usecase, outra query) coincidem item a item com os do
+Comparador.
+
+> Ressalva de método: o console do Neon não está autenticado nesta sessão e não faço
+> login. A coluna "banco" foi obtida pelas partidas individuais que o backend devolve em
+> `evolution` (uma linha por `match_id`), conferidas contra um segundo endpoint. **Não é
+> consulta SQL direta** — está registrado como tal.
+
+### Geral / Casa / Fora — Celta Vigo · La Liga 2025
+
+| recorte | sample | média | mandos observados |
+|---|---|---|---|
+| Geral | 20 | 8.15 | 9 casa + 11 fora |
+| **Casa** | 19 | 8.37 | **19 mandante, 0 visitante** |
+| **Fora** | 19 | 8.37 | **0 mandante, 19 visitante** |
+
+Nenhuma mistura. (Celta disputou 38 jogos na temporada: 19 em casa e 19 fora — coerente.)
+
+### Produzido / Concedido / Total — conferido em partidas reais
+
+| partida | mando | produzido | concedido | total | soma confere |
+|---|---|---|---|---|---|
+| `10683` vs Rayo Vallecano | **CASA** | 5 | 7 | 12 | ✅ |
+| `10675` vs Sevilla | **FORA** | 1 | 6 | 7 | ✅ |
+
+A conferência com a equipe **visitante** é o ponto: se houvesse inversão home/away,
+produzido e concedido trocariam de lugar. Não trocam.
+
+### Janela 20 → 10 → 5 — Celta Vigo · La Liga 2025
+
+| limit | sample | metric_sample | média | baldes | evolução |
+|---|---|---|---|---|---|
+| 20 | 20 | 20 | 8.15 | 10 | 20 |
+| 10 | 10 | 10 | 7.2 | 6 | 10 |
+| 5 | 5 | 5 | 7.2 | 5 | 5 |
+
+Cada troca disparou nova requisição e recalculou tudo — nenhum resíduo da janela anterior.
+
+### Cobertura parcial da métrica — impedimentos · Brasileirão 2026
+
+| equipe | sample_size | metric_sample_size | média | distribuição |
+|---|---|---|---|---|
+| Flamengo | 20 | **9** | 3.0 | `1:2/9 2:3/9 3:1/9 5:2/9 6:1/9` |
+| Corinthians | 20 | **10** | 4.0 | `1:1/10 2:1/10 3:4/10 6:3/10 7:1/10` |
+
+Denominadores **independentes por lado** — 9 para um, 10 para o outro, nunca 20 e nunca o
+denominador do vizinho.
+
+### Métrica indisponível — impedimentos · La Liga 2025
+
+`metric_available = false`, `metric_sample_size = 0`, `distribution` vazia nos dois lados.
+A tela mostra *"Esta estatística não está disponível para a amostra selecionada"* e não
+renderiza médias, distribuição nem gráfico.
+
+> **Ressalva registrada:** no PAYLOAD, com `metric_available=false`, `summary.mean` vem 0 e
+> as seis faixas vêm `0/0`. A interface nunca os exibe, porque bloqueia pela flag — mas um
+> consumidor da API que ignore `metric_available` veria zeros. Não alterei nesta passagem
+> (fora do escopo autorizado); fica como pendência.
+
+### Zero real — preservado
+
+Perspectiva "produzido", Celta Vigo · La Liga 2025. Balde 0 da distribuição:
+`value=0, count=3, sample=20, percentage=15%`.
+
+| match_id | data | adversário | mando | valor |
+|---|---|---|---|---|
+| `10783` | 2026-04-05 | Valencia | FORA | **0** |
+| `10830` | 2026-05-09 | Atletico Madrid | FORA | **0** |
+| `10848` | 2026-05-17 | Athletic Club | FORA | **0** |
+
+O jogo `10848` aparece também no H2H com escanteios **5-0** para o Athletic — o zero do
+Celta bate entre as duas seções.
+
+### Evolução — três pontos conferidos
+
+| match_id | data | adversário (id) | mando | valor | placar |
+|---|---|---|---|---|---|
+| `10675` | 2026-01-12 | Sevilla (184) | FORA | 1 | 1-0 |
+| `10683` | 2026-01-18 | Rayo Vallecano (177) | CASA | 5 | 3-0 |
+| `10693` | 2026-01-25 | Real Sociedad (180) | FORA | 9 | 1-3 |
+
+Cada ponto identificável. Sem eixo `1..N`.
+
+### H2H — respeitou liga e temporada
+
+CASO C, `league_id=8`, `season_id=12`:
+
+| match_id | data | mandante | placar | visitante | escanteios |
+|---|---|---|---|---|---|
+| `10848` | 2026-05-17 | Athletic Club | 1-1 | Celta Vigo | 5-0 |
+| `10645` | 2025-12-14 | Celta Vigo | 2-0 | Athletic Club | 1-4 |
+
+Ambos com `season_id=12`. Nenhuma ampliação para temporadas anteriores. CASO B devolveu
+`match_count=0` com lista vazia e a tela mostra *"Nenhum confronto direto encontrado para
+os filtros selecionados"*.
+
+### URL / reload
+
+Abri `?league_id=8&season_id=12&team_a=455&team_b=442&limit=20&venue=fora&metric=corners&perspective=produzido`:
+
+- URL **preservada sem reescrita**;
+- os sete seletores refletem exatamente: La Liga · 2025 · Celta Vigo · Athletic Club ·
+  Fora · Escanteios · Produzido;
+- requisição final com os oito parâmetros;
+- cabeçalho na tela: *"Janela pedida: últimos 20 jogos · Escanteios · produzidos pela
+  equipe · somente como visitante"*.
+
+**Parâmetro inválido** (`season_id=99999`): seletor de temporada **vazio**, aviso *"A
+temporada solicitada não existe em La Liga. Nenhuma outra foi escolhida no lugar."* — sem
+substituição silenciosa.
+
+### Faixas para produzido/concedido
+
+`frequencies_available=false`, `frequencies` nulo, com a nota explicando. A tela imprime a
+nota em vez de faixas. Os thresholds usados no total continuam sendo o que sempre foram:
+**limiares descritivos de frequência histórica** — não recomendações, não probabilidades,
+não previsões, não vantagem.
+
+### Operações pesadas — nenhuma
+
+Carga completa da tela: `sync/status`, `leagues`, `leagues/8/seasons`, `teams` e
+`comparator`. Cinco requisições de leitura. Nenhuma chamada a sincronização, Discovery,
+Backtest ou OpenAI; nenhuma escrita.
+
+### Definition of Done — REV-P2
+
+| # | item | | evidência |
+|---|---|---|---|
+| 1 | competição/temporada/equipes coerentes | ✅ | 3 casos; seletores e requisição batem com a URL |
+| 2 | temporada histórica funciona | ✅ | CASO C, La Liga 2025 (`season_id=12`) em toda a cadeia |
+| 3 | nenhuma substituição silenciosa | ✅ | `season_id=99999` → seletor vazio + aviso |
+| 4 | Geral/Casa/Fora corretos | ✅ | Casa 19/19 mandante; Fora 19/19 visitante |
+| 5 | Produzido/Concedido/Total corretos | ✅ | `10683` 5+7=12 (casa); `10675` 1+6=7 (fora) |
+| 6 | amostras reais e independentes | ✅ | impedimentos: 9 de um lado, 10 do outro |
+| 7 | amostra parcial explícita | ✅ | "Últimos 7 jogos (de 20 pedidos)" e "Últimos 19 (de 20)" |
+| 8 | ausência ≠ zero | ✅ | métrica indisponível não renderiza nada (ressalva de payload registrada) |
+| 9 | zero real preservado | ✅ | 3 partidas com valor 0, balde `0:3/20=15%` |
+| 10 | métricas disponíveis corretas | ✅ | 5 métricas, origem por coluna documentada |
+| 11 | métrica indisponível clara | ✅ | mensagem explícita, sem média nem gráfico |
+| 12 | H2H separado e correto | ✅ | 2 confrontos com season 12; caso com 0 tratado |
+| 13 | médias auditadas | ✅ | 163/20 = 8.15 recalculado à mão |
+| 14 | frequências com num/denom auditadas | ✅ | "acima de 6" = 14/20 = 70%, conferido |
+| 15 | gráficos correspondem aos dados | ✅ | distribuição da tela = payload = recálculo manual |
+| 16 | filtros e URL coerentes | ✅ | reload reproduz os 8 parâmetros |
+| 17 | mudanças de filtro atualizam | ✅ | venue, perspectiva e janela 20→10→5 |
+| 18 | nenhuma operação pesada | ✅ | 5 requisições de leitura na carga |
+| 19 | nenhum dado inventado | ✅ | auditoria manual; nada hardcoded |
+| 20 | `go build ./...` | ✅ | exit 0 |
+| 21 | `go vet ./...` | ✅ | exit 0 |
+| 22 | `go test ./...` | ✅ | exit 0, 9 pacotes |
+| 23 | frontend production build | ✅ | exit 0 |
+| 24 | testes frontend OU ausência registrada | ✅ | **não existe runner Angular** — ausência registrada, não aprovação |
+| 25 | ≥3 casos E2E reais em produção | ✅ | Brasileirão 2026, La Liga 2026, La Liga 2025 |
+
+## REV-P2 = RESOLVIDO — 25/25 da Definition of Done com evidência
+
+### Limitações desta validação
+
+- Coluna "banco" obtida via `evolution` + cross-check com o endpoint do Dashboard, **não
+  por SQL direto** (Neon não autenticado nesta sessão).
+- A UI do Comparador **não tem cobertura de teste automatizado** — o projeto não tem runner
+  Angular.
+
+### Pendências fora do escopo, registradas
+
+- `summary.mean = 0` e faixas `0/0` no payload quando `metric_available=false` (a tela não
+  os exibe, mas o contrato carrega zeros).
+- Faixas de frequência para produzido/concedido — sem definição de produto.
+- Drill-down para a partida — não existe rota de detalhe no app.
+- Fullscreen/modal dos gráficos e tooltip nativo do componente.
+- Equipes duplicadas (Athletic Club 442 "Brazil" × 1198 "Espanha").
+- Cache HTTP servindo payload antigo após deploy.

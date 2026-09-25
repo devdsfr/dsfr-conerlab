@@ -7,7 +7,7 @@
 //   cd frontend
 //   npx tsc src/app/features/filters/simulator-url-state.ts \
 //           src/app/features/filters/simulator-url-state.spec.ts \
-//           --outDir /tmp/su --module commonjs --target es2022 --skipLibCheck
+//           --outDir /tmp/su --module commonjs --target es2022 --skipLibCheck --esModuleInterop
 //   node /tmp/su/simulator-url-state.spec.js
 //
 // Mesmo padrão de features/dashboard/season-resolution.spec.ts.

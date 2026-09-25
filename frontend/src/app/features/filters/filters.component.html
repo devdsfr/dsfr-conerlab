@@ -225,6 +225,37 @@
         </a>
       </div>
     }
+    <!-- ================= REV-P3 §1 — OS TRÊS ESTADOS DA AMOSTRA =================
+         Antes, com ZERO partidas a tela renderizava "Taxa de acerto 0%",
+         "Média de escanteios 0" e sequências 0 — ausência pintada de zero
+         observado. Medido em produção 25/09/2026 com La Liga 2025, temporada
+         inteira fora da janela de 90 dias.
+         Os três estados são distintos e nunca se convertem um no outro. -->
+
+    @if (estadoAmostra(r) === 'vazio') {
+      <div class="cl-card p-8 text-center">
+        <div class="text-slate-200 font-medium">Nenhuma partida encontrada para os filtros selecionados.</div>
+        <div class="text-xs text-slate-400 mt-2">
+          Não há amostra para analisar, então não existem taxa de acerto, média nem
+          resultado financeiro para este recorte — nem como zero.
+          @if (r.history_capped) {
+            <br>O plano gratuito analisa apenas os últimos {{ r.history_cap_days }} dias
+            (recorte efetivo: {{ r.effective_from || '—' }} a {{ r.effective_to || '—' }}).
+          }
+        </div>
+      </div>
+    } @else if (estadoAmostra(r) === 'metrica-ausente') {
+      <div class="cl-card p-8 text-center">
+        <div class="text-slate-200 font-medium">Esta estatística não está disponível para a amostra selecionada.</div>
+        <div class="text-xs text-slate-400 mt-2">
+          O recorte tem {{ r.accounting.matches_in_window }} partida(s), mas o provedor não
+          publicou esta métrica em nenhuma delas. Elas ficam de fora do backtest —
+          <strong class="text-slate-300">não entram como zero</strong>. Experimente outra
+          métrica ou outro período.
+        </div>
+      </div>
+    } @else {
+
     @if (r.odds_source === 'synthetic') {
       <div class="cl-card p-3 border border-amber-900/50 bg-amber-950/20 text-sm text-amber-200">
         <strong class="text-amber-300">Simulação — odds não são de mercado.</strong>
@@ -252,6 +283,19 @@
         {{ r.financials_note || 'Nem todas as partidas do recorte têm odd, então lucro, ROI, yield e drawdown não são calculáveis.' }}
         A parte estatística abaixo (partidas, acertos e taxa de acerto) continua válida —
         ela não depende de odd. Informe uma odd fixa acima se quiser simular um cenário.
+      </div>
+    }
+    <!-- REV-P3 §3: teto de odd que não teve onde agir. Um controle que aparenta
+         influenciar o backtest sem influenciar é pior que não existir. -->
+    @if (avisoMaxOddsSemEfeito(r); as aviso) {
+      <div class="cl-card p-3 border border-amber-900/50 bg-amber-950/20 text-sm text-amber-200">
+        <strong class="text-amber-300">"Odds máximas" não teve efeito.</strong> {{ aviso }}
+      </div>
+    }
+    <!-- REV-P3 §4: por que a amostra encolheu. Números que fecham. -->
+    @if (explicacaoExclusoes(r); as exp) {
+      <div class="cl-card p-3 text-xs text-slate-400">
+        <strong class="text-slate-300">Composição da amostra:</strong> {{ exp }}
       </div>
     }
     @if (isNullableMetric) {
@@ -352,14 +396,21 @@
             <th mat-header-cell *matHeaderCellDef>Data</th>
             <td mat-cell *matCellDef="let e">{{ e.match_date }}</td>
           </ng-container>
+          <!-- REV-P3 §2: em regra MATCH-LEVEL a ocorrência é da PARTIDA. Os dois
+               times são os participantes do jogo, não uma equipe analisada e seu
+               adversário — por isso o cabeçalho muda junto com o escopo. -->
           <ng-container matColumnDef="team">
-            <th mat-header-cell *matHeaderCellDef>Equipe</th>
-            <td mat-cell *matCellDef="let e">{{ e.team }}</td>
+            <th mat-header-cell *matHeaderCellDef>{{ mostraColunaMando(r) ? 'Equipe' : 'Mandante' }}</th>
+            <td mat-cell *matCellDef="let e">{{ mostraColunaMando(r) ? e.team : (e.is_home ? e.team : e.opponent) }}</td>
           </ng-container>
           <ng-container matColumnDef="opponent">
-            <th mat-header-cell *matHeaderCellDef>Adversário</th>
-            <td mat-cell *matCellDef="let e">{{ e.opponent }}</td>
+            <th mat-header-cell *matHeaderCellDef>{{ mostraColunaMando(r) ? 'Adversário' : 'Visitante' }}</th>
+            <td mat-cell *matCellDef="let e">{{ mostraColunaMando(r) ? e.opponent : (e.is_home ? e.opponent : e.team) }}</td>
           </ng-container>
+          <!-- A coluna "Mando" SÓ entra em regra team-level, onde mandante e
+               visitante são observações distintas. Em match-level ela dizia
+               "Casa" em 100/100 linhas, afirmando uma perspectiva que a
+               ocorrência não tem — ver colunasDaTabela(). -->
           <ng-container matColumnDef="is_home">
             <th mat-header-cell *matHeaderCellDef>Mando</th>
             <td mat-cell *matCellDef="let e">{{ e.is_home ? 'Casa' : 'Fora' }}</td>
@@ -398,11 +449,13 @@
               }
             </td>
           </ng-container>
-          <tr mat-header-row *matHeaderRowDef="entryColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: entryColumns;"></tr>
+          <tr mat-header-row *matHeaderRowDef="colunasDaTabela(r)"></tr>
+          <tr mat-row *matRowDef="let row; columns: colunasDaTabela(r);"></tr>
         </table>
       </div>
     </div>
+
+    } <!-- fim do @else: estado 'com-amostra' (REV-P3 §1) -->
 
     <p class="cl-disclaimer">{{ r.disclaimer }}</p>
   }

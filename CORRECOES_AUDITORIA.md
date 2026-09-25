@@ -3463,3 +3463,674 @@ vira ausência reportada e **não zero**.
 ---
 
 ## REV-P3 = PARCIAL — Fases A/B/C concluídas, aguardando deploy e validação em produção
+
+---
+
+## REV-P3 — Fase D (deploy + validação em produção)
+
+Data da validação: **25/09/2026**. Toda evidência abaixo foi obtida contra
+`https://dsfrcornerlab.com.br` (frontend) e `https://dsfrcornerlab.com.br/api/v1`
+(backend), como **usuário anônimo**. Código local não foi usado como prova de produção.
+
+### 1. Deploy
+
+| Item | Valor |
+|---|---|
+| Branch | `main` |
+| Commit | `848899258202ff90bdd54ce2097e1d149997423c` (`8488992`) |
+| Autor / data | Daniel Ramos · 24/09/2026 23:53:51 −03 |
+| Mensagem | `+---++++++++` |
+| Push | Confirmado — `origin/main` aponta para `8488992`; árvore local limpa |
+| Arquivos | 34 (19 backend, 15 frontend) |
+| Migrations | **Nenhuma** neste commit — as correções do REV-P3 não tocam schema |
+| Backend deploy | **No ar** — `POST /api/v1/filters/run` devolve os campos novos `financials_available`, `effective_from`, `effective_to` e os financeiros nuláveis |
+| Frontend deploy | **No ar** — `/filtros` mostra "Odd fixa (simular)" para escanteios, o rótulo único "ROI / Yield", a linha "Recorte efetivamente analisado" e a URL com query string |
+| Erros | Nenhum |
+
+⚠️ **Warning de processo:** a mensagem de commit (`+---++++++++`) não descreve a mudança.
+Um commit que altera o contrato financeiro de toda a plataforma merece mensagem
+rastreável. Não bloqueia, mas fica registrado.
+
+### 2. Casos reais em produção
+
+Parâmetros comuns: usuário anônimo ⇒ `history_capped = true`, `history_cap_days = 90`.
+
+#### CASO A — Brasileirão Série A · 2026
+
+```
+league_id 18 · season_id 26 · team_id (nenhum) · metric corners · rule "acima de"
+threshold 8 · venue qualquer · perspective total da partida · last_n_games 0 (todos)
+FixedOdd 1.50 · stake 100
+URL https://dsfrcornerlab.com.br/filtros?league=18&metric=corners&threshold=8
+    &last_n=0&stake=100&seasons=26&fixed_odd=1.5
+```
+
+Response: `match_count 100 · entries 100 · match_ids distintos 100 · hits 67 · misses 33 ·
+hit_rate 67 · odds_source "fixed" · financials_reliable false · financials_available true ·
+profit 50 · total_staked 10000 · roi 0.5 · yield 0.5 · max_drawdown 650 ·
+effective_from 2026-06-27 · effective_to 2026-09-20`
+
+Frontend: "Partidas encontradas 100 · Taxa de acerto 67% (67 acertos / 33 erros) ·
+ROI / Yield 0.5% · Lucro 50 · Total apostado: 10000 · Drawdown máximo 650 ·
+Recorte efetivamente analisado: 2026-06-27 a 2026-09-20 · janela limitada a 90 dias".
+
+#### CASO B — La Liga · 2026
+
+```
+league_id 8 · season_id 33 · metric corners · threshold 8 · FixedOdd 1.50 · stake 100
+```
+
+Response: `match_count 69 · entries 69 · match_ids distintos 69 · hits 35 · misses 34 ·
+hit_rate 50.72 · odds_source "fixed" · financials_reliable false · profit −1650 ·
+total_staked 6900 · roi −23.91 · effective_from 2026-06-27 · effective_to 2026-09-20`
+
+Amostra de match_ids: `50427, 50428, 50429, 50430, 50431, 50432`.
+
+#### CASO C — La Liga · 2025
+
+```
+league_id 8 · season_id 12 · metric corners · threshold 8 · FixedOdd 1.50 · stake 100
+URL .../filtros?league=8&metric=corners&threshold=8&last_n=0&stake=100&seasons=12&fixed_odd=1.5
+```
+
+Response: `match_count 0 · entries 0 · financials_available false · profit null ·
+roi null · yield null · total_staked null · max_drawdown null · effective_from 2026-06-27 ·
+effective_to (vazio)`
+
+A temporada 2025 está **inteiramente fora da janela de 90 dias** do plano gratuito. O zero
+aqui é legítimo — mas a forma como a tela o apresenta tem defeito (ver §13A abaixo).
+
+### 3. A dupla contagem sumiu — prova em produção
+
+| Caso | ANTES (Fase A) | DEPOIS (produção, 25/09/2026) |
+|---|---|---|
+| Brasileirão 2026 · escanteios | 200 entries / 100 match_ids | **100 entries / 100 match_ids** |
+| La Liga 2026 · escanteios | 138 entries / 69 match_ids | **69 entries / 69 match_ids** |
+
+`COUNT(entries) == COUNT(DISTINCT match_id)` verificado em JS na origem:
+`new Set(entries.map(e => e.match_id)).size === entries.length` → **true** nos dois casos.
+
+### 4. TEAM-LEVEL não foi destruído
+
+```
+league_id 18 · season_id 26 · metric win (vitória) · FixedOdd 1.80 · stake 100
+```
+
+`match_count 200 · entries 200 · match_ids distintos 100 · hits 70 · misses 130`
+
+A duplicidade aqui é **semântica**, não acidental. Mesma partida, `match_id 16636`,
+2026-09-20:
+
+| Perspectiva | team | opponent | is_home | goals_for | goals_against | hit | odd | P/L |
+|---|---|---|---|---|---|---|---|---|
+| Mandante | Atletico Paranaense | Bahia | true | 2 | 1 | true | 1.8 | +80 |
+| Visitante | Bahia | Atletico Paranaense | false | 1 | 2 | false | 1.8 | −100 |
+
+São duas apostas diferentes com respostas opostas. 70 + 130 = 200 ✓.
+
+### 5. Escanteios com odd fixa
+
+CASO A acima. Confirmado: há 100 ocorrências (a métrica **não** volta vazia, que era o
+defeito da Fase A); `odds_source = "fixed"`; `financials_reliable = false`; cada entrada
+traz `odds_source: "fixed"` e `odd: 1.5`; a tabela da UI mostra "**1.5 fixa**" em todas as
+linhas; e o banner diz *"Cenário com odd fixa que você informou. Nenhuma odd de mercado foi
+usada… Lucro, ROI e yield abaixo descrevem esse cenário, não o que as casas pagavam em cada
+jogo."* Em nenhum ponto a odd digitada é classificada como histórica real.
+
+### 6. Escanteios sem odd — mesmo contexto, sem FixedOdd
+
+```
+league_id 18 · season_id 26 · metric corners · threshold 8 · stake 100 · (sem fixed_odd)
+```
+
+**Estatística idêntica ao CASO A**, o que prova que a ausência de odd não encolhe a amostra:
+`match_count 100 · hits 67 · misses 33 · hit_rate 67 · average_corners 10.32 ·
+longest_win_streak 10 · longest_lose_streak 3`.
+
+**Financeiro indisponível:** `odds_source "none" · financials_available false ·
+profit null · total_staked null · roi null · yield null · max_drawdown null`.
+Todas as 100 entradas: `odd: null`, `profit_loss: null`, sem `odds_source`.
+
+`financials_note` = *"Sem odd para estas partidas: o resultado abaixo é estatístico.
+Informe uma odd fixa para simular um cenário financeiro."*
+
+UI: "ROI / Yield **N/A** — Sem odd — não calculável", "Lucro **N/A**",
+"Drawdown máximo **N/A**", e a tabela com "—" nas colunas Odd e Resultado (stake).
+
+**Nenhuma odd 1.00 fabricada. Nenhum zero financeiro representando ausência.**
+
+### 7. Auditoria manual — CASO A
+
+```
+N = 100 · wins = 67 · losses = 33 · stake = 100 · odd = 1.50
+
+profit_win   = 100 × (1,50 − 1)      = +50
+profit_loss  = −100
+total_profit = 67 × 50 + 33 × (−100) = 3350 − 3300 = 50
+total_staked = 100 × 100             = 10 000
+ROI / Yield  = 50 ÷ 10 000           = 0,5 %
+```
+
+| | lucro | total apostado | ROI |
+|---|---|---|---|
+| MANUAL | 50 | 10 000 | 0,5 % |
+| BACKEND | 50 | 10 000 | 0,5 % |
+| FRONTEND | 50 | 10 000 | 0,5 % |
+
+**Batem.** Auditoria cruzada no CASO B: `35 × 80 + 34 × (−100) = 2800 − 3400 = −600`… —
+atenção, aqui a odd é 1,50, não 1,80: `35 × 50 + 34 × (−100) = 1750 − 3400 = −1650` ✓,
+`total_staked = 69 × 100 = 6900` ✓, `ROI = −1650 ÷ 6900 = −23,913…% → −23.91` ✓.
+E no TEAM-LEVEL (odd 1,80): `70 × 80 + 130 × (−100) = 5600 − 13000 = −7400` ✓,
+`total_staked = 200 × 100 = 20 000` ✓, `ROI = −37%` ✓.
+
+### 8. Caso determinístico — contrato local
+
+Não usado como prova de produção. Registrado que continua coberto:
+`TestDeterministico_20Ocorrencias_15Win_5Loss_Stake100_Odd150` — **PASS** no commit
+`8488992` (20 ocorrências · 15 WIN · 5 LOSS · stake 100 · odd 1,50 → 75% · 250 · 2000 ·
+12,5% · `fixed` · `financials_reliable=false` · EV ausente do JSON).
+
+`TestFaseA_ParesDobradosNaoOcorremMais` — **PASS** (falha se 200/100 ou 138/69 voltarem).
+
+### 9. Odds source — o que existe de fato em produção
+
+| Origem | Observada? | Contrato conferido |
+|---|---|---|
+| `fixed` | **Sim** | `financials_reliable = false` + banner de cenário hipotético ✓ |
+| `none` | **Sim** | financeiro inteiro `null`, UI em N/A ✓ |
+| `real` | **NÃO** | — |
+| `synthetic` | **NÃO** | — |
+
+**NA — não existe amostra com `odds_source = "real"` em produção.** Requisição de escanteios
+com `max_odds: 5.0` e sem odd fixa (Brasileirão 2026 e 2024) devolveu `odds_source: "none"`
+e nenhuma entrada com procedência. A base legada de odds sintéticas (14/07) está fora da
+janela de 90 dias do usuário anônimo, então `synthetic` também não foi exercitada. Nenhum
+caso "real" foi inventado.
+
+⚠️ **Achado novo (§A3 abaixo):** `max_odds: 5.0` não filtrou nada e as 100 partidas sem odd
+entraram mesmo assim.
+
+### 10. EV — confirmado ausente na UI real
+
+Texto completo da página do Simulador em produção conferido. **Não aparece**:
+"ROI esperado", "valor esperado", "EV", "odd de equilíbrio", "break-even",
+"margem de segurança", "pode errar até N em 10", nem a tabela de cenários de odd.
+O campo "Odd da casa" não existe mais. No JSON, `Object.keys(response)` não contém
+`ev`, `expected_value` nem `expected_roi`.
+
+No lugar, o bloco "Sobre o que estes números são" declara: *"O CornerLab não estima
+probabilidade futura nem retorno esperado, e não compara a odd de uma casa com a taxa de
+acerto histórica — essa conta usaria uma amostra escolhida justamente por ter acertado muito
+e apontaria vantagem onde não há."*
+
+### 11. ROI / Yield — rótulo único
+
+A UI mostra **um único card** rotulado `ROI / Yield`. Não são apresentados como duas
+evidências independentes. ✓
+
+### 12. FinancialsAvailable — os dois casos
+
+| | Configuração | `financials_available` | UI |
+|---|---|---|---|
+| CASO 1 | Brasileirão 2026 · escanteios · **odd fixa 1,50** | `true` | ROI 0.5%, lucro 50 |
+| CASO 2 | Brasileirão 2026 · escanteios · **sem odd** | `false` | ROI N/A, lucro N/A, drawdown N/A |
+
+### 13. No-data / metric-unavailable / zero real
+
+**A. Nenhuma partida elegível** — CASO C (La Liga 2025). `match_count 0`, financeiro `null`.
+❌ **DEFEITO NOVO NA UI** — ver §A1.
+
+**B. Partidas existem, métrica indisponível** — Brasileirão 2026 · impedimentos:
+`match_count 87` de 100 partidas do mesmo recorte. **13 partidas sem o dado ficaram de fora
+em vez de entrar como zero** ✓. A UI exibe o aviso *"Essa métrica nem sempre é publicada
+pelo provedor: jogos sem o dado ficam de fora do backtest…"*.
+⚠️ O backend não informa **quantas** ficaram de fora — a tela não distingue "87 de 100" de
+"87 partidas no recorte". Ver §A4.
+
+**C. Zero real preservado** — Brasileirão 2026 · gols · limiar 0 ("acima de 0 gols"):
+`match_count 100 · hits 91 · misses 9`. As **9 partidas 0×0** entraram com
+`total_goals: 0` observado e `hit: false`. Exemplo: `match_id 16462`, 2026-07-23,
+Botafogo × Vitória, `total_goals 0`, `hit false`, `profit_loss −100`.
+Distribuição observada: 0, 1, 2, 3, 4, 5, 6. **Zero observado continua sendo zero** ✓.
+
+### 14. Occurrences / tabela auditável
+
+CASO A: `occurrences = 100` e a tabela renderiza **100 linhas**. Colunas presentes:
+Data · Equipe · Adversário · Mando · Escanteios · Resultado · Odd · Resultado (stake).
+Primeiras linhas conferidas contra o JSON:
+
+```
+2026-07-16  Vitoria    Vasco DA Gama    Casa   5   Erro     1.5 fixa   -100
+2026-07-16  Botafogo   Santos           Casa  10   Acerto   1.5 fixa    +50
+2026-07-17  Bahia      Chapecoense-sc   Casa  16   Acerto   1.5 fixa    +50
+```
+
+`match_id` está no payload de cada entrada (16442, 16443, …) mas **não é exibido como
+coluna**. Agregado e lista correspondem: 67 "Acerto" + 33 "Erro" = 100.
+⚠️ Ver §A2 sobre a coluna "Mando".
+
+### 15. EffectiveFrom / EffectiveTo
+
+Backend: `effective_from 2026-06-27`, `effective_to 2026-09-20`, `history_capped true`,
+`history_cap_days 90`. Frontend: linha *"Recorte efetivamente analisado: 2026-06-27 a
+2026-09-20 · janela limitada a 90 dias (plano gratuito)"* + o banner
+*"Resultado limitado aos últimos 90 dias (plano gratuito)"*.
+
+**Em nenhum momento a tela diz "histórico completo".** ✓
+
+### 16. URL / reload
+
+**Ida.** Execução pela UI produziu:
+`/filtros?league=21&metric=corners&threshold=8&last_n=0&stake=100&seasons=29&fixed_odd=1.5`
+
+**Volta.** Navegação direta para
+`/filtros?league=18&seasons=26&metric=corners&threshold=8&last_n=0&stake=100&fixed_odd=1.5`
+restaurou: Campeonato "Brasileirão Série A", Temporada "2026", métrica "Escanteios",
+"Acima de (escanteios)" = 8, "Odd fixa (simular)" = 1.5, Stake = 100 — e reexecutou o
+backtest automaticamente.
+
+**Parâmetro inválido — antes/depois.** URL enviada:
+`?league=18&seasons=26&metric=placar_exato&threshold=8&last_n=xyz&stake=100&home_away=neutro&fixed_odd=1.5`
+
+Banner exibido, nominalmente, sem substituição silenciosa:
+
+> A URL não pôde ser reproduzida integralmente: métrica desconhecida na URL
+> ("placar_exato") — usando escanteios; mando inválido na URL ("neutro"); últimos jogos
+> inválido na URL ("xyz"). Confira os critérios abaixo antes de ler o resultado.
+
+### 17 e 18. Salvar simulação e reivindicação de provenance
+
+**NA — não validável em produção nesta sessão.** `POST /api/v1/strategies` exige
+autenticação (resposta conferida: `401 {"error":"token ausente"}`), e **não manipulo
+credenciais**. Nenhum login foi feito.
+
+Cobertura local no mesmo commit (`strategy_origin_test.go`, PASS):
+`origin="simulator"` → `simulator`; `""`/`"user"` → `user`;
+**`"discovery"`, `"validated"` e `"approved"` → rebaixados para `user`**.
+`Visibility` é fixado em `"private"` e `Active` em `true` no servidor, ignorando o cliente.
+
+Significado de `Active = true`: a estratégia **aparece na lista do usuário**. Não significa
+validada nem aprovada — `stage`, health e scores são do Strategy Engine, e `PersistResult`
+recusa pontuar backtest sem série financeira completa.
+
+⚠️ Por ser cobertura apenas local, os itens 29 e 30 dos 40 ficam ⚠️, não ✅.
+
+### 19. Ordem cronológica
+
+CASO A, entradas na ordem em que vêm do backend:
+primeira `2026-07-16` (Vitória × Vasco), última `2026-09-20` (Atlético-PR × Bahia).
+No TEAM-LEVEL: primeira `2026-07-16`, última `2026-09-20`. **ASC confirmado** — e o
+drawdown de 650 e as sequências 10/3 são calculados sobre essa série.
+
+### 20. Drawdown
+
+- Com financeiro válido (CASO A): `max_drawdown 650`, sobre a série ordenada.
+- Sem financeiro válido (sem odd): `max_drawdown null`, UI "N/A" — **não zero** ✓.
+- Com `fixed`: o banner declara cenário, não performance financeira real ✓.
+
+AUD-006 não foi reaberto.
+
+### 21. Regressão (commit `8488992`, árvore limpa)
+
+| Comando | Resultado |
+|---|---|
+| `gofmt -l internal/ pkg/ cmd/` | vazio |
+| `go build ./...` | OK |
+| `go vet ./...` | OK |
+| `go test ./...` | 9 pacotes `ok`, 0 FAIL |
+| `npx ng build --configuration production` | OK — 641,96 kB inicial (160,86 kB comprimido) |
+| Runner de teste de componente Angular | **NA — inexistente neste repositório** (sem karma/jest/vitest em `package.json`). Nenhuma execução inventada. |
+
+---
+
+## REV-P3 — Fase E (registro final)
+
+### Achados novos desta fase
+
+#### §A1 — ❌ Tela de resultado vazio apresenta ausência como zero observado
+
+**Onde:** CASO C (La Liga 2025, `match_count = 0`).
+
+A tela **não** mostra "Nenhuma partida encontrada para os filtros selecionados". Em vez
+disso renderiza o painel completo com:
+
+```
+Partidas encontradas 0 · Taxa de acerto 0% (0 acertos / 0 erros)
+Média de escanteios 0 · Maior sequência (acertos) 0 · Maior sequência (erros) 0
+```
+
+"Taxa de acerto 0%" e "Média de escanteios 0" **com amostra vazia são afirmações falsas** —
+é exatamente a conversão *no-data → zero* que o REV-P3 proíbe. O bloco financeiro está
+correto (N/A), o estatístico não.
+
+Além disso a tela exibe **dois avisos contraditórios ao mesmo tempo**: o banner de "Cenário
+com odd fixa" (porque o backend devolve `odds_source: "fixed"` mesmo com zero ocorrências —
+declaração de intenção, não observação) e "Sem resultado financeiro. Nem todas as partidas
+do recorte têm odd". E "Recorte efetivamente analisado: 2026-06-27 a **—**".
+
+**Não corrigido nesta fase** (fora do escopo autorizado de D/E, que é validar e registrar).
+
+#### §A2 — ⚠️ Coluna "Mando" diz "Casa" em 100/100 linhas de regra MATCH-LEVEL
+
+Consequência direta da correção 1: para regra de partida inteira sem mando pedido, o motor
+mantém `asHome(m)` como representante único da partida. A tabela então exibe
+`Mando = Casa` e `Equipe / Adversário` em todas as linhas, **sugerindo perspectiva de
+mandante onde o número é da partida**. Verificado: `is_home = true` em 100/100.
+
+Não é dupla contagem — é rotulagem. O correto seria "—" ou "Partida" nessa coluna quando a
+métrica é MATCH-LEVEL e nenhum mando foi pedido.
+
+#### §A3 — ⚠️ `max_odds` sem efeito quando não há odd na base
+
+`max_odds: 5.0` em escanteios (Brasileirão 2026) devolveu as mesmas 100 partidas, todas sem
+odd, `odds_source: "none"`. O filtro declarado pelo usuário **não foi aplicado nem
+anunciado como não aplicado**. É consequência de `AllowMissingOdds` no Simulador: partidas
+sem odd são mantidas para preservar a estatística — decisão correta, comunicação ausente.
+
+#### §A4 — ⚠️ Nº de partidas excluídas por falta da métrica não é exposto
+
+Impedimentos: 87 de 100. O contrato não traz `metric_sample_size` nem o total do recorte,
+então a tela não consegue dizer "87 de 100 partidas tinham o dado".
+
+#### §A5 — ⚠️ Escanteios 0 e 1 em partidas reais (fora do escopo — pipeline)
+
+`match_id 16451` (2026-07-21, Atlético-MG × Bahia) com **0 escanteios totais** e
+`match_id 16476` (2026-07-26, Flamengo × São Paulo) com **1**. Valores implausíveis para
+partidas reais. `domain.Match.HomeCorners/AwayCorners` são `int` (não ponteiro), então
+`NULL` no banco vira `0` no scan e fica indistinguível de zero observado.
+
+**Origem é o pipeline de sincronização, não o Simulador.** Não corrigido: está fora do
+escopo declarado desta fase. Mas por causa dele o item 7 ("ausência ≠ zero") **não pode ser
+marcado ✅ de ponta a ponta** — só no ramo do Simulador.
+
+### Auditoria dos 40 itens
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Cadeia UI → banco → engine documentada | ✅ | Fases A/B + §2 desta fase; request/response reais registrados |
+| 2 | Campeonato correto | ✅ | `league_id 18` → "Brasileirão Série A"; `8` → "La Liga" na UI após reload |
+| 3 | Temporada correta | ✅ | `seasons=26` → "2026"; `seasons=12` → La Liga 2025 |
+| 4 | Nenhuma mistura silenciosa | ✅ | CASO B (69) ≠ CASO C (0); temporadas separadas |
+| 5 | FINALIZADO apenas | ✅ | Última partida 2026-09-20 < hoje (25/09); nenhum jogo futuro no calendário entrou |
+| 6 | Nenhuma duplicação indevida | ✅ | 100/100 e 69/69 em produção (antes 200/100 e 138/69) |
+| 7 | Ausência ≠ zero | ⚠️ | No Simulador sim (odd `null`, financeiro `null`, impedimentos excluídos). **Mas §A5**: escanteios `NULL` viram `0` no scan — falha de pipeline |
+| 8 | Zero real preservado | ✅ | §13C: 9 partidas 0×0, `total_goals 0`, `hit false`, exemplo `16462` |
+| 9 | Métricas rastreáveis | ✅ | Cada entrada traz `match_id`, data, times, valor observado, `hit`, `odd`, `odds_source`, `profit_loss` |
+| 10 | `sample_size` correto | ✅ | `match_count 100` = 100 partidas distintas do recorte |
+| 11 | `metric_sample_size` quando necessário | ❌ | §A4: impedimentos 87 de 100 sem o total ser exposto |
+| 12 | Occurrences auditáveis | ✅ | §14: 100 linhas para `occurrences = 100` |
+| 13 | Tabela corresponde ao agregado | ✅ | 67 "Acerto" + 33 "Erro" = 100 = `match_count` |
+| 14 | Hit rate correto | ✅ | 67 ÷ 100 = 67% ✓; 35 ÷ 69 = 50,72% ✓; 70 ÷ 200 = 35% ✓ |
+| 15 | Produzido/concedido/total corretos | NA | O Simulador só opera "total da partida"; produzido/concedido é tela do Comparador (REV-P2) |
+| 16 | Geral/Casa/Fora corretos | ⚠️ | O filtro de mando funciona (TEAM-LEVEL separa mandante/visitante corretamente), mas **§A2**: a coluna "Mando" mente em regra MATCH-LEVEL |
+| 17 | `odds_source` respeitado | ✅ | `fixed` e `none` observados e coerentes com as entradas |
+| 18 | Synthetic explicitamente cenário | NA | **Não existe amostra `synthetic` na janela de 90 dias** (§9). Banner existe no código, não exercitado em produção |
+| 19 | Unknown não tratado como real | ✅ | `none` → financeiro inteiro `null`, `financials_reliable false` |
+| 20 | Odd manual explicitamente cenário | ✅ | Banner "Cenário com odd fixa que você informou… não o que as casas pagavam" |
+| 21 | ROI matematicamente correto | ✅ | §7: manual = backend = frontend em 3 casos independentes |
+| 22 | Yield semanticamente correto | ✅ | Rótulo único "ROI / Yield"; sob stake fixa são a mesma divisão (AUD-002) |
+| 23 | EV não fabricado | ✅ | §10: ausente da UI e do JSON |
+| 24 | Drawdown auditado | ✅ | 650 com financeiro válido; `null`/N/A sem odd |
+| 25 | Ordem cronológica correta | ✅ | §19: ASC, 2026-07-16 → 2026-09-20 |
+| 26 | Scores auditados | NA | Scores são do Strategy Engine; fora do escopo do REV-P3 |
+| 27 | Fixed stake separado de compounding | ✅ | `total_staked = N × stake` exato (10 000 = 100 × 100; 6 900 = 69 × 100; 20 000 = 200 × 100) — sem reinvestimento |
+| 28 | Linguagem não preditiva | ✅ | §10: "desempenho observado", "não estima probabilidade futura nem retorno esperado" |
+| 29 | Save possui provenance correto | ⚠️ | Coberto por teste local (PASS), **não validado em produção** — rota exige auth (§17) |
+| 30 | Save não vira estratégia validada | ⚠️ | Idem: `discovery`/`validated`/`approved` rebaixados para `user` em teste local |
+| 31 | Estado reproduzível | ✅ | §16: ida, volta e recusa nominal de parâmetro inválido |
+| 32 | No-data explícito | ❌ | §A1: amostra vazia renderiza "Taxa de acerto 0%" e "Média 0" |
+| 33 | Metric-unavailable explícito | ⚠️ | Aviso genérico existe; contagem de excluídas não (§A4) |
+| 34 | Testes determinísticos passam | ✅ | §8: ambos PASS no commit em produção |
+| 35 | `go build` passa | ✅ | §21 |
+| 36 | `go vet` passa | ✅ | §21 |
+| 37 | `go test` passa | ✅ | §21 — 9 pacotes ok |
+| 38 | Frontend production build passa | ✅ | §21 — 641,96 kB |
+| 39 | Runner frontend executado OU ausência registrada | ✅ | **NA registrado**: não existe runner de componente; 11 testes de URL via `node:assert` |
+| 40 | ≥ 3 casos E2E reais em produção | ✅ | CASOS A, B, C + team-level + sem-odd + zero-real + métrica indisponível |
+
+**Contagem:** ✅ 27 · ⚠️ 6 · ❌ 3 · NA 4.
+
+### Pendências que impedem o fechamento
+
+1. **§A1 / item 32** — amostra vazia apresenta "Taxa de acerto 0%" e "Média 0" como se
+   fossem observações. Conversão no-data → zero na própria tela.
+2. **§A4 / item 11 e 33** — o contrato não expõe quantas partidas do recorte tinham a
+   métrica, então "87" não é auditável contra "100".
+3. **§A2 / item 16** — coluna "Mando" = "Casa" em 100/100 linhas de regra MATCH-LEVEL.
+4. **§A3** — `max_odds` silenciosamente sem efeito quando não há odd na base.
+5. **Itens 29 e 30** — provenance do save não validada em produção (rota autenticada;
+   não manipulo credenciais).
+6. **Itens 18 e 9 (`real`/`synthetic`)** — não há amostra dessas origens na janela de 90
+   dias do usuário anônimo. Nenhum caso foi inventado.
+7. **§A5** — escanteios `NULL` gravados como `0` pelo pipeline. Fora do escopo do REV-P3,
+   mas impede marcar o item 7 como ✅ de ponta a ponta.
+
+### Conclusão
+
+Os **seis defeitos que o REV-P3 se propôs a corrigir estão corrigidos e comprovados em
+produção**: dupla contagem (200/100 → 100/100 e 138/69 → 69/69), escanteios com odd fixa,
+fim do fallback 1.00, EV removido, provenance implementada e estado reproduzível na URL.
+A auditoria aritmética bate nos três eixos (manual, backend, frontend) em três casos
+independentes.
+
+Mas a Definition of Done tem 40 itens, e 3 estão ❌ e 6 ⚠️ — a maioria em estados de
+ausência na apresentação, que é justamente o princípio que este trabalho defende.
+
+## REV-P3 = PARCIAL — 27 ✅ / 6 ⚠️ / 3 ❌ / 4 NA. Faltam as 7 pendências listadas acima.
+
+---
+
+## REV-P3 — Correções finais das pendências da Fase D
+
+Data: **25/09/2026**. Escopo: **somente** as pendências comprovadas do próprio
+Simulador. Nada de P0/P1/P2, Discovery, Estratégias, Banca, Projeções, AUD-006 ou AUD-007.
+
+### §5 — Escanteios NULL → 0 · INVESTIGAÇÃO (correção NÃO implementada)
+
+**Não corrigi por hipótese.** A cadeia foi percorrida inteira:
+
+| Elo | Constatação |
+|---|---|
+| **DB** | `migrations/001_init.sql:45-46` — `home_corners INT **NOT NULL DEFAULT 0**` |
+| **Ingestão** | `internal/usecase/sync_usecase.go:119-124` — **aqui está a conversão** |
+| **Repository** | `match_repo.go` faz `&m.HomeCorners` — recebe int, nunca vê NULL |
+| **Domain** | `entities.go:46` — `HomeCorners int` (não ponteiro) |
+| **Engine** | `filter_usecase.go` recebe 0; indistinguível de zero observado |
+
+O código exato da ingestão:
+
+```go
+homeCorners, awayCorners := 0, 0
+if f.HomeCorners != nil { homeCorners = *f.HomeCorners }
+if f.AwayCorners != nil { awayCorners = *f.AwayCorners }
+```
+
+O provedor **preserva** a nulabilidade (`sportsdata.Fixture.HomeCorners *int`, e
+`SyncResult.CornersMissing` até conta os casos). A perda acontece na linha acima, no
+momento de gravar — reforçada pelo `NOT NULL DEFAULT 0` do schema.
+
+**A precondição do §5 do prompt ("se o banco usa colunas nullable") é FALSA.** Corrigir
+de verdade exige três coisas encadeadas:
+
+1. migration tornando `home_corners`/`away_corners` nullable;
+2. `domain.Match.HomeCorners` virar `*int`;
+3. propagar o ponteiro por `comparator_metrics.go` (REV-P2), Dashboard (REV-P1),
+   `entities.go:165 TotalCorners()` e o engine.
+
+Os passos 2 e 3 **reabrem P1 e P2**, explicitamente proibido neste escopo. E há um limite
+que nenhuma correção remove: **a informação histórica já está perdida** — os zeros
+gravados não registram se eram ausência, e tornar a coluna nullable hoje não recupera
+quais dos zeros de 2026 eram estatística não publicada.
+
+Comparação que fecha o diagnóstico: impedimentos e chutes entraram pelas migrations
+004/010 **sem** `NOT NULL`, são `*int` no domínio, e por isso a distinção funciona
+corretamente para eles — provado em `TestNullVsZero_MetricaNullable_DistinguiCorretamente`.
+
+**Registrado como item próprio, fora do REV-P3.** O item 7 da DoD permanece ⚠️.
+
+### §3 — max_odds · INVESTIGAÇÃO (não é legado, não estava quebrado)
+
+Cadeia: `filters.component.ts` → `dto.FilterRunRequest.MaxOdds` →
+`filter_handler.go:57` → `FilterCriteria.MaxOdds` → `filter_usecase.go:544` e `:608`.
+
+A intenção original está declarada no próprio código, sem ambiguidade:
+
+> "Odds máximas" é filtro de ELEGIBILIDADE sobre odd de mercado: descarta a partida cuja
+> odd registrada passe do teto.
+
+**Está implementado corretamente.** O filtro só não age quando não há odd para comparar —
+o `switch` cai nos ramos de odd fixa / `AllowMissingOdds` antes de chegar ao teto, o que é
+o comportamento certo: não se pode comparar um teto com uma odd inexistente.
+
+Como **nenhuma** partida da janela de 90 dias tem `corner_odds` em produção, o controle
+nunca tem o que filtrar. **O defeito não é o filtro: é o silêncio.** O usuário digitava
+"odds máximas 5,00", recebia 100 partidas e não tinha como saber que o controle não agiu.
+
+Decisão: **não removi da UI** (o filtro é legítimo e volta a funcionar assim que houver
+odds reais) e **não inventei semântica nova**. Implementei a comunicação, junto do §4.
+
+### §4 + §3 — Rastreabilidade da amostra (implementado)
+
+Novo bloco `accounting` em `BacktestResult`, contando **observações** (não partidas —
+em team-level uma partida gera duas):
+
+```
+matches_in_window · observations_in_window · eligible_entries · excluded_entries
+excluded_no_metric · excluded_by_max_odds · excluded_no_odd · excluded_by_venue
+excluded_other · max_odds_requested · max_odds_applicable
+```
+
+Identidade garantida por teste em 7 configurações diferentes:
+
+```
+observations_in_window = eligible_entries
+                       + excluded_no_metric + excluded_by_max_odds
+                       + excluded_no_odd + excluded_by_venue + excluded_other
+```
+
+Os **7 pontos de `continue`** do laço foram instrumentados, um contador cada.
+`excluded_other` recebe a diferença: se alguém acrescentar um `continue` sem contador, o
+resto aparece ali em vez de ser absorvido por uma categoria errada. **Nenhuma categoria é
+estimada** — só o que o motor determina com certeza.
+
+`max_odds_applicable` é o que responde ao §3: quantas observações tinham odd de mercado
+para comparar com o teto. Sendo 0 com teto pedido, a UI declara que o controle não agiu.
+
+### §2 — Coluna "Mando" em regra MATCH-LEVEL (implementado)
+
+Novo campo `metric_scope` no contrato: `"match"` ou `"team"`.
+
+- **match** (escanteios, gols, impedimentos, chutes): a coluna "Mando" **desaparece**, e
+  os cabeçalhos viram "Mandante"/"Visitante" — os dois participantes do jogo, não uma
+  equipe analisada e seu adversário.
+- **team** (vitória, empate, não perde): "Mando" **permanece**, porque mandante e
+  visitante são observações distintas e a perspectiva é real.
+
+Antes: 100/100 linhas de escanteios diziam "Mando: Casa", porque a correção da dupla
+contagem elegeu a perspectiva do mandante como representante canônico da partida. O número
+era da partida; o rótulo afirmava que era do mandante. Nada foi mascarado — a coluna sai
+onde não tem significado e fica onde tem.
+
+### §1 — Estado vazio (implementado)
+
+Dois ajustes:
+
+**Backend.** `oddsSourceSummary` passou a receber a contagem de ocorrências e devolve
+`none` quando ela é zero. Antes devolvia `"fixed"` só porque o usuário tinha digitado uma
+odd, e a tela de amostra vazia exibia "Cenário com odd fixa que você informou" ao lado de
+"0 partidas" — intenção apresentada como observação.
+
+**Frontend.** Três estados mutuamente exclusivos, em `features/filters/sample-state.ts`
+(funções puras):
+
+| Estado | Condição | Mensagem |
+|---|---|---|
+| `vazio` | `match_count = 0` e `matches_in_window = 0` | "Nenhuma partida encontrada para os filtros selecionados." |
+| `metrica-ausente` | `match_count = 0`, `matches_in_window > 0`, `excluded_no_metric > 0` | "Esta estatística não está disponível para a amostra selecionada." |
+| `com-amostra` | `match_count > 0` | painel normal; zeros observados são zeros |
+
+Nos dois primeiros o painel de cards **não é renderizado**: somem "Taxa de acerto 0%",
+"Média 0", sequências 0 e drawdown 0. Exclusão por mando (por exemplo) **não** vira
+`metrica-ausente` — trocar um estado de ausência por outro seria o mesmo erro.
+
+### Antes / depois
+
+| Cenário | ANTES (produção 25/09) | DEPOIS (local) |
+|---|---|---|
+| La Liga 2025, 0 partidas | "Taxa de acerto 0%", "Média 0", sequências 0 | "Nenhuma partida encontrada…"; sem cards |
+| La Liga 2025, odd fixa digitada | `odds_source: "fixed"` + banner de cenário com 0 jogos | `odds_source: "none"`, sem banner |
+| Impedimentos, 87 de 100 | "87 partidas", sem explicação | "100 partidas no recorte · 87 analisadas · 13 fora: 13 sem a estatística publicada pelo provedor." |
+| Escanteios, `max_odds` 5,00 | 100 partidas, silêncio | aviso: teto não aplicado a nenhuma partida; `max_odds_applicable: 0` |
+| Escanteios match-level | "Mando: Casa" em 100/100 | coluna ausente; "Mandante"/"Visitante" |
+| Vitória team-level | "Mando: Casa/Fora" | inalterado — a perspectiva é real |
+
+### Validação local — 8 cenários (§9)
+
+Todos com a identidade contábil conferida (`-> true` em todos):
+
+| # | Cenário | scope | match_count | odds_source | accounting |
+|---|---|---|---|---|---|
+| 1 | Sem partidas | match | 0 | **none** | tudo 0 |
+| 2 | Métrica indisponível | match | 0 | none | in_window 1, `excluded_no_metric 1` |
+| 3 | Zero real (impedimentos = 0) | match | 1 | fixed | `excluded_no_metric 0` |
+| 4 | Match-level (escanteios) | **match** | 2 | fixed | 2 obs / 2 partidas |
+| 5 | Team-level (vitória) | **team** | 4 | fixed | **4 obs / 2 partidas** |
+| 6a | max_odds com odd na base | match | 1 | real | `excluded_by_max_odds 1`, `applicable 2` |
+| 6b | max_odds sem odd na base | match | 2 | none | `requested 5`, **`applicable 0`** |
+| 7 | Escanteios 0 (limitação NULL=0) | match | 1 | fixed | `excluded_no_metric 0` |
+| 8 | NULL e zero real lado a lado | match | 1 | fixed | `excluded_no_metric 1`, o zero real entrou |
+
+O cenário 8 é o que separa os conceitos: duas partidas, uma com impedimentos `NULL` e
+outra com `0` observado. A primeira sai (`excluded_no_metric`), a segunda entra e conta
+como erro da linha. **NULL permanece indisponível; 0 permanece zero real.**
+
+### Testes
+
+**Backend** — `internal/usecase/filter_revp3_pendencias_test.go`, 13 testes, todos PASS:
+estados A/B/C; `MetricScope` match/team/match-com-mando; `max_odds` com e sem odd na base;
+identidade contábil em 7 configurações; team-level contando observações; exclusão por
+mando; NULL vs zero em métrica nullable; e a limitação conhecida dos escanteios.
+
+`TestNullVsZero_Escanteios_LimitacaoConhecida` **falha de propósito** se alguém tornar a
+coluna nullable, obrigando a revisitar esta decisão em vez de deixá-la desatualizada em
+silêncio.
+
+**Frontend** — `features/filters/sample-state.spec.ts`, 13 testes, todos PASS (node:assert).
+
+| Comando | Resultado |
+|---|---|
+| `gofmt -l internal/ pkg/ cmd/` | vazio |
+| `go build ./...` | OK |
+| `go vet ./...` | OK |
+| `go test ./...` | 9 pacotes `ok`, 0 FAIL |
+| `npx ng build --configuration production` | OK — 642,16 kB (160,79 kB comprimido) |
+| `sample-state.spec.ts` via tsc + node | 13/13 |
+| `simulator-url-state.spec.ts` via tsc + node | 11/11 |
+| Runner de componente Angular | **NA — inexistente neste repositório.** Nenhuma execução inventada. |
+
+### Itens da DoD afetados (a confirmar só após deploy e validação em produção)
+
+| # | Item | Antes | Agora (local) |
+|---|---|---|---|
+| 11 | `metric_sample_size` quando necessário | ❌ | corrigido localmente via `accounting` |
+| 16 | Geral/Casa/Fora corretos | ⚠️ | corrigido localmente via `metric_scope` |
+| 32 | No-data explícito | ❌ | corrigido localmente (3 estados) |
+| 33 | Metric-unavailable explícito | ⚠️ | corrigido localmente (estado próprio + contagem) |
+
+**Nenhum deles é marcado ✅ ainda.** Código local não é prova de produção — foi a regra da
+Fase D e continua valendo.
+
+### O que continua NA / ⚠️ e por quê
+
+| Item | Status | Motivo |
+|---|---|---|
+| 7 — ausência ≠ zero (escanteios) | ⚠️ | §5: origem provada na ingestão + schema `NOT NULL`. Correção exige migration + mudança de tipo no domínio, reabrindo P1/P2. Dado histórico já perdido. |
+| 18 — synthetic explicitamente cenário | NA | Não existe amostra `synthetic` na janela de 90 dias. Nada foi criado. |
+| 9 (parcial) — `odds_source = real` | NA | Não existe amostra `real` em produção. Nada foi criado. |
+| 29 — save com provenance correto | ⚠️ | Rota exige autenticação (`401 token ausente`). Não manipulo credenciais. Coberto só por teste local. |
+| 30 — save não vira validada | ⚠️ | Idem. |
+
+Conforme §6 e §7 do prompt: **nenhum destes virou ✅ por teste local**, e nenhum dado foi
+criado para forjar amostra.
+
+## REV-P3 = PARCIAL — correções finais implementadas localmente, aguardando novo deploy/validação

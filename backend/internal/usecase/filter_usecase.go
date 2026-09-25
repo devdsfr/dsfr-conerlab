@@ -259,6 +259,44 @@ type BacktestEntry struct {
 	OddsSource string `json:"odds_source,omitempty"`
 }
 
+// SampleAccounting explica, em números que fecham, por que a amostra analisada
+// é menor que o recorte pedido. Cada campo conta OBSERVAÇÕES (candidatos), e a
+// soma das exclusões com EligibleEntries reproduz ObservationsInWindow.
+//
+// Regra: nenhuma categoria é estimada. Se o motor não sabe o motivo, a
+// observação cai em ExcludedOther em vez de ser atribuída a um palpite.
+type SampleAccounting struct {
+	// MatchesInWindow são as PARTIDAS do recorte depois de liga, temporada,
+	// janela de datas e cap do plano — antes de qualquer critério da regra.
+	MatchesInWindow int `json:"matches_in_window"`
+
+	// ObservationsInWindow são os candidatos gerados a partir dessas partidas:
+	// igual a MatchesInWindow em regra match-level, o dobro em team-level sem
+	// equipe selecionada. É o denominador honesto das exclusões.
+	ObservationsInWindow int `json:"observations_in_window"`
+
+	// EligibleEntries é o que sobrou e virou linha na tabela (== MatchCount).
+	EligibleEntries int `json:"eligible_entries"`
+
+	// ExcludedEntries é a soma das exclusões — redundante de propósito, para a
+	// identidade ser conferível sem o cliente refazer a conta.
+	ExcludedEntries int `json:"excluded_entries"`
+
+	// Motivos. Só os que o motor determina com certeza.
+	ExcludedNoMetric  int `json:"excluded_no_metric"`   // provedor não publicou o dado
+	ExcludedByMaxOdds int `json:"excluded_by_max_odds"` // odd de mercado acima do teto pedido
+	ExcludedNoOdd     int `json:"excluded_no_odd"`      // sem odd e sem AllowMissingOdds (Engine/Discovery)
+	ExcludedByVenue   int `json:"excluded_by_venue"`    // filtro de mando (casa/fora)
+	ExcludedOther     int `json:"excluded_other"`
+
+	// MaxOddsApplicable conta as observações em que HAVIA odd de mercado para
+	// comparar com o teto. Com MaxOdds pedido e MaxOddsApplicable == 0, o filtro
+	// não teve efeito algum — e a UI precisa dizer isso, porque um controle que
+	// aparenta influenciar o backtest sem influenciar é pior que não existir.
+	MaxOddsRequested  float64 `json:"max_odds_requested,omitempty"`
+	MaxOddsApplicable int     `json:"max_odds_applicable"`
+}
+
 // BacktestResult agrega as métricas do Módulo 3 exigidas pelos critérios de aceite:
 // quantidade de partidas, taxa de acerto/erro, média, maior/menor sequência, drawdown,
 // ROI, yield e lucro.
@@ -314,6 +352,38 @@ type BacktestResult struct {
 	// efetivas torna o recorte auditável em vez de implícito.
 	EffectiveFrom string `json:"effective_from,omitempty"`
 	EffectiveTo   string `json:"effective_to,omitempty"`
+
+	// --- RASTREABILIDADE DA AMOSTRA (REV-P3 §3 e §4) ------------------------
+	//
+	// Antes o usuário via "87 partidas" sem ter como saber que o recorte tinha
+	// 100 e que 13 foram descartadas por falta do dado. Pior: podia informar
+	// "odds máximas 5,00", receber 100 partidas e não descobrir que o filtro não
+	// foi aplicado a nenhuma delas, porque nenhuma tinha odd para comparar.
+	//
+	// Estes contadores são sobre OBSERVAÇÕES (candidatos), não sobre partidas:
+	// em regra team-level uma partida gera duas observações. A identidade abaixo
+	// é exata e a UI a usa para explicar por que a amostra encolheu:
+	//
+	//   ObservationsInWindow
+	//     = EligibleEntries
+	//     + ExcludedNoMetric + ExcludedByMaxOdds + ExcludedNoOdd + ExcludedByVenue
+	//
+	// Só há categorias que o motor consegue determinar. Nada é estimado.
+	Accounting SampleAccounting `json:"accounting"`
+
+	// MetricScope diz se a ocorrência pertence à PARTIDA ou a uma EQUIPE:
+	//
+	//   "match" — escanteios, gols, impedimentos, chutes: o total é da partida
+	//             inteira e a linha NÃO tem perspectiva de mandante/visitante.
+	//   "team"  — vitória, empate, não perde: o desfecho é de cada equipe, e
+	//             mandante e visitante são observações distintas e legítimas.
+	//
+	// A tabela do Simulador exibia "Mando: Casa" em 100/100 linhas de regra
+	// match-level (medido em produção, 25/09/2026), porque a correção 1 elegeu a
+	// perspectiva do mandante como representante único da partida. O número é da
+	// partida; o rótulo dizia que era do mandante. Este campo é o que permite à
+	// UI parar de mentir sem mascarar o dado.
+	MetricScope string `json:"metric_scope"`
 
 	// HistoryCapped indica se o resultado foi limitado ao histórico recente (plano
 	// gratuito); HistoryCapDays informa o tamanho da janela aplicada. O frontend usa
@@ -488,11 +558,22 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	entries := make([]BacktestEntry, 0)
 	// Procedência das odds efetivamente usadas — alimenta oddsSourceSummary.
 	oddsSources := make([]string, 0)
+
+	// REV-P3 §3/§4: contabilidade da amostra. Cada `continue` abaixo incrementa
+	// exatamente um contador, para a identidade fechar no fim.
+	conta := SampleAccounting{
+		MatchesInWindow:      len(allMatches),
+		ObservationsInWindow: len(candidates),
+		MaxOddsRequested:     criteria.MaxOdds,
+	}
+
 	for _, c := range candidates {
 		if criteria.HomeAway == "home" && !c.isHome {
+			conta.ExcludedByVenue++
 			continue
 		}
 		if criteria.HomeAway == "away" && c.isHome {
+			conta.ExcludedByVenue++
 			continue
 		}
 		// AUD-004: o recorte por força do adversário existia aqui e comparava
@@ -536,12 +617,16 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			// result_odds —, então o Discovery descarta tudo. É o comportamento
 			// correto: sem odd não há hipótese nula e não há o que validar.
 			if criteria.RequireRealOdds && !c.match.HasRealResultOdds() {
+				conta.ExcludedNoOdd++
 				continue
 			}
 
 			oddMercado, hasOdd := c.match.OddForResultOutcome(resultOutcome(criteria.Metric, c.isHome))
 			if hasOdd {
+				// Havia odd de mercado: o teto "odds máximas" É aplicável aqui.
+				conta.MaxOddsApplicable++
 				if criteria.MaxOdds > 0 && oddMercado > criteria.MaxOdds {
+					conta.ExcludedByMaxOdds++
 					continue
 				}
 				odd = &oddMercado
@@ -560,6 +645,7 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			// parte estatística; no Engine/Discovery ela sai. AUD-012: em
 			// nenhum dos dois se fabrica 1.0.
 			if !criteria.AllowMissingOdds {
+				conta.ExcludedNoOdd++
 				continue
 			}
 		case "goals":
@@ -581,6 +667,10 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				f, a, threshold = c.sotF, c.sotA, criteria.ShotsOnTargetThreshold
 			}
 			if f == nil || a == nil {
+				// O provedor não publicou a estatística desta partida. Ela sai do
+				// backtest — e NÃO entra como zero. É o motivo mais comum de a
+				// amostra encolher, e até agora era invisível para o usuário.
+				conta.ExcludedNoMetric++
 				continue
 			}
 			total = *f + *a
@@ -597,6 +687,7 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			// ele mesmo. O Discovery exige procedência real; o Simulador aceita,
 			// mas o resultado sai marcado (ver oddsSourceSummary).
 			if criteria.RequireRealOdds && !c.match.HasRealOdds() {
+				conta.ExcludedNoOdd++
 				continue
 			}
 
@@ -605,7 +696,16 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			case hasOdd:
 				// "Odds máximas" é filtro de ELEGIBILIDADE sobre odd de mercado:
 				// descarta a partida cuja odd registrada passe do teto.
+				//
+				// REV-P3 §3: o filtro está correto e sempre esteve. O que faltava
+				// era dizer QUANTAS partidas tinham odd para comparar. Em produção
+				// (25/09/2026) nenhuma partida da janela de 90 dias tem corner_odds,
+				// então MaxOddsApplicable = 0 e o teto não filtra nada — sem este
+				// contador o usuário digitava "odds máximas 5,00", via 100 partidas
+				// e não tinha como saber que o controle não agiu.
+				conta.MaxOddsApplicable++
 				if criteria.MaxOdds > 0 && oddMercado > criteria.MaxOdds {
+					conta.ExcludedByMaxOdds++
 					continue
 				}
 				odd = &oddMercado
@@ -637,6 +737,7 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				// Para o Strategy Engine e o Discovery a partida sai, como
 				// sempre saiu: pontuar estratégia exige série financeira.
 				if !criteria.AllowMissingOdds {
+					conta.ExcludedNoOdd++
 					continue
 				}
 			}
@@ -692,7 +793,24 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		entries = append(entries, entry)
 	}
 
+	// REV-P3 §3/§4: fecha a contabilidade. ExcludedOther é o resto — se algum dia
+	// alguém acrescentar um `continue` sem contador, a diferença aparece aqui em
+	// vez de ser silenciosamente absorvida por uma categoria errada.
+	conta.EligibleEntries = len(entries)
+	conhecidas := conta.ExcludedNoMetric + conta.ExcludedByMaxOdds +
+		conta.ExcludedNoOdd + conta.ExcludedByVenue
+	conta.ExcludedEntries = conta.ObservationsInWindow - conta.EligibleEntries
+	if resto := conta.ExcludedEntries - conhecidas; resto > 0 {
+		conta.ExcludedOther = resto
+	}
+
 	result := buildBacktestResult(criteria, entries, stake)
+	result.Accounting = conta
+	if matchLevel {
+		result.MetricScope = metricScopeMatch
+	} else {
+		result.MetricScope = metricScopeTeam
+	}
 	result.HistoryCapped = maxAgeDays > 0
 	result.HistoryCapDays = maxAgeDays
 
@@ -722,7 +840,7 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	if !efetivoAte.IsZero() {
 		result.EffectiveTo = efetivoAte.Format("2006-01-02")
 	}
-	result.OddsSource, result.FinancialsReliable = oddsSourceSummary(criteria, oddsSources)
+	result.OddsSource, result.FinancialsReliable = oddsSourceSummary(criteria, oddsSources, len(entries))
 	return result, nil
 }
 
@@ -733,7 +851,17 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 // Regra (AUD-001): financeiro só é confiável quando TODAS as odds usadas são
 // reais. Basta uma sintética para o conjunto virar cenário hipotético — misturar
 // as duas produziria um número sem interpretação possível.
-func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool) {
+func oddsSourceSummary(criteria FilterCriteria, sources []string, ocorrencias int) (string, bool) {
+	// REV-P3 §1: sem NENHUMA ocorrência não há odd observada, e portanto não há
+	// procedência a declarar. Antes esta função devolvia "fixed" só porque o
+	// usuário digitou uma odd, e a tela de amostra vazia exibia o aviso "Cenário
+	// com odd fixa que você informou" ao lado de "0 partidas" — declaração de
+	// intenção apresentada como observação. Medido em produção com La Liga 2025
+	// (25/09/2026), que cai inteira fora da janela de 90 dias.
+	if ocorrencias == 0 {
+		return oddsSourceNone, false
+	}
+
 	// Métricas sem odd por partida (gols, impedimentos, chutes): só existe
 	// cenário quando o usuário informa a odd.
 	switch criteria.Metric {
@@ -766,6 +894,13 @@ func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool)
 const (
 	oddsSourceFixed = "fixed"
 	oddsSourceNone  = "none"
+)
+
+// Escopo da ocorrência (REV-P3 §2). Decide se a linha da tabela tem ou não
+// perspectiva de mandante/visitante — ver BacktestResult.MetricScope.
+const (
+	metricScopeMatch = "match"
+	metricScopeTeam  = "team"
 )
 
 func (u *FilterUsecase) teamIndex(ctx context.Context, leagueID int64) (map[int64]domain.Team, error) {

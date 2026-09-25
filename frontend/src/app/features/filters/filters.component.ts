@@ -17,6 +17,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BacktestEntry, BacktestResult, FilterRunRequest, League, Season, Team } from '../../core/models';
 import { desserializarEstado, serializarEstado } from './simulator-url-state';
+import { avisoMaxOddsSemEfeito, estadoAmostra, explicacaoExclusoes, mostraColunaMando } from './sample-state';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
 
@@ -84,7 +85,21 @@ export class FiltersComponent implements OnInit {
   error = signal<string | null>(null);
   result = signal<BacktestResult | null>(null);
 
-  entryColumns = ['match_date', 'team', 'opponent', 'is_home', 'total', 'hit', 'odd', 'profit_loss'];
+  // REV-P3 §2: as colunas dependem do ESCOPO da métrica. Em regra match-level o
+  // valor é da partida inteira e a coluna "Mando" não é aplicável — exibi-la
+  // afirmava uma perspectiva que a ocorrência não tem (100/100 linhas diziam
+  // "Casa" em produção). `team`/`opponent` viram "Partida" no cabeçalho.
+  colunasDaTabela(r: BacktestResult): string[] {
+    const base = ['match_date', 'team', 'opponent'];
+    if (mostraColunaMando(r)) base.push('is_home');
+    return [...base, 'total', 'hit', 'odd', 'profit_loss'];
+  }
+
+  // Expostos ao template (funções puras, testadas em sample-state.spec.ts).
+  readonly estadoAmostra = estadoAmostra;
+  readonly explicacaoExclusoes = explicacaoExclusoes;
+  readonly avisoMaxOddsSemEfeito = avisoMaxOddsSemEfeito;
+  readonly mostraColunaMando = mostraColunaMando;
 
   get isGoals(): boolean {
     return this.metric === 'goals';

@@ -301,6 +301,25 @@ export interface BacktestEntry {
   odds_source?: 'real' | 'synthetic' | 'fixed';
 }
 
+// REV-P3 §4: rastreabilidade da amostra. Os contadores são sobre OBSERVAÇÕES,
+// não partidas — em regra team-level uma partida gera duas observações.
+export interface SampleAccounting {
+  matches_in_window: number;
+  observations_in_window: number;
+  eligible_entries: number;
+  excluded_entries: number;
+  excluded_no_metric: number;
+  excluded_by_max_odds: number;
+  excluded_no_odd: number;
+  excluded_by_venue: number;
+  excluded_other: number;
+  // max_odds_applicable = quantas observações tinham odd de mercado para
+  // comparar com o teto. Se o usuário pediu um teto e este número é 0, o
+  // controle não agiu sobre nada — e a tela precisa dizer isso.
+  max_odds_requested?: number;
+  max_odds_applicable: number;
+}
+
 export interface BacktestResult {
   criteria: FilterRunRequest;
   period: string;
@@ -333,6 +352,15 @@ export interface BacktestResult {
 
   entries: BacktestEntry[];
   disclaimer: string;
+
+  // REV-P3 §3/§4: por que a amostra encolheu. Números que FECHAM:
+  //   observations_in_window = eligible_entries + todas as excluded_*
+  accounting: SampleAccounting;
+
+  // REV-P3 §2: 'match' = o valor é da partida inteira e a linha NÃO tem
+  // perspectiva de mandante/visitante; 'team' = mandante e visitante são
+  // observações distintas e a coluna Mando é legítima.
+  metric_scope: 'match' | 'team';
 
   // Recorte efetivamente analisado depois do cap do plano gratuito. O cap é
   // relativo a hoje, então sem estas datas o mesmo filtro analisa um conjunto

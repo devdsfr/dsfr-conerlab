@@ -3288,3 +3288,178 @@ cronológica, nem do estado "nenhuma partida" vs "métrica indisponível".
 - Console do Neon não autenticado; evidência obtida pela API de produção.
 
 ## REV-P3 = PARCIAL — Fase A concluída
+
+---
+
+## REV-P3 — Fase B (implementação)
+
+Escopo: **apenas** os defeitos comprovados na Fase A. AUD-001/002/003/004 preservados
+integralmente — nenhum arquivo dessas auditorias foi revertido ou afrouxado.
+
+### Correção 1 — dupla contagem
+
+**Não foi feito dedup cego.** As regras foram classificadas:
+
+- **MATCH-LEVEL** (escanteios, gols, impedimentos, chutes, chutes no gol): o total é da
+  partida. Uma partida = **uma** ocorrência.
+- **TEAM-LEVEL** (vitória, empate, não perde): mandante e visitante têm desfechos
+  diferentes. Uma partida = **duas** ocorrências, e isso continua correto.
+
+`internal/usecase/filter_usecase.go`:
+
+```go
+func isMatchLevelMetric(metric string) bool { return !isResultMetric(metric) }
+```
+
+A expansão em mandante/visitante só ocorre para TEAM-LEVEL, ou quando o usuário pediu
+mando explícito (`home_away`), ou quando há equipe selecionada.
+
+**Quatro testes existentes passaram a falhar** porque esperavam 4 onde 2 é o certo.
+Foram atualizados **com comentário explícito de que a regra mudou**, não silenciosamente:
+`TestRequireRealOdds_PermiteReal`, `TestSimulador_AceitaSinteticaMasMarcaResultado`,
+`TestEscanteiosContinuaUsandoLimiar`, `TestSemTierOBacktestRodaNormalmente`.
+
+### Correção 2 — escanteios + odd fixa
+
+O ramo de escanteios passou a ter três casos explícitos: odd real (precedência), odd fixa
+informada (`odds_source = "fixed"`), e ausência de odd. A odd digitada **nunca** é marcada
+como `real`. No frontend, `usesFixedOdd` era `metric !== 'corners'` — o campo nem era
+enviado para escanteios, que é a causa direta do "zero ocorrências em qualquer limiar"
+observado na Fase A. Agora vale para todas as métricas; `max_odds` ficou restrito a
+escanteios, a única métrica com odd por partida no banco.
+
+### Correção 3 — o fallback 1.0 foi removido
+
+`fixedOddOrOne` (que devolvia `1.0`) foi substituída por `oddOpcional`, que devolve `nil`.
+`BacktestEntry.Odd` e `.ProfitLoss` viraram `*float64`; em `BacktestResult`, o bloco
+financeiro inteiro (`Profit`, `ROI`, `Yield`, `TotalStaked`, `MaxDrawdown`) virou ponteiro,
+com `FinancialsAvailable bool` e `FinancialsNote string`.
+
+**`nil` significa não calculável, nunca zero.** O bloco estatístico (partidas, acertos,
+taxa, médias, sequências) existe sempre que houver partidas, com ou sem odd.
+
+Consequências propagadas: `strategyengine.PersistResult` recusa pontuar estratégia sem
+série financeira completa; `discovery/criteria.go` e `discovery/validation.go` rejeitam a
+combinação em vez de deduzir zero; o export escreve `—`.
+
+Flag nova `FilterCriteria.AllowMissingOdds`, ligada **só pelo Simulador**. Discovery e
+Strategy Engine a deixam em `false`: pontuar uma estratégia exige série financeira completa.
+
+### Correção 4 — o EV foi removido do frontend
+
+Removidos de `filters.component.ts` e do HTML: `expectedRoiPct`, `marketRoiPct`,
+`breakEvenOdd`, `safetyMissesPer10`, `oddScenarios`, `scenarioRows`, o campo "Odd da casa"
+e o texto **"ROI esperado por aposta"**.
+
+O cálculo usava a taxa de acerto do **próprio lote filtrado** como probabilidade do evento
+futuro — e o lote foi escolhido justamente por ter acertado muito, então o "ROI esperado"
+saía positivo por viés de seleção. **Não existe substituto honesto calculável só com o
+histórico do próprio lote**, por isso o bloco foi removido em vez de reescrito. Ficou no
+lugar um texto dizendo o que os números são (desempenho observado) e o que não são.
+
+O contrato do backend nunca teve campo de EV, e um teste novo falha se voltar.
+
+### Correção 5 — proveniência ao salvar
+
+`createStrategyRequest` ganhou `origin`. `origemPermitida()` aceita **apenas** `"simulator"`
+do cliente; qualquer outro valor vira `"user"`. **`"discovery"` não pode ser reivindicado
+por requisição** — esse valor significa "passou por holdout e correção de múltiplas
+comparações" e só o motor o grava. Salvar não promove a validada nem aprovada.
+
+Frontend envia `origin: 'simulator'`; `isOwner` passou a aceitar `simulator` (senão o
+usuário perderia editar/excluir o que acabou de salvar); etiqueta "Do simulador" na lista.
+
+### Correção 6 — reprodutibilidade
+
+**Backend:** `EffectiveFrom`/`EffectiveTo` passaram a ser preenchidos. Preferem o limite
+declarado (cap do plano + `date_from`/`date_to`); sem limite declarado, caem na janela
+realmente observada. O cap do plano gratuito é relativo a `time.Now()`, então sem essas
+datas a mesma configuração analisa um conjunto diferente a cada dia e dois backtests
+"iguais" com números diferentes seriam indistinguíveis de um bug.
+
+**Frontend:** estado do Simulador na query string, extraído para
+`features/filters/simulator-url-state.ts` (funções puras, testáveis sem Angular).
+Regra dura: **parâmetro inválido não é substituído em silêncio** — cada recusa vira uma
+linha num banner. Campeonato inexistente não é trocado por outro: a tela diz que nada foi
+substituído e pede escolha.
+
+### Arquivos alterados
+
+Backend: `internal/usecase/filter_usecase.go`, `internal/domain/analytics.go`,
+`internal/delivery/http/handlers/filter_handler.go`,
+`internal/delivery/http/handlers/strategy_handler.go`,
+`internal/delivery/http/handlers/export_handler.go`,
+`internal/usecase/strategyengine/engine.go`, `internal/usecase/discovery/{criteria,validation,engine}.go`.
+
+Frontend: `core/models.ts`, `core/api.service.ts`,
+`features/filters/{filters.component.ts,filters.component.html,simulator-url-state.ts}`,
+`features/strategies/{strategies.component.ts,strategies.component.html}`.
+
+---
+
+## REV-P3 — Fase C (testes locais)
+
+### Executado
+
+| Comando | Resultado |
+|---|---|
+| `go build ./...` | OK |
+| `go vet ./...` | OK |
+| `go test ./...` | todos os pacotes `ok` |
+| `gofmt -l internal/ pkg/ cmd/` | vazio |
+| `npx ng build --configuration production` | OK (641,96 kB inicial; só warnings pré-existentes) |
+| `npx tsc … && node` (spec de URL) | 11/11 |
+
+### Teste determinístico obrigatório
+
+`TestDeterministico_20Ocorrencias_15Win_5Loss_Stake100_Odd150` — **PASS**
+
+20 ocorrências · 15 WIN · 5 LOSS · stake R$100 · odd 1,50 →
+`hit_rate` 75% · lucro R$250 · total apostado R$2.000 · ROI/Yield 12,5% ·
+`odds_source = "fixed"` · `financials_reliable = false` · EV ausente do contrato.
+
+Aritmética: 15 × 100 × (1,50 − 1) = +750; 5 × (−100) = −500; lucro 250.
+Apostado 20 × 100 = 2.000. ROI 250 ÷ 2.000 = 12,5%.
+
+### Novos testes (`internal/usecase/filter_revp3_test.go`, 18 no total)
+
+- **Dedup:** 2 partidas MATCH-LEVEL → 2 (não 4); mesma partida nunca duplicada;
+  TEAM-LEVEL continua com 2 por partida; MATCH-LEVEL com mando continua separando.
+- **Escanteios + odd fixa:** aceita e marca `fixed`; odd real tem precedência sobre a fixa.
+- **Ausência de odd:** estatística existe, financeiro é `nil`; odd 1,00 nunca é fabricada.
+- **Três tipos de ausência, que não podem se confundir:** (A) nenhuma partida no recorte;
+  (B) partidas sem a métrica (ficam de fora, não entram como zero); (C) **zero observado
+  continua sendo zero** e conta como erro da linha.
+- **EV:** falha se `ev`/`expected_value`/`expected_roi` voltar ao JSON do backtest.
+- **Recorte efetivo:** com cap de 90 dias devolve hoje−90; sem cap usa a janela observada.
+
+### Validação local dos números de produção
+
+`TestFaseA_ParesDobradosNaoOcorremMais` — **PASS**. Reconstrói a forma do caso observado
+(100 partidas, 69 acertando) e falha explicitamente se reaparecerem **200/100** ou
+**138/69**, os pares dobrados vistos em produção na Fase A.
+
+### Proveniência
+
+`internal/delivery/http/handlers/strategy_origin_test.go` — `origin` vindo como
+`discovery`, `validated` ou `approved` é rebaixado para `user`; só `simulator` é honrado.
+
+### Estado de URL (`features/filters/simulator-url-state.spec.ts`, 11 testes)
+
+Round-trip preserva os critérios; campeonato inválido recusa o estado inteiro;
+métrica/mando/temporada inválidos avisam em vez de substituir calados; número inválido
+vira ausência reportada e **não zero**.
+
+### Ausências registradas (não são aprovações)
+
+- **Não existe runner de testes de componente Angular** neste repositório (sem karma,
+  jest ou vitest). Por isso a lógica de URL foi extraída para módulo puro e testada com
+  `node:assert`, mesmo padrão de `season-resolution.spec.ts`. **O template do Simulador em
+  si não foi exercitado por teste automatizado** — NA, não aprovado.
+- **`@types/node` não está instalado**; o `tsc` do spec emite `TS2688` e mesmo assim gera o
+  JS, que roda. Registrado como está, sem alterar as dependências do projeto.
+- Nada foi validado em produção nesta fase, por instrução explícita.
+
+---
+
+## REV-P3 = PARCIAL — Fases A/B/C concluídas, aguardando deploy e validação em produção

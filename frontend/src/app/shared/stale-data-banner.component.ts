@@ -37,7 +37,7 @@ import { SyncStatusResponse } from '../core/models';
           aria-live="polite"
           class="w-full bg-amber-950/60 border-b border-amber-700/60 px-4 py-2.5"
         >
-          <div class="max-w-6xl mx-auto flex items-start gap-3 flex-wrap">
+          <div class="max-w-[1600px] mx-auto flex items-start gap-3 flex-wrap">
             <mat-icon aria-hidden="true" class="!text-amber-400 !w-5 !h-5 !text-[20px] !leading-5 shrink-0 mt-0.5">
               warning
             </mat-icon>

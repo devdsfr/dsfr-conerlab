@@ -16,7 +16,7 @@ func result(games, hits int, roi, yield, dd float64) *usecase.BacktestResult {
 	}
 	return &usecase.BacktestResult{
 		MatchCount: games, Hits: hits, Misses: games - hits,
-		HitRate: hitRate, ROI: roi, Yield: yield, MaxDrawdown: dd,
+		HitRate: hitRate, FinancialsAvailable: true, ROI: &roi, Yield: &yield, MaxDrawdown: &dd,
 	}
 }
 

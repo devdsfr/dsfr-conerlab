@@ -435,8 +435,11 @@ func TestConfiguracaoNaoDesligaValidacao(t *testing.T) {
 // --- Componentes da validação ----------------------------------------------
 
 func TestBreakEvenProbabilityVemDasOdds(t *testing.T) {
+	// REV-P3: Odd virou nulável — nil = partida sem odd, que é diferente de
+	// odd 1,00.
+	o2, o4 := 2.00, 4.00
 	r := &usecase.BacktestResult{Entries: []usecase.BacktestEntry{
-		{Odd: 2.00}, {Odd: 2.00}, {Odd: 4.00}, {Odd: 4.00},
+		{Odd: &o2}, {Odd: &o2}, {Odd: &o4}, {Odd: &o4},
 	}}
 	got, ok := breakEvenProbability(r)
 	if !ok {
@@ -448,8 +451,13 @@ func TestBreakEvenProbabilityVemDasOdds(t *testing.T) {
 	}
 
 	// Sem odd utilizável não há hipótese nula.
-	if _, ok := breakEvenProbability(&usecase.BacktestResult{Entries: []usecase.BacktestEntry{{Odd: 1}}}); ok {
+	um := 1.00
+	if _, ok := breakEvenProbability(&usecase.BacktestResult{Entries: []usecase.BacktestEntry{{Odd: &um}}}); ok {
 		t.Error("odd = 1 não sustenta hipótese nula")
+	}
+	// REV-P3: odd AUSENTE (nil) também não sustenta — e é diferente de odd 1,00.
+	if _, ok := breakEvenProbability(&usecase.BacktestResult{Entries: []usecase.BacktestEntry{{Odd: nil}}}); ok {
+		t.Error("odd ausente não sustenta hipótese nula")
 	}
 	if _, ok := breakEvenProbability(&usecase.BacktestResult{}); ok {
 		t.Error("resultado sem entradas não sustenta hipótese nula")
@@ -522,14 +530,22 @@ func resultadoSintetico(n, hits int, odd float64) *usecase.BacktestResult {
 			pl = stake * (odd - 1)
 		}
 		profit += pl
-		entries = append(entries, usecase.BacktestEntry{Hit: hit, Odd: odd, ProfitLoss: pl})
+		// REV-P3: Odd e ProfitLoss agora sao ponteiros (ausencia != zero).
+		// Cada entrada precisa do seu proprio endereco.
+		o := odd
+		v := pl
+		entries = append(entries, usecase.BacktestEntry{Hit: hit, Odd: &o, ProfitLoss: &v})
 	}
 	staked := float64(n) * stake
 	roi := 100 * profit / staked
 	return &usecase.BacktestResult{
 		MatchCount: n, Hits: hits, Misses: n - hits,
-		HitRate: 100 * float64(hits) / float64(n),
-		Entries: entries, Profit: profit, TotalStaked: staked,
-		ROI: roi, Yield: roi,
+		HitRate:             100 * float64(hits) / float64(n),
+		Entries:             entries,
+		Profit:              &profit,
+		TotalStaked:         &staked,
+		ROI:                 &roi,
+		Yield:               &roi,
+		FinancialsAvailable: true,
 	}
 }

@@ -40,7 +40,7 @@ type Strategy struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Definition  string    `json:"definition"` // JSON dos filtros (liga, métrica, limiar, mando, janela...)
-	Origin      string    `json:"origin"`     // user|discovery
+	Origin      string    `json:"origin"`     // user|simulator|discovery
 	Visibility  string    `json:"visibility"` // private|public
 	Active      bool      `json:"active"`
 	Favorite    bool      `json:"favorite"`

@@ -12,19 +12,23 @@ import (
 // backtest monta um BacktestResult mínimo com os campos que os critérios do
 // doc 08 avaliam. dd é o drawdown em unidades de stake (como o motor devolve).
 func backtest(games, hits int, roi, yield, dd float64) *usecase.BacktestResult {
+	staked := float64(games)
 	hitRate := 0.0
 	if games > 0 {
 		hitRate = 100 * float64(hits) / float64(games)
 	}
 	return &usecase.BacktestResult{
-		MatchCount:  games,
-		Hits:        hits,
-		Misses:      games - hits,
-		HitRate:     hitRate,
-		ROI:         roi,
-		Yield:       yield,
-		MaxDrawdown: dd,
-		TotalStaked: float64(games), // stake 1 por entrada
+		MatchCount: games,
+		Hits:       hits,
+		Misses:     games - hits,
+		HitRate:    hitRate,
+		// REV-P3: campos financeiros viraram nuláveis. O helper monta uma série
+		// COMPLETA, que é o que o Discovery exige para avaliar uma combinação.
+		FinancialsAvailable: true,
+		ROI:                 &roi,
+		Yield:               &yield,
+		MaxDrawdown:         &dd,
+		TotalStaked:         &staked, // stake 1 por entrada
 	}
 }
 
@@ -95,12 +99,15 @@ func TestWithDefaultsKeepsExplicitOverrides(t *testing.T) {
 
 func TestDrawdownPctIsRelativeToStakedCapital(t *testing.T) {
 	r := backtest(200, 160, 12, 7, 30) // 30 unidades sobre 200 movimentadas
-	if got := drawdownPct(r); got != 15 {
-		t.Errorf("drawdown deveria ser 15%%, veio %v", got)
+	got, ok := drawdownPct(r)
+	if !ok || got != 15 {
+		t.Errorf("drawdown deveria ser 15%%, veio %v (ok=%v)", got, ok)
 	}
-	// Sem capital movimentado não há percentual a calcular (evita divisão por zero).
-	if got := drawdownPct(&usecase.BacktestResult{}); got != 0 {
-		t.Errorf("resultado vazio deveria ter drawdown 0, veio %v", got)
+	// REV-P3: sem série financeira o percentual NÃO EXISTE. Antes devolvia 0, o
+	// que num critério de aceite lê-se como "risco zero" — aprovaria a
+	// combinação pelo motivo oposto ao verdadeiro.
+	if _, ok := drawdownPct(&usecase.BacktestResult{}); ok {
+		t.Error("resultado vazio deveria reportar drawdown indisponível, não 0")
 	}
 }
 

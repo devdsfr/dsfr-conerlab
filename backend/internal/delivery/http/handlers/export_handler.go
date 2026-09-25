@@ -249,7 +249,9 @@ func (h *ExportHandler) FilterRunCSV(c *gin.Context) {
 		}
 		rows = append(rows, []string{
 			e.MatchDate, e.Team, e.Opponent, mando,
-			strconv.Itoa(e.TotalCorners), hit, floatStr(e.Odd), floatStr(e.ProfitLoss),
+			// Sem odd, o CSV traz "—" nas colunas financeiras. Exportar 0 faria o
+			// arquivo afirmar prejuízo zero onde não houve aposta nenhuma.
+			strconv.Itoa(e.TotalCorners), hit, floatStrOpt(e.Odd), floatStrOpt(e.ProfitLoss),
 		})
 	}
 
@@ -309,4 +311,12 @@ func floatStr(v float64) string {
 func sanitizeFilename(s string) string {
 	replacer := strings.NewReplacer(" ", "_", "/", "-")
 	return replacer.Replace(s)
+}
+
+// floatStrOpt formata um float nulável: nil vira travessão, nunca "0".
+func floatStrOpt(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return floatStr(*v)
 }

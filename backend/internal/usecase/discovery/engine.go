@@ -551,7 +551,10 @@ func describe(c candidate, leagueName string) string {
 			"nem previsão de resultados futuros.",
 		leagueName, scope, filters,
 		observado,
-		r.ROI, r.Yield, r.Profit, drawdownPct(r),
+		// A descrição só é gerada para candidata aprovada, e aprovação exige
+		// série financeira completa (ver checkCriteria) — então os ponteiros
+		// nunca são nil aqui.
+		derefF(r.ROI), derefF(r.Yield), derefF(r.Profit), drawdownPctOrZero(r),
 		Classify(c.dsfr), c.dsfr,
 		describeValidation(c),
 	)
@@ -576,4 +579,19 @@ func describeValidation(c candidate) string {
 		c.holdout.Games, c.holdout.HitRate, c.holdout.ROI,
 		c.pValue*100, c.holdout.PValue*100,
 	)
+}
+
+// derefF e drawdownPctOrZero existem só para a formatação do texto de
+// candidatas APROVADAS, onde a série financeira já foi exigida por
+// checkCriteria. Não são atalho para tratar ausência como zero.
+func derefF(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func drawdownPctOrZero(r *usecase.BacktestResult) float64 {
+	pct, _ := drawdownPct(r)
+	return pct
 }

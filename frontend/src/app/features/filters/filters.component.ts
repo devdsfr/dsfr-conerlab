@@ -1,7 +1,7 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
@@ -16,6 +16,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BacktestEntry, BacktestResult, FilterRunRequest, League, Season, Team } from '../../core/models';
+import { desserializarEstado, serializarEstado } from './simulator-url-state';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
 
@@ -97,10 +98,19 @@ export class FiltersComponent implements OnInit {
   get isShotsOnTarget(): boolean {
     return this.metric === 'shots_on_target';
   }
-  // Métricas sem odds históricas (usam odd fixa simulada) e nullable (jogos sem o dado
-  // ficam de fora do backtest).
+  // Escanteios é a ÚNICA métrica com odd por partida no banco, então é a única
+  // que aceita o filtro "odds máximas". As demais não têm odd nenhuma.
+  get usesRealOdds(): boolean {
+    return this.metric === 'corners';
+  }
+  // REV-P3 / correção 2: a odd fixa agora vale para TODAS as métricas, escanteios
+  // inclusive. Antes era `metric !== 'corners'`, e por isso escanteios sem odd real
+  // no período devolvia zero ocorrências a qualquer limiar mesmo com odd informada:
+  // o campo nem era enviado. Em escanteios ela é o fallback de quem não tem odd
+  // real; nas outras é a única odd possível. Em ambos os casos o backend marca
+  // odds_source = "fixed" — NUNCA "real".
   get usesFixedOdd(): boolean {
-    return this.metric !== 'corners';
+    return true;
   }
   get isNullableMetric(): boolean {
     return this.metric === 'offsides' || this.metric === 'shots' || this.metric === 'shots_on_target';
@@ -148,55 +158,91 @@ export class FiltersComponent implements OnInit {
     return `Média de ${this.label().toLowerCase()}`;
   }
 
-  // ---- Análise de valor / odd -------------------------------------------------
-  // A odd que a casa oferece para o evento — usada só na calculadora de valor, não
-  // altera o backtest. hit_rate e roi já vêm em % do backend.
-  marketOdd?: number;
-
-  private hitRateFraction(r: BacktestResult): number {
-    return (r.hit_rate ?? 0) / 100;
-  }
-
-  // Odd mínima para a estratégia empatar no longo prazo = 1 / taxa de acerto. Acima
-  // disso é lucro esperado; abaixo, prejuízo esperado.
-  breakEvenOdd(r: BacktestResult): number | null {
-    const p = this.hitRateFraction(r);
-    return p > 0 ? 1 / p : null;
-  }
-
-  // ROI esperado por aposta para uma dada odd = taxa de acerto × odd − 1 (em %).
-  expectedRoiPct(r: BacktestResult, odd: number): number | null {
-    if (!odd || odd <= 1) return null;
-    return (this.hitRateFraction(r) * odd - 1) * 100;
-  }
-
-  marketRoiPct(r: BacktestResult): number | null {
-    return this.marketOdd ? this.expectedRoiPct(r, this.marketOdd) : null;
-  }
-
-  // A cada 10 apostas, quantas dá pra errar e ainda sair no lucro, para uma odd.
-  // Precisa vencer mais que 10/odd unidades; mínimo de vitórias = floor(10/odd)+1.
-  safetyMissesPer10(odd?: number): number | null {
-    if (!odd || odd <= 1) return null;
-    const minWins = Math.floor(10 / odd) + 1;
-    return Math.max(0, 10 - minWins);
-  }
-
-  // Cenários de odd para a mini-tabela comparativa (usa a taxa de acerto do filtro).
-  readonly oddScenarios = [1.5, 1.8, 2.0, 2.5, 3.0, 4.0];
-  scenarioRows(r: BacktestResult): { odd: number; roiPct: number; positive: boolean }[] {
-    return this.oddScenarios.map(odd => {
-      const roi = this.expectedRoiPct(r, odd) ?? 0;
-      return { odd, roiPct: roi, positive: roi > 0 };
-    });
-  }
+  // ---- REV-P3 / correção 4: o "EV" foi REMOVIDO ------------------------------
+  // Existia aqui um bloco de "análise de valor" que calculava
+  //   ROI esperado por aposta = taxa de acerto do próprio lote × odd − 1
+  // e derivava dele uma odd de equilíbrio (1 ÷ taxa de acerto), uma margem de
+  // segurança ("pode errar até N em 10") e uma tabela de cenários de odd.
+  //
+  // Isso estava errado por construção: usava a taxa de acerto OBSERVADA no mesmo
+  // lote filtrado como se fosse a PROBABILIDADE do evento futuro. É a definição de
+  // transformar estatística histórica em previsão — e, pior, a taxa vinha de uma
+  // amostra escolhida justamente por ter acertado muito, então o "ROI esperado"
+  // era positivo quase sempre, por viés de seleção, não por vantagem.
+  //
+  // Não existe substituto honesto calculável só com o histórico do próprio lote.
+  // Por isso o bloco foi removido em vez de reescrito. NÃO reintroduzir.
+  //
+  // O que o Simulador mostra agora é apenas desempenho OBSERVADO (taxa de acerto
+  // e, quando há série financeira completa, lucro/ROI/yield daquele histórico).
 
   readonly drawdownTooltip =
     'Drawdown máximo: a maior sequência de perdas acumuladas (em unidades de stake) observada durante o backtest — indica o pior momento de "prejuízo" pelo qual a estratégia passou.';
   readonly consistencyTooltip =
     'Consistência (0 a 1): quanto mais perto de 1, menos os escanteios variam de jogo para jogo.';
 
-  constructor(private api: ApiService, public auth: AuthService) {}
+  constructor(
+    private api: ApiService,
+    public auth: AuthService,
+    private router: Router,
+    private route: ActivatedRoute,
+  ) {}
+
+  // ---- REV-P3 / correção 6: estado do Simulador na URL -----------------------
+  //
+  // Sem isso o Simulador não era reproduzível: o resultado dependia inteiramente
+  // do estado em memória do componente, e não havia como alguém (nem o próprio
+  // usuário no dia seguinte) chegar ao MESMO backtest. Agora cada execução
+  // reescreve a query string, e abrir a URL reconstrói os mesmos critérios.
+  //
+  // Regra dura: parâmetro inválido NÃO é substituído em silêncio. Se a URL pedir
+  // algo que não dá para honrar, a tela diz o que ignorou — caso contrário o
+  // usuário veria um backtest diferente do que a URL prometia, achando que é o
+  // mesmo. É exatamente o modo de falha que a reprodutibilidade deveria impedir.
+  urlStateError = signal<string | null>(null);
+
+  // Serializa os critérios atuais na query string, sem empilhar histórico: cada
+  // execução SUBSTITUI a anterior (replaceUrl), então o botão "voltar" continua
+  // saindo da tela em vez de percorrer N backtests. A montagem em si mora em
+  // simulator-url-state.ts, testável sem Angular.
+  private writeUrlState(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: serializarEstado({
+        leagueId: this.selectedLeagueId,
+        seasonIds: this.selectedSeasonIds,
+        teamId: this.selectedTeamId,
+        lastNGames: this.lastNGames,
+        homeAway: this.homeAway,
+        metric: this.metric,
+        threshold: this.currentThreshold(),
+        maxOdds: this.maxOdds,
+        fixedOdd: this.fixedOdd,
+        stake: this.stake,
+      }),
+      replaceUrl: true,
+    });
+  }
+
+  // Limiar da métrica corrente — um único número na URL em vez de cinco campos.
+  private currentThreshold(): number {
+    if (this.isGoals) return this.goalsThreshold;
+    if (this.isOffsides) return this.offsidesThreshold;
+    if (this.isShots) return this.shotsThreshold;
+    if (this.isShotsOnTarget) return this.shotsOnTargetThreshold;
+    return this.cornersThreshold;
+  }
+
+  // Ponte fina entre o ActivatedRoute e a função pura de desserialização.
+  private readUrlState(problemas: string[]): FilterRunRequest | null {
+    const map = this.route.snapshot.queryParamMap;
+    const p: Record<string, string | null> = {};
+    for (const k of map.keys) p[k] = map.get(k);
+    return desserializarEstado(p, problemas, {
+      threshold: this.cornersThreshold,
+      stake: this.stake,
+    });
+  }
 
   // ---- Salvar como estratégia (Strategy Workspace, Remodelagem F5) ----------
   strategyName = '';
@@ -213,14 +259,14 @@ export class FiltersComponent implements OnInit {
       last_n_games: this.lastNGames || undefined,
       home_away: this.homeAway || undefined,
       corners_threshold: this.cornersThreshold,
-      max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
+      max_odds: this.usesRealOdds ? (this.maxOdds || undefined) : undefined,
       stake: this.stake || undefined,
       metric: this.metric,
       goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
       offsides_threshold: this.isOffsides ? this.offsidesThreshold : undefined,
       shots_threshold: this.isShots ? this.shotsThreshold : undefined,
       shots_on_target_threshold: this.isShotsOnTarget ? this.shotsOnTargetThreshold : undefined,
-      fixed_odd: this.usesFixedOdd ? (this.fixedOdd || undefined) : undefined,
+      fixed_odd: this.fixedOdd || undefined,
     });
   }
 
@@ -232,6 +278,10 @@ export class FiltersComponent implements OnInit {
       name: this.strategyName.trim(),
       description: `Criada a partir do Simulador de Filtros (${this.label()})`,
       definition: this.buildDefinition(),
+      // REV-P3 / correção 5: a procedência viaja junto. Salvar aqui NÃO valida nem
+      // aprova a estratégia — ela não passou por holdout nem por correção de
+      // múltiplas comparações, e a lista de Estratégias precisa poder dizer isso.
+      origin: 'simulator',
     }).subscribe({
       next: () => {
         this.savingStrategy.set(false);
@@ -255,15 +305,39 @@ export class FiltersComponent implements OnInit {
     // "Conferir no Simulador": reproduzibilidade é um princípio da plataforma, então
     // ele precisa poder reexecutar EXATAMENTE o backtest que gerou o número do
     // ranking e conferir jogo por jogo, em vez de confiar na lista.
-    const incoming = (history.state?.definition ?? null) as FilterRunRequest | null;
+    const fromState = (history.state?.definition ?? null) as FilterRunRequest | null;
+
+    // REV-P3 / correção 6: precedência explícita. router state (clique em
+    // "Conferir no Simulador") > query string > padrões. A URL só entra quando
+    // não veio definition pelo state, para o clique não ser sobrescrito por uma
+    // query string antiga que ainda esteja na barra de endereço.
+    const problemas: string[] = [];
+    const fromUrl = fromState?.league_id ? null : this.readUrlState(problemas);
+    if (problemas.length) {
+      this.urlStateError.set(
+        'A URL não pôde ser reproduzida integralmente: ' + problemas.join('; ') +
+        '. Confira os critérios abaixo antes de ler o resultado.',
+      );
+    }
+    const incoming = fromState?.league_id ? fromState : fromUrl;
 
     this.api.listLeagues().subscribe(leagues => {
       this.leagues.set(leagues);
       if (!leagues.length) return;
 
       if (incoming?.league_id) {
+        if (!leagues.some(l => l.id === incoming.league_id)) {
+          // Campeonato que não existe (ou não é visível para este usuário). NÃO
+          // trocamos por outro em silêncio: o resultado não seria o que a URL pediu.
+          this.urlStateError.set(
+            `O campeonato pedido (id ${incoming.league_id}) não existe ou não está disponível. ` +
+            'Nada foi substituído automaticamente — escolha um campeonato abaixo.',
+          );
+          this.selectedLeagueId = undefined;
+          return;
+        }
         this.selectedLeagueId = incoming.league_id;
-        this.applyDefinition(incoming);
+        this.applyDefinition(incoming, !!fromState?.league_id);
         return;
       }
       this.selectedLeagueId = leagues[0].id;
@@ -274,7 +348,7 @@ export class FiltersComponent implements OnInit {
   // Aplica uma definition salva/descoberta no formulário. Diferente de
   // onLeagueChange(), NUNCA limpa a seleção — as listas dependentes (temporadas,
   // equipes) são carregadas em volta dos valores que acabaram de chegar.
-  private applyDefinition(d: FilterRunRequest): void {
+  private applyDefinition(d: FilterRunRequest, vindaDeDescoberta = true): void {
     this.metric = (d.metric as typeof this.metric) || 'corners';
     this.cornersThreshold = d.corners_threshold ?? this.cornersThreshold;
     this.goalsThreshold = d.goals_threshold ?? this.goalsThreshold;
@@ -290,7 +364,10 @@ export class FiltersComponent implements OnInit {
     this.maxOdds = d.max_odds ?? undefined;
     this.stake = d.stake ?? this.stake;
     this.selectedTeamId = d.team_id ?? undefined;
-    this.loadedFromDiscovery.set(true);
+    // O banner "veio de uma descoberta" só vale quando veio mesmo. Um estado
+    // restaurado da URL é do próprio usuário — dizer o contrário seria mentir
+    // sobre a procedência do recorte.
+    this.loadedFromDiscovery.set(vindaDeDescoberta);
 
     // includeAll=true: uma descoberta pode agregar várias temporadas (ex.: 2024+2025+
     // 2026). Se usássemos a lista já filtrada pra "temporadas recentes" aqui, o
@@ -341,6 +418,8 @@ export class FiltersComponent implements OnInit {
     if (!this.selectedLeagueId) return;
     this.loading.set(true);
     this.error.set(null);
+    // REV-P3 / correção 6: a URL passa a descrever o backtest que está na tela.
+    this.writeUrlState();
     this.api.runFilter({
       league_id: this.selectedLeagueId,
       season_ids: this.selectedSeasonIds,
@@ -350,14 +429,14 @@ export class FiltersComponent implements OnInit {
       // corners_threshold sempre vai (ignorado no backend quando metric=goals);
       // para gols enviamos metric/goals_threshold/fixed_odd.
       corners_threshold: this.cornersThreshold,
-      max_odds: this.usesFixedOdd ? undefined : (this.maxOdds || undefined),
+      max_odds: this.usesRealOdds ? (this.maxOdds || undefined) : undefined,
       stake: this.stake || undefined,
       metric: this.metric,
       goals_threshold: this.isGoals ? this.goalsThreshold : undefined,
       offsides_threshold: this.isOffsides ? this.offsidesThreshold : undefined,
       shots_threshold: this.isShots ? this.shotsThreshold : undefined,
       shots_on_target_threshold: this.isShotsOnTarget ? this.shotsOnTargetThreshold : undefined,
-      fixed_odd: this.usesFixedOdd ? (this.fixedOdd || undefined) : undefined,
+      fixed_odd: this.fixedOdd || undefined,
     }).subscribe({
       next: res => {
         this.result.set(res);

@@ -171,8 +171,11 @@ func TestRequireRealOdds_PermiteReal(t *testing.T) {
 		t.Fatalf("RunBacktest: %v", err)
 	}
 	// Cada partida vira 2 candidatos (mandante e visitante) quando não há TeamID.
-	if res.MatchCount != 4 {
-		t.Fatalf("odd real deveria ser aceita: MatchCount = %d, esperado 4", res.MatchCount)
+	// REV-P3 (AUD-021): esperado passou de 4 para 2. São 2 PARTIDAS e a regra é
+	// match-level; o engine contava cada uma duas vezes. A expectativa mudou
+	// porque a regra mudou, não para o teste passar.
+	if res.MatchCount != 2 {
+		t.Fatalf("odd real deveria ser aceita: MatchCount = %d, esperado 2", res.MatchCount)
 	}
 	if res.OddsSource != domain.OddsSourceReal {
 		t.Fatalf("OddsSource = %q, esperado %q", res.OddsSource, domain.OddsSourceReal)
@@ -214,8 +217,11 @@ func TestSimulador_AceitaSinteticaMasMarcaResultado(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunBacktest: %v", err)
 	}
-	if res.MatchCount != 4 {
-		t.Fatalf("Simulador deveria aceitar odd sintética: MatchCount = %d, esperado 4", res.MatchCount)
+	// REV-P3 (AUD-021): esperado passou de 4 para 2. São 2 PARTIDAS e a regra é
+	// match-level; o engine contava cada uma duas vezes. A expectativa mudou
+	// porque a regra mudou, não para o teste passar.
+	if res.MatchCount != 2 {
+		t.Fatalf("Simulador deveria aceitar odd sintética: MatchCount = %d, esperado 2", res.MatchCount)
 	}
 	if res.OddsSource != domain.OddsSourceSynthetic {
 		t.Fatalf("OddsSource = %q, esperado %q", res.OddsSource, domain.OddsSourceSynthetic)
@@ -242,8 +248,12 @@ func TestSemOdd_PartidaForaDoBacktest(t *testing.T) {
 	}
 	// Antes da correção, essas partidas entravam com odd = 1.0, produzindo
 	// P/L = 0 no acerto e -stake no erro: prejuízo garantido e sem sentido.
-	if res.Profit != 0 || res.TotalStaked != 0 {
-		t.Fatalf("backtest vazio deveria ter financeiro zerado: Profit=%v Staked=%v", res.Profit, res.TotalStaked)
+	// REV-P3: backtest sem entradas não tem financeiro ZERADO — tem financeiro
+	// INDISPONÍVEL. Zero afirmaria "apostou e não lucrou"; nil diz "não houve
+	// aposta a medir".
+	if res.FinancialsAvailable || res.Profit != nil || res.TotalStaked != nil {
+		t.Fatalf("backtest vazio deveria ter financeiro indisponível: available=%v Profit=%v Staked=%v",
+			res.FinancialsAvailable, res.Profit, res.TotalStaked)
 	}
 }
 

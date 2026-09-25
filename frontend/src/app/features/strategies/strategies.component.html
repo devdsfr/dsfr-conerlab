@@ -1,4 +1,4 @@
-<div class="max-w-6xl mx-auto flex flex-col gap-6">
+<div class="max-w-[1600px] mx-auto flex flex-col gap-6">
   <div>
     <h1 class="text-xl font-semibold text-slate-100">Estratégias</h1>
     <p class="text-sm text-slate-400 mt-1">
@@ -62,6 +62,12 @@
               }
               @if (s.origin === 'discovery') {
                 <span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-300">Descoberta</span>
+              }
+              <!-- REV-P3 / correção 5: a etiqueta existe justamente para NÃO deixar
+                   uma estratégia salva do Simulador parecer validada. -->
+              @if (s.origin === 'simulator') {
+                <span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-800 text-slate-300"
+                      matTooltip="Salva do Simulador: recorte montado à mão, sem validação fora da amostra nem correção de múltiplas comparações.">Do simulador</span>
               }
             </div>
           </button>

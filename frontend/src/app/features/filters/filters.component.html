@@ -1,6 +1,15 @@
-<div class="max-w-6xl mx-auto flex flex-col gap-6">
+<div class="max-w-[1600px] mx-auto flex flex-col gap-6">
   <h1 class="text-xl font-semibold text-slate-100">Simulador de Filtros</h1>
   <p class="text-sm text-slate-400 -mt-4">Monte critérios e rode o backtest sobre o histórico de jogos. A plataforma nunca recomenda apostas — apenas mede o desempenho histórico do filtro.</p>
+
+  <!-- REV-P3 / correção 6: a URL não foi honrada integralmente. Dizemos isso em
+       voz alta em vez de substituir o parâmetro inválido em silêncio — senão o
+       usuário leria um backtest diferente do que a URL prometia. -->
+  @if (urlStateError(); as msg) {
+    <div class="cl-card p-3 border border-amber-900/50 bg-amber-950/20 text-sm text-amber-200">
+      {{ msg }}
+    </div>
+  }
 
   <!-- Chegada a partir da página "Descobertas": deixa explícito que os critérios
        não foram montados pelo usuário e que ele está conferindo um padrão do sistema. -->
@@ -140,17 +149,23 @@
         look-ahead, porque na 5ª rodada ninguém sabe quem termina no G6.
       -->
 
-      @if (!usesFixedOdd) {
+      <!-- REV-P3 / correção 2: a odd fixa deixou de ser exclusiva das métricas sem
+           odd histórica. Escanteios também a aceita, como fallback das partidas em
+           que não há odd real. Antes o campo simplesmente não era enviado para
+           escanteios, e o backtest voltava vazio a qualquer limiar. -->
+      @if (usesRealOdds) {
         <mat-form-field appearance="outline" class="w-40">
           <mat-label>Odds máximas</mat-label>
           <input matInput type="number" inputmode="decimal" step="0.01" [(ngModel)]="maxOdds" placeholder="ex: 1.60">
         </mat-form-field>
-      } @else {
-        <mat-form-field appearance="outline" class="w-40" matTooltip="Esta métrica não tem odds históricas no banco. Informe uma odd fixa para simular o retorno (opcional).">
-          <mat-label>Odd fixa (simular)</mat-label>
-          <input matInput type="number" inputmode="decimal" step="0.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
-        </mat-form-field>
       }
+      <mat-form-field appearance="outline" class="w-44"
+        [matTooltip]="usesRealOdds
+          ? 'Usada nas partidas SEM odd de mercado no banco. O resultado inteiro passa a ser marcado como cenário de odd fixa, não como desempenho observado.'
+          : 'Esta métrica não tem odds no banco. Informe uma odd fixa para simular um cenário (opcional — sem ela o backtest mostra só a estatística).'">
+        <mat-label>Odd fixa (simular)</mat-label>
+        <input matInput type="number" inputmode="decimal" step="0.01" min="1.01" [(ngModel)]="fixedOdd" placeholder="ex: 1.80">
+      </mat-form-field>
 
       <mat-form-field appearance="outline" class="w-36">
         <mat-label>Stake</mat-label>
@@ -219,9 +234,24 @@
         devem ser lidos como vantagem real.
       </div>
     }
-    @if (usesFixedOdd && !fixedOdd) {
-      <div class="cl-card p-3 text-xs text-slate-400">
-        Sem odd fixa informada, o backtest mostra só a taxa de acerto — o ROI/lucro não têm significado (esta métrica não tem odds históricas no banco). Informe uma "Odd fixa" acima para simular o retorno financeiro.
+    @if (r.odds_source === 'fixed') {
+      <div class="cl-card p-3 border border-amber-900/50 bg-amber-950/20 text-sm text-amber-200">
+        <strong class="text-amber-300">Cenário com odd fixa que você informou.</strong>
+        Nenhuma odd de mercado foi usada: todas as partidas foram avaliadas com a mesma
+        odd digitada. Lucro, ROI e yield abaixo descrevem <em>esse cenário</em>, não o que
+        as casas pagavam em cada jogo.
+      </div>
+    }
+    <!-- REV-P3 / correção 3: ausência de odd NÃO é odd 1,00. Quando o backend não
+         consegue montar a série financeira completa ele devolve
+         financials_available = false e os campos financeiros como null. Antes a
+         tela recebia 0/0/0 (odd 1.00 fabricada) e exibia como se fosse medida. -->
+    @if (!r.financials_available) {
+      <div class="cl-card p-3 border border-slate-700 bg-slate-900/40 text-sm text-slate-300">
+        <strong class="text-slate-200">Sem resultado financeiro.</strong>
+        {{ r.financials_note || 'Nem todas as partidas do recorte têm odd, então lucro, ROI, yield e drawdown não são calculáveis.' }}
+        A parte estatística abaixo (partidas, acertos e taxa de acerto) continua válida —
+        ela não depende de odd. Informe uma odd fixa acima se quiser simular um cenário.
       </div>
     }
     @if (isNullableMetric) {
@@ -239,13 +269,25 @@
         <div class="text-2xl font-semibold text-cornerlab-primary">{{ r.hit_rate }}%</div>
         <div class="text-xs text-slate-400">{{ r.hits }} acertos / {{ r.misses }} erros</div>
       </div>
+      <!-- ROI, lucro e drawdown: null ⇒ "N/A", nunca 0. Ver correção 3 do REV-P3. -->
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">ROI / Yield</div>
-        <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.roi >= 0" [class.text-red-400]="r.roi < 0">{{ r.roi }}%</div>
+        @if (r.roi !== null && r.roi !== undefined) {
+          <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.roi >= 0" [class.text-red-400]="r.roi < 0">{{ r.roi }}%</div>
+        } @else {
+          <div class="text-2xl font-semibold text-slate-500">N/A</div>
+          <div class="text-xs text-slate-500">Sem odd — não calculável.</div>
+        }
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Lucro (unidades de stake)</div>
-        <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.profit >= 0" [class.text-red-400]="r.profit < 0">{{ r.profit }}</div>
+        @if (r.profit !== null && r.profit !== undefined) {
+          <div class="text-2xl font-semibold" [class.text-cornerlab-primary]="r.profit >= 0" [class.text-red-400]="r.profit < 0">{{ r.profit }}</div>
+          <div class="text-xs text-slate-400">Total apostado: {{ r.total_staked }}</div>
+        } @else {
+          <div class="text-2xl font-semibold text-slate-500">N/A</div>
+          <div class="text-xs text-slate-500">Sem odd — não calculável.</div>
+        }
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">{{ averageLabel() }}</div>
@@ -261,74 +303,45 @@
       </div>
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Drawdown máximo <span class="cl-help" tabindex="0" [matTooltip]="drawdownTooltip">?</span></div>
-        <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
+        @if (r.max_drawdown !== null && r.max_drawdown !== undefined) {
+          <div class="text-xl font-semibold text-red-400">{{ r.max_drawdown }}</div>
+        } @else {
+          <div class="text-xl font-semibold text-slate-500">N/A</div>
+        }
       </div>
     </div>
+
+    <!-- REV-P3 / correção 6: o recorte analisado precisa ser auditável. O cap do
+         plano gratuito é relativo a hoje, então sem estas datas o mesmo filtro
+         analisa um conjunto diferente a cada dia sem dizer qual. -->
+    @if (r.effective_from || r.effective_to) {
+      <div class="text-xs text-slate-500">
+        Recorte efetivamente analisado: {{ r.effective_from || '—' }} a {{ r.effective_to || '—' }}
+        @if (r.history_capped) { · janela limitada a {{ r.history_cap_days }} dias (plano gratuito) }
+      </div>
+    }
 
     <!-- Anúncio contextual (plano gratuito) — só aparece com resultado real na tela
          (política AdSense: sem anúncio em tela vazia/sem conteúdo do editor). Ver
          ESTRATEGIA-MONETIZACAO.md. -->
     <app-ad-slot slot="7250099317"></app-ad-slot>
 
+    <!-- REV-P3 / correção 4: o bloco "Análise de valor (odd)" foi REMOVIDO.
+         Ele calculava "ROI esperado por aposta" usando a taxa de acerto do próprio
+         lote filtrado como probabilidade do evento futuro — viés de seleção puro,
+         já que o lote foi escolhido por ter acertado muito. Também derivava dali
+         uma odd de equilíbrio, uma "margem de segurança" e uma tabela de cenários.
+         Nada disso é calculável honestamente com o histórico do próprio lote.
+         NÃO reintroduzir. Ver filters.component.ts (mesma nota). -->
     <div class="cl-card p-4">
-      <h3 class="text-sm text-slate-400 mb-1">Análise de valor (odd)</h3>
-      <p class="text-xs text-slate-500 mb-4">
-        Com base na taxa de acerto histórica deste filtro ({{ r.hit_rate }}%). Isto mede desempenho
-        histórico — não é recomendação de aposta nem garantia de resultado futuro.
+      <h3 class="text-sm text-slate-400 mb-1">Sobre o que estes números são</h3>
+      <p class="text-xs text-slate-500">
+        Tudo acima é desempenho <strong class="text-slate-300">observado</strong> no período filtrado:
+        quantas vezes a regra ocorreu e quantas vezes o evento aconteceu. O CornerLab
+        não estima probabilidade futura nem retorno esperado, e não compara a odd de
+        uma casa com a taxa de acerto histórica — essa conta usaria uma amostra
+        escolhida justamente por ter acertado muito e apontaria vantagem onde não há.
       </p>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div class="cl-card p-4 !bg-slate-900/40">
-          <div class="text-xs text-slate-400">
-            Odd de equilíbrio
-            <span class="cl-help" tabindex="0" matTooltip="Odd mínima para o filtro empatar no longo prazo = 1 ÷ taxa de acerto. Se a casa pagar acima disso, o retorno esperado é positivo; abaixo, negativo.">?</span>
-          </div>
-          @if (breakEvenOdd(r); as be) {
-            <div class="text-2xl font-semibold text-cornerlab-primary">{{ be | number:'1.2-2' }}</div>
-            <div class="text-xs text-slate-400">Só compensa buscar odds acima deste valor.</div>
-          } @else {
-            <div class="text-2xl font-semibold text-slate-500">—</div>
-            <div class="text-xs text-slate-400">Sem acertos no histórico.</div>
-          }
-        </div>
-
-        <div class="cl-card p-4 !bg-slate-900/40">
-          <div class="text-xs text-slate-400 mb-2">Testar uma odd da casa</div>
-          <mat-form-field appearance="outline" class="w-40">
-            <mat-label>Odd da casa</mat-label>
-            <input matInput type="number" inputmode="decimal" step="0.01" min="1.01" [(ngModel)]="marketOdd" placeholder="ex.: 2.10…" />
-          </mat-form-field>
-          @if (marketRoiPct(r); as roi) {
-            <div class="mt-1">
-              <span class="text-sm text-slate-400">ROI esperado por aposta: </span>
-              <span class="text-lg font-semibold" [class.text-cornerlab-primary]="roi >= 0" [class.text-red-400]="roi < 0">
-                {{ roi >= 0 ? '+' : '' }}{{ roi | number:'1.1-1' }}%
-              </span>
-            </div>
-            <div class="text-xs text-slate-400">
-              A cada 10 apostas nessa odd, pode errar até
-              <span class="text-slate-200 font-semibold">{{ safetyMissesPer10(marketOdd) }}</span>
-              e ainda sair no lucro.
-            </div>
-          } @else {
-            <div class="text-xs text-slate-500">Informe a odd para ver o ROI esperado e a margem de segurança.</div>
-          }
-        </div>
-      </div>
-
-      <div class="text-xs text-slate-400 mb-2">
-        Comparativo de odds (ROI esperado com a taxa de acerto atual)
-      </div>
-      <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
-        @for (row of scenarioRows(r); track row.odd) {
-          <div class="cl-card p-3 text-center !bg-slate-900/40" [class.!border-emerald-500\/40]="row.positive">
-            <div class="text-sm font-semibold">{{ row.odd | number:'1.1-2' }}</div>
-            <div class="text-sm font-semibold" [class.text-cornerlab-primary]="row.positive" [class.text-red-400]="!row.positive">
-              {{ row.roiPct >= 0 ? '+' : '' }}{{ row.roiPct | number:'1.0-0' }}%
-            </div>
-          </div>
-        }
-      </div>
     </div>
 
     <div class="cl-card p-4">
@@ -363,11 +376,27 @@
           </ng-container>
           <ng-container matColumnDef="odd">
             <th mat-header-cell *matHeaderCellDef>Odd</th>
-            <td mat-cell *matCellDef="let e">{{ e.odd }}</td>
+            <!-- REV-P3: odd nula = não havia odd para esta partida. "—", nunca 1,00. -->
+            <td mat-cell *matCellDef="let e">
+              @if (e.odd !== null && e.odd !== undefined) {
+                {{ e.odd }}
+                @if (e.odds_source && e.odds_source !== 'real') {
+                  <span class="text-[10px] text-amber-300/80 ml-1">{{ e.odds_source === 'fixed' ? 'fixa' : 'estimada' }}</span>
+                }
+              } @else {
+                <span class="text-slate-500">—</span>
+              }
+            </td>
           </ng-container>
           <ng-container matColumnDef="profit_loss">
             <th mat-header-cell *matHeaderCellDef>Resultado (stake)</th>
-            <td mat-cell *matCellDef="let e">{{ e.profit_loss }}</td>
+            <td mat-cell *matCellDef="let e">
+              @if (e.profit_loss !== null && e.profit_loss !== undefined) {
+                {{ e.profit_loss }}
+              } @else {
+                <span class="text-slate-500">—</span>
+              }
+            </td>
           </ng-container>
           <tr mat-header-row *matHeaderRowDef="entryColumns"></tr>
           <tr mat-row *matRowDef="let row; columns: entryColumns;"></tr>

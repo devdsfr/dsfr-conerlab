@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -69,8 +70,11 @@ func TestSemTierOBacktestRodaNormalmente(t *testing.T) {
 	if err != nil {
 		t.Fatalf("backtest sem tier deveria funcionar: %v", err)
 	}
-	if res.MatchCount != 4 {
-		t.Errorf("MatchCount = %d, esperado 4", res.MatchCount)
+	// REV-P3 (AUD-021): esperado passou de 4 para 2. São 2 PARTIDAS e a regra é
+	// match-level; o engine contava cada uma duas vezes. A expectativa mudou
+	// porque a regra mudou, não para o teste passar.
+	if res.MatchCount != 2 {
+		t.Errorf("MatchCount = %d, esperado 2", res.MatchCount)
 	}
 }
 
@@ -110,8 +114,15 @@ func TestTierDeEquipeNaoInfluenciaResultado(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a.MatchCount != b.MatchCount || a.HitRate != b.HitRate || a.ROI != b.ROI {
-		t.Errorf("o valor de teams.tier alterou o resultado do backtest:\n  sem: %d jogos, %.2f%% acerto, ROI %.2f\n  com: %d jogos, %.2f%% acerto, ROI %.2f",
-			a.MatchCount, a.HitRate, a.ROI, b.MatchCount, b.HitRate, b.ROI)
+	roiA, roiB := "n/a", "n/a"
+	if a.ROI != nil {
+		roiA = fmt.Sprintf("%.2f", *a.ROI)
+	}
+	if b.ROI != nil {
+		roiB = fmt.Sprintf("%.2f", *b.ROI)
+	}
+	if a.MatchCount != b.MatchCount || a.HitRate != b.HitRate || roiA != roiB {
+		t.Errorf("o valor de teams.tier alterou o resultado do backtest:\n  sem: %d jogos, %.2f%% acerto, ROI %s\n  com: %d jogos, %.2f%% acerto, ROI %s",
+			a.MatchCount, a.HitRate, roiA, b.MatchCount, b.HitRate, roiB)
 	}
 }

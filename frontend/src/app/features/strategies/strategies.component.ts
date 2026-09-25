@@ -137,8 +137,11 @@ export class StrategiesComponent implements OnInit {
     });
   }
 
+  // REV-P3 / correção 5: 'simulator' é uma estratégia do usuário tanto quanto
+  // 'user' — a diferença é só a procedência, não a posse. Sem incluí-la aqui o
+  // usuário perderia editar/excluir o que acabou de salvar do Simulador.
   isOwner(s: Strategy): boolean {
-    return s.origin === 'user';
+    return s.origin === 'user' || s.origin === 'simulator';
   }
 
   // ---- helpers de exibição --------------------------------------------------

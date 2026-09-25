@@ -109,10 +109,12 @@ func breakEvenProbability(r *usecase.BacktestResult) (float64, bool) {
 	}
 	sum := 0.0
 	for _, e := range r.Entries {
-		if e.Odd <= 1 {
+		// Entrada sem odd não sustenta hipótese nula: 1/odd é a probabilidade
+		// implícita, e sem odd ela não existe.
+		if e.Odd == nil || *e.Odd <= 1 {
 			return 0, false
 		}
-		sum += 1 / e.Odd
+		sum += 1 / *e.Odd
 	}
 	return sum / float64(len(r.Entries)), true
 }
@@ -172,13 +174,17 @@ func checkHoldout(r *usecase.BacktestResult, minGames int, alpha float64) holdou
 	}
 	v.Games = r.MatchCount
 	v.HitRate = r.HitRate
-	v.ROI = r.ROI
+	if r.ROI != nil {
+		v.ROI = *r.ROI
+	}
 
 	if r.MatchCount < minGames {
 		v.Reason = rejectHoldoutSample
 		return v
 	}
-	if r.Profit <= 0 {
+	// Sem lucro medido não há validação possível — e ausência não pode ser lida
+	// como lucro positivo.
+	if r.Profit == nil || *r.Profit <= 0 {
 		v.Reason = rejectHoldoutProfit
 		return v
 	}

@@ -85,8 +85,14 @@ func TestEscanteiosContinuaUsandoLimiar(t *testing.T) {
 		t.Fatalf("backtest de escanteios quebrou: %v", err)
 	}
 	// matchWithOdds tem 11 escanteios e a linha é 8 -> todos acertam.
-	if res.MatchCount != 4 || res.Hits != 4 {
-		t.Errorf("escanteios: %d jogos / %d acertos, esperado 4/4", res.MatchCount, res.Hits)
+	//
+	// REV-P3 (AUD-021): esperado passou de 4/4 para 2/2. São 2 PARTIDAS, e
+	// escanteios é regra MATCH-LEVEL — o total é o mesmo olhando dos dois lados,
+	// então cada partida vale UMA observação. Antes o engine contava as duas
+	// perspectivas e dizia 4. O teste codificava o defeito; a expectativa mudou
+	// porque a regra mudou, não para o teste passar.
+	if res.MatchCount != 2 || res.Hits != 2 {
+		t.Errorf("escanteios: %d jogos / %d acertos, esperado 2/2", res.MatchCount, res.Hits)
 	}
 }
 

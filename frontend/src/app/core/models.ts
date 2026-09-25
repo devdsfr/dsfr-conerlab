@@ -287,9 +287,18 @@ export interface BacktestEntry {
   total_offsides: number;
   total_shots: number;
   total_shots_on_target: number;
+  goals_for?: number;
+  goals_against?: number;
   hit: boolean;
-  odd: number;
-  profit_loss: number;
+
+  // REV-P3 (correção 3): nuláveis. null = não havia odd para esta partida, logo
+  // não existe cenário financeiro para ela. Não substituir por 1.00 nem por 0.
+  odd: number | null;
+  profit_loss: number | null;
+
+  // Procedência da odd DESTA entrada: real | synthetic | fixed. Ausente quando
+  // não houve odd — permite auditar entrada a entrada, não só o resumo.
+  odds_source?: 'real' | 'synthetic' | 'fixed';
 }
 
 export interface BacktestResult {
@@ -308,13 +317,28 @@ export interface BacktestResult {
   metric: string;
   longest_win_streak: number;
   longest_lose_streak: number;
-  max_drawdown: number;
-  total_staked: number;
-  profit: number;
-  roi: number;
-  yield: number;
+
+  // --- BLOCO FINANCEIRO — todo nulável (REV-P3, correção 3) -----------------
+  // `null` significa NÃO CALCULÁVEL (não havia odd), nunca zero. Antes o backend
+  // usava odd 1.00 quando faltava a odd e devolvia 0/0/0, que a tela exibia como
+  // se fosse medida. A tela agora precisa mostrar "N/A" quando vier null.
+  // financials_available é o interruptor: false ⇒ todos os campos abaixo são null.
+  financials_available: boolean;
+  financials_note?: string;
+  max_drawdown: number | null;
+  total_staked: number | null;
+  profit: number | null;
+  roi: number | null;
+  yield: number | null;
+
   entries: BacktestEntry[];
   disclaimer: string;
+
+  // Recorte efetivamente analisado depois do cap do plano gratuito. O cap é
+  // relativo a hoje, então sem estas datas o mesmo filtro analisa um conjunto
+  // diferente a cada dia sem a tela conseguir dizer qual.
+  effective_from?: string;
+  effective_to?: string;
   // Plano gratuito limita o backtest aos últimos N dias (ver
   // ESTRATEGIA-MONETIZACAO.md e FilterHandler.FreeHistoryCapDays no backend).
   history_capped: boolean;
@@ -340,7 +364,11 @@ export interface Strategy {
   name: string;
   description: string;
   definition: string; // JSON no formato do Simulador (FilterRunRequest)
-  origin: string; // 'user' | 'discovery'
+  // 'user'      — criada direto na tela de Estratégias
+  // 'simulator' — salva do Simulador: recorte montado à mão, SEM holdout e SEM
+  //               correção de múltiplas comparações. Salvar não valida (REV-P3).
+  // 'discovery' — produzida pelo Discovery Engine, que aplica as duas coisas.
+  origin: string;
   visibility: string;
   active: boolean;
   favorite: boolean;

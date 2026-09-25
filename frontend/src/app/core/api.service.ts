@@ -148,7 +148,11 @@ export class ApiService {
     return this.http.get<Strategy[]>(`${this.base}/strategies`);
   }
 
-  createStrategy(payload: { name: string; description?: string; definition: string; favorite?: boolean }): Observable<Strategy> {
+  // REV-P3 / correção 5: `origin` registra de onde a estratégia veio. O Simulador
+  // manda 'simulator' — um recorte montado à mão, sem holdout e sem correção de
+  // múltiplas comparações. O backend só aceita 'simulator'; 'discovery' é gravado
+  // exclusivamente pelo motor, para que salvar não pareça validar.
+  createStrategy(payload: { name: string; description?: string; definition: string; favorite?: boolean; origin?: 'simulator' }): Observable<Strategy> {
     return this.http.post<Strategy>(`${this.base}/strategies`, payload);
   }
 

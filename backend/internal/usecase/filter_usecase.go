@@ -45,6 +45,17 @@ type FilterCriteria struct {
 	// Simulador roda com false e sinaliza a procedência no resultado.
 	RequireRealOdds bool `json:"-"`
 
+	// AllowMissingOdds mantém no backtest as partidas SEM odd, para que o
+	// resultado estatístico (amostra, acertos, taxa) exista mesmo quando não há
+	// cenário financeiro possível.
+	//
+	// É ligado só pelo SIMULADOR. O Strategy Engine e o Discovery deixam em
+	// false porque pontuar uma estratégia exige série financeira completa — sem
+	// ela o score financeiro seria zero, e zero ali significaria "rendeu nada"
+	// em vez de "não dá para medir". São perguntas diferentes, e por isso os
+	// dois caminhos divergem aqui em vez de compartilharem um default.
+	AllowMissingOdds bool `json:"-"`
+
 	// DateFrom e DateTo restringem o backtest a uma janela temporal fechada à
 	// esquerda e ABERTA à direita — [DateFrom, DateTo). Nil = sem limite naquele
 	// lado.
@@ -124,11 +135,44 @@ func (c FilterCriteria) isShotsOnTarget() bool { return c.Metric == "shots_on_ta
 
 // fixedOddOrOne devolve a odd fixa simulada (métricas sem odds históricas). 1.0 quando
 // não informada — nesse caso o ROI é neutro e vale só a taxa de acerto.
-func fixedOddOrOne(o float64) float64 {
+// CLASSIFICAÇÃO DAS REGRAS — match-level × team-level (REV-P3, correção 1).
+//
+// A distinção decide quantas observações uma partida produz quando NENHUMA
+// equipe foi selecionada.
+//
+//	MATCH-LEVEL — a regra é propriedade da PARTIDA. O valor é idêntico
+//	              olhando do mandante ou do visitante, porque soma os dois
+//	              lados: escanteios, gols, impedimentos, chutes, chutes no gol.
+//	              "Real Madrid 2 x 1 Barcelona, total de gols = 3" é UMA
+//	              observação, não duas.
+//
+//	TEAM-LEVEL  — a perspectiva muda o resultado. Vitória, empate e dupla
+//	              chance são desfecho: na mesma partida o Real venceu e o
+//	              Barcelona não. As duas observações são legítimas e
+//	              diferentes, e continuam valendo duas.
+//
+// Por isso a correção NÃO é `unique(match_id)` no engine inteiro: isso
+// destruiria metade das observações dos mercados de resultado.
+func isMatchLevelMetric(metric string) bool {
+	return !isResultMetric(metric)
+}
+
+// oddParaEntrada resolve a odd de uma partida sem métrica de odd própria
+// (gols, impedimentos, chutes, chutes no gol).
+//
+// ANTES existia fixedOddOrOne, que devolvia 1.0 quando o usuário não informava
+// odd. Odd 1.00 produz lucro zero no acerto e −stake no erro: uma série
+// estruturalmente negativa que parecia resultado financeiro e não era. Ausência
+// de odd não é odd 1,00.
+//
+// Agora devolve nil, e o ciclo segue calculando a parte ESTATÍSTICA (amostra,
+// acertos, taxa) sem inventar a parte financeira.
+func oddOpcional(o float64) *float64 {
 	if o <= 0 {
-		return 1.0
+		return nil
 	}
-	return o
+	v := o
+	return &v
 }
 
 func (c FilterCriteria) Validate() error {
@@ -185,25 +229,34 @@ func (c FilterCriteria) Validate() error {
 // BacktestEntry representa uma ocorrência individual (um "jogo-equipe") que atendeu
 // aos critérios do filtro.
 type BacktestEntry struct {
-	MatchID            int64   `json:"match_id"`
-	MatchDate          string  `json:"match_date"`
-	Team               string  `json:"team"`
-	Opponent           string  `json:"opponent"`
-	IsHome             bool    `json:"is_home"`
-	TotalCorners       int     `json:"total_corners"`
-	TotalGoals         int     `json:"total_goals"`
-	TotalOffsides      int     `json:"total_offsides"`
-	TotalShots         int     `json:"total_shots"`
-	TotalShotsOnTarget int     `json:"total_shots_on_target"`
+	MatchID            int64  `json:"match_id"`
+	MatchDate          string `json:"match_date"`
+	Team               string `json:"team"`
+	Opponent           string `json:"opponent"`
+	IsHome             bool   `json:"is_home"`
+	TotalCorners       int    `json:"total_corners"`
+	TotalGoals         int    `json:"total_goals"`
+	TotalOffsides      int    `json:"total_offsides"`
+	TotalShots         int    `json:"total_shots"`
+	TotalShotsOnTarget int    `json:"total_shots_on_target"`
 
 	// Placar na perspectiva do time analisado. Preenchido só nos mercados de
 	// resultado (vitória/empate/dupla chance), onde é ele que explica o acerto.
 	GoalsFor     int `json:"goals_for,omitempty"`
 	GoalsAgainst int `json:"goals_against,omitempty"`
 
-	Hit bool    `json:"hit"`
-	Odd                float64 `json:"odd"`
-	ProfitLoss         float64 `json:"profit_loss"`
+	Hit bool `json:"hit"`
+
+	// Odd e ProfitLoss são NULÁVEIS. nil = não havia odd para esta partida, e
+	// portanto não existe cenário financeiro para ela. Antes vinham 1.0 e
+	// −stake/0, o que parecia resultado e era artefato.
+	Odd        *float64 `json:"odd"`
+	ProfitLoss *float64 `json:"profit_loss"`
+
+	// OddsSource da odd usada NESTA entrada: real | synthetic | fixed. Vazio
+	// quando não houve odd. Permite auditar entrada a entrada, e não só o
+	// resumo do backtest.
+	OddsSource string `json:"odds_source,omitempty"`
 }
 
 // BacktestResult agrega as métricas do Módulo 3 exigidas pelos critérios de aceite:
@@ -225,13 +278,42 @@ type BacktestResult struct {
 	Metric               string          `json:"metric"`
 	LongestWinStreak     int             `json:"longest_win_streak"`
 	LongestLoseStreak    int             `json:"longest_lose_streak"`
-	MaxDrawdown          float64         `json:"max_drawdown"`
-	TotalStaked          float64         `json:"total_staked"`
-	Profit               float64         `json:"profit"`
-	ROI                  float64         `json:"roi"`
-	Yield                float64         `json:"yield"`
 	Entries              []BacktestEntry `json:"entries"`
 	Disclaimer           string          `json:"disclaimer"`
+
+	// --- BLOCO FINANCEIRO — todo nulável -------------------------------------
+	//
+	// A separação entre estatístico e financeiro é o coração da correção 3 do
+	// REV-P3. O bloco acima (amostra, acertos, taxa, médias, sequências) existe
+	// SEMPRE que houver partidas, com ou sem odd. O bloco abaixo só existe
+	// quando há odd — e `nil` quer dizer "não calculável", nunca zero.
+	//
+	// Antes, sem odd o sistema usava 1.00 e produzia ROI, lucro e drawdown com
+	// aparência de medida. Eram artefatos da odd fabricada.
+	FinancialsAvailable bool     `json:"financials_available"`
+	FinancialsNote      string   `json:"financials_note,omitempty"`
+	MaxDrawdown         *float64 `json:"max_drawdown"`
+	TotalStaked         *float64 `json:"total_staked"`
+	Profit              *float64 `json:"profit"`
+	ROI                 *float64 `json:"roi"`
+
+	// Yield repete ROI de propósito e o contrato diz isso em voz alta: sob stake
+	// fixa as duas grandezas são a MESMA divisão (lucro ÷ total apostado).
+	// Mantido só para não quebrar quem já lê o campo; a interface mostra um
+	// rótulo único "ROI / Yield" (AUD-002).
+	Yield *float64 `json:"yield"`
+
+	// EV permanece ausente do contrato. Calcular valor esperado exigiria uma
+	// probabilidade INDEPENDENTE; usar a taxa de acerto do próprio lote faz o EV
+	// colapsar no ROI já realizado. Ver aidocs e AUD-002.
+
+	// --- Recorte efetivamente analisado --------------------------------------
+	//
+	// O cap do plano gratuito é relativo a time.Now(), então a MESMA
+	// configuração analisa um conjunto diferente a cada dia. Devolver as datas
+	// efetivas torna o recorte auditável em vez de implícito.
+	EffectiveFrom string `json:"effective_from,omitempty"`
+	EffectiveTo   string `json:"effective_to,omitempty"`
 
 	// HistoryCapped indica se o resultado foi limitado ao histórico recente (plano
 	// gratuito); HistoryCapDays informa o tamanho da janela aplicada. O frontend usa
@@ -287,8 +369,15 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		return nil, err
 	}
 
+	// REV-P3 / correção 6: o recorte efetivamente analisado precisa ser auditável.
+	// O cap do plano gratuito é relativo a time.Now(), então a MESMA configuração
+	// analisa um conjunto diferente a cada dia. Guardamos as datas resultantes para
+	// devolvê-las no resultado — sem elas, dois backtests "iguais" com números
+	// diferentes são indistinguíveis de um bug.
+	var efetivoDe, efetivoAte time.Time
 	if maxAgeDays > 0 {
 		cutoff := time.Now().AddDate(0, 0, -maxAgeDays)
+		efetivoDe = cutoff
 		filtered := allMatches[:0:0]
 		for _, m := range allMatches {
 			if !m.MatchDate.Before(cutoff) {
@@ -296,6 +385,12 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			}
 		}
 		allMatches = filtered
+	}
+	if criteria.DateFrom != nil && (efetivoDe.IsZero() || criteria.DateFrom.After(efetivoDe)) {
+		efetivoDe = *criteria.DateFrom
+	}
+	if criteria.DateTo != nil {
+		efetivoAte = *criteria.DateTo
 	}
 
 	// AUD-003: janela temporal absoluta. Aplicada ANTES de qualquer outro
@@ -342,6 +437,23 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	asAway := func(m domain.Match) candidate {
 		return candidate{m, m.AwayTeamID, m.HomeTeamID, false, m.AwayCorners, m.HomeCorners, m.AwayGoals, m.HomeGoals, m.AwayOffsides, m.HomeOffsides, m.AwayShots, m.HomeShots, m.AwayShotsOnTarget, m.HomeShotsOnTarget}
 	}
+	// REV-P3 correção 1 — dupla contagem (AUD-021).
+	//
+	// Sem equipe selecionada, cada partida era expandida nas duas perspectivas.
+	// Para regra MATCH-LEVEL as duas produzem o MESMO valor, então a partida
+	// virava duas ocorrências idênticas: medido em produção, La Liga 2026 dava
+	// 138 entradas para 69 partidas e o Brasileirão 200 para 100. Isso dobrava
+	// contagem, exposição financeira, drawdown e sequências de derrota.
+	//
+	// A correção NÃO é `unique(match_id)` global: para regra TEAM-LEVEL
+	// (vitória/empate/dupla chance) as duas perspectivas são observações
+	// legítimas e diferentes — na mesma partida um time venceu e o outro não.
+	//
+	// Nota sobre o filtro de mando: com regra match-level e sem equipe, "Casa" e
+	// "Fora" já produziam uma entrada por partida (o laço abaixo descartava a
+	// outra perspectiva). O defeito era exclusivo de "Qualquer", e é só ele que
+	// muda aqui — a perspectiva do mandante vira a canônica.
+	matchLevel := isMatchLevelMetric(criteria.Metric)
 	for _, m := range allMatches {
 		if criteria.TeamID != nil {
 			if *criteria.TeamID == m.HomeTeamID {
@@ -350,6 +462,10 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			if *criteria.TeamID == m.AwayTeamID {
 				candidates = append(candidates, asAway(m))
 			}
+			continue
+		}
+		if matchLevel && criteria.HomeAway == "" {
+			candidates = append(candidates, asHome(m))
 			continue
 		}
 		candidates = append(candidates, asHome(m), asAway(m))
@@ -384,7 +500,11 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		// constante gravada no código. Foi removido junto com o eixo; Validate()
 		// agora recusa a requisição antes de chegar neste laço.
 		var total, threshold int
-		var odd float64
+
+		// odd é NULÁVEL: nil significa "esta partida não tem odd", e não
+		// "odd 1,00". oddSrc registra a procedência entrada a entrada.
+		var odd *float64
+		var oddSrc string
 
 		// hit é resolvido de duas formas diferentes, e por isso mora fora do switch.
 		//
@@ -419,28 +539,36 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				continue
 			}
 
-			var hasOdd bool
-			odd, hasOdd = c.match.OddForResultOutcome(resultOutcome(criteria.Metric, c.isHome))
-			if !hasOdd {
-				// Odd fixa informada na tela é o caminho do Simulador: deixa o
-				// usuário testar um cenário sem que o número vire evidência de
-				// mercado (oddsSourceSummary marca como "fixed", não confiável).
-				if criteria.FixedOdd > 0 {
-					odd = criteria.FixedOdd
-					break
+			oddMercado, hasOdd := c.match.OddForResultOutcome(resultOutcome(criteria.Metric, c.isHome))
+			if hasOdd {
+				if criteria.MaxOdds > 0 && oddMercado > criteria.MaxOdds {
+					continue
 				}
-				// AUD-012: sem odd, não se fabrica 1.0.
+				odd = &oddMercado
+				oddSrc = c.match.ResultOddsSource
+				oddsSources = append(oddsSources, oddSrc)
+				break
+			}
+			// Odd fixa informada na tela é o caminho do Simulador: deixa o
+			// usuário testar um cenário sem que o número vire evidência de
+			// mercado (marcado como "fixed", nunca confiável).
+			if o := oddOpcional(criteria.FixedOdd); o != nil {
+				odd, oddSrc = o, oddsSourceFixed
+				break
+			}
+			// Sem odd: no Simulador a partida CONTINUA, contribuindo para a
+			// parte estatística; no Engine/Discovery ela sai. AUD-012: em
+			// nenhum dos dois se fabrica 1.0.
+			if !criteria.AllowMissingOdds {
 				continue
 			}
-			if criteria.MaxOdds > 0 && odd > criteria.MaxOdds {
-				continue
-			}
-			oddsSources = append(oddsSources, c.match.ResultOddsSource)
 		case "goals":
 			// Gols: linha over/under, sem odds históricas — odd fixa simulada (ou 1.0).
 			total = c.goalsF + c.goalsA
 			threshold = criteria.GoalsThreshold
-			odd = fixedOddOrOne(criteria.FixedOdd)
+			if odd = oddOpcional(criteria.FixedOdd); odd != nil {
+				oddSrc = oddsSourceFixed
+			}
 		case "offsides", "shots", "shots_on_target":
 			// Métricas nullable no provedor: sem o dado o jogo não entra. Odd fixa simulada.
 			var f, a *int
@@ -456,7 +584,9 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				continue
 			}
 			total = *f + *a
-			odd = fixedOddOrOne(criteria.FixedOdd)
+			if odd = oddOpcional(criteria.FixedOdd); odd != nil {
+				oddSrc = oddsSourceFixed
+			}
 		default:
 			// Escanteios: única métrica com odd registrada por partida.
 			total = c.cornersF + c.cornersA
@@ -470,29 +600,61 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 				continue
 			}
 
-			var hasOdd bool
-			odd, hasOdd = c.match.OddForThreshold(criteria.CornersThreshold)
-			if criteria.MaxOdds > 0 {
-				if !hasOdd || odd > criteria.MaxOdds {
+			oddMercado, hasOdd := c.match.OddForThreshold(criteria.CornersThreshold)
+			switch {
+			case hasOdd:
+				// "Odds máximas" é filtro de ELEGIBILIDADE sobre odd de mercado:
+				// descarta a partida cuja odd registrada passe do teto.
+				if criteria.MaxOdds > 0 && oddMercado > criteria.MaxOdds {
+					continue
+				}
+				odd = &oddMercado
+				oddSrc = c.match.OddsSource
+				oddsSources = append(oddsSources, oddSrc)
+
+			case criteria.FixedOdd > 0:
+				// REV-P3 correção 2. O ramo de escanteios era o ÚNICO que não
+				// consultava a odd fixa, e por isso a métrica principal do
+				// produto devolvia zero ocorrência em toda simulação recente:
+				// as partidas sincronizadas pelo worker não têm corner_odds, e
+				// sem odd a partida era descartada.
+				//
+				// Medido em produção (Brasileirão 2026, anônimo): gols > 2
+				// devolvia 200 entradas; escanteios devolvia 0 em TODOS os
+				// limiares, inclusive com odd fixa informada.
+				//
+				// A odd fixa entra como CENÁRIO, marcada "fixed" — jamais
+				// "real". Não é odd histórica de mercado.
+				odd, oddSrc = oddOpcional(criteria.FixedOdd), oddsSourceFixed
+
+			default:
+				// Sem odd de mercado e sem odd fixa.
+				//
+				// Para o Simulador (AllowMissingOdds) a partida PERMANECE: ela
+				// sustenta a parte estatística, e o bloco financeiro fica
+				// indisponível. AUD-012 continua valendo — não se fabrica 1.0.
+				//
+				// Para o Strategy Engine e o Discovery a partida sai, como
+				// sempre saiu: pontuar estratégia exige série financeira.
+				if !criteria.AllowMissingOdds {
 					continue
 				}
 			}
-			if !hasOdd {
-				// AUD-012: fabricar odd 1.0 produz P/L estruturalmente negativo e
-				// sem significado. Sem odd, a partida não sustenta cálculo
-				// financeiro e fica fora do backtest.
-				continue
-			}
-			oddsSources = append(oddsSources, c.match.OddsSource)
 		}
 
 		if !resolvido {
 			hit = total > threshold
 		}
 
-		pl := -stake
-		if hit {
-			pl = stake * (odd - 1)
+		// P/L só existe quando existe odd. WIN = stake × (odd − 1); LOSS = −stake.
+		var pl *float64
+		if odd != nil {
+			v := -stake
+			if hit {
+				v = stake * (*odd - 1)
+			}
+			v = round2(v)
+			pl = &v
 		}
 
 		teamName := teamsByID[c.teamID].Name
@@ -506,7 +668,8 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			IsHome:     c.isHome,
 			Hit:        hit,
 			Odd:        odd,
-			ProfitLoss: round2(pl),
+			ProfitLoss: pl,
+			OddsSource: oddSrc,
 		}
 		switch criteria.Metric {
 		case MetricWin, MetricDraw, MetricWinOrDraw:
@@ -532,6 +695,33 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 	result := buildBacktestResult(criteria, entries, stake)
 	result.HistoryCapped = maxAgeDays > 0
 	result.HistoryCapDays = maxAgeDays
+
+	// REV-P3 / correção 6: janela efetiva. Preferimos o limite DECLARADO (cap do
+	// plano + date_from/date_to), porque é ele que define o que podia ter entrado.
+	// Sem limite declarado caímos na primeira/última partida realmente analisada —
+	// é o recorte observado, e dizemos qual dos dois é ao devolver só o que existe.
+	// Não assumimos ordenação de allMatches: varremos para achar os extremos.
+	var obsDe, obsAte time.Time
+	for _, m := range allMatches {
+		if obsDe.IsZero() || m.MatchDate.Before(obsDe) {
+			obsDe = m.MatchDate
+		}
+		if obsAte.IsZero() || m.MatchDate.After(obsAte) {
+			obsAte = m.MatchDate
+		}
+	}
+	if efetivoDe.IsZero() {
+		efetivoDe = obsDe
+	}
+	if efetivoAte.IsZero() {
+		efetivoAte = obsAte
+	}
+	if !efetivoDe.IsZero() {
+		result.EffectiveFrom = efetivoDe.Format("2006-01-02")
+	}
+	if !efetivoAte.IsZero() {
+		result.EffectiveTo = efetivoAte.Format("2006-01-02")
+	}
 	result.OddsSource, result.FinancialsReliable = oddsSourceSummary(criteria, oddsSources)
 	return result, nil
 }
@@ -544,23 +734,24 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 // reais. Basta uma sintética para o conjunto virar cenário hipotético — misturar
 // as duas produziria um número sem interpretação possível.
 func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool) {
-	// Métricas sem odd por partida usam a odd fixa informada pelo usuário: é
-	// explicitamente uma simulação, nunca uma medida de mercado.
+	// Métricas sem odd por partida (gols, impedimentos, chutes): só existe
+	// cenário quando o usuário informa a odd.
 	switch criteria.Metric {
 	case "goals", "offsides", "shots", "shots_on_target":
 		if criteria.FixedOdd > 0 {
-			return "fixed", false
+			return oddsSourceFixed, false
 		}
-		return "none", false
+		return oddsSourceNone, false
 	}
 
 	if len(sources) == 0 {
-		// Mercados de resultado aceitam odd fixa quando não há odd de mercado
-		// registrada — e nesse caso o resultado é cenário, não medição.
-		if isResultMetric(criteria.Metric) && criteria.FixedOdd > 0 {
-			return "fixed", false
+		// Escanteios e mercados de resultado aceitam odd fixa quando não há odd
+		// de mercado registrada — e nesse caso o resultado é CENÁRIO, não
+		// medição. É o caminho que destravou o backtest de escanteios.
+		if criteria.FixedOdd > 0 {
+			return oddsSourceFixed, false
 		}
-		return "none", false
+		return oddsSourceNone, false
 	}
 	for _, s := range sources {
 		if s != domain.OddsSourceReal {
@@ -569,6 +760,13 @@ func oddsSourceSummary(criteria FilterCriteria, sources []string) (string, bool)
 	}
 	return domain.OddsSourceReal, true
 }
+
+// Procedências que não vêm do banco. `fixed` é a odd digitada pelo usuário —
+// cenário hipotético; `none` é ausência de qualquer odd.
+const (
+	oddsSourceFixed = "fixed"
+	oddsSourceNone  = "none"
+)
 
 func (u *FilterUsecase) teamIndex(ctx context.Context, leagueID int64) (map[int64]domain.Team, error) {
 	teams, err := u.teams.List(ctx, &leagueID)
@@ -612,21 +810,30 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	peak := 0.0
 	maxDD := 0.0
 
+	// comFinanceiro conta as entradas que têm odd. O bloco financeiro só é
+	// publicado quando TODAS as entradas têm — uma série com buracos produziria
+	// ROI e drawdown sobre uma amostra diferente da estatística, e as duas
+	// apareceriam lado a lado como se falassem da mesma coisa.
+	comFinanceiro := 0
+
 	for _, e := range entries {
 		totalCorners += e.TotalCorners
 		totalGoals += e.TotalGoals
 		totalOffsides += e.TotalOffsides
 		totalShots += e.TotalShots
 		totalSot += e.TotalShotsOnTarget
-		totalStaked += stake
-		profit += e.ProfitLoss
-		cumulative += e.ProfitLoss
-		if cumulative > peak {
-			peak = cumulative
-		}
-		dd := peak - cumulative
-		if dd > maxDD {
-			maxDD = dd
+
+		if e.ProfitLoss != nil {
+			comFinanceiro++
+			totalStaked += stake
+			profit += *e.ProfitLoss
+			cumulative += *e.ProfitLoss
+			if cumulative > peak {
+				peak = cumulative
+			}
+			if dd := peak - cumulative; dd > maxDD {
+				maxDD = dd
+			}
 		}
 
 		if e.Hit {
@@ -658,13 +865,23 @@ func buildBacktestResult(criteria FilterCriteria, entries []BacktestEntry, stake
 	result.Metric = criteria.Metric
 	result.LongestWinStreak = maxWin
 	result.LongestLoseStreak = maxLose
-	result.MaxDrawdown = round2(maxDD)
-	result.TotalStaked = round2(totalStaked)
-	result.Profit = round2(profit)
-	if totalStaked > 0 {
-		roi := 100 * profit / totalStaked
-		result.ROI = round2(roi)
-		result.Yield = round2(roi)
+
+	// Bloco financeiro: publicado só com série completa. Fora disso os campos
+	// ficam nil — "não calculável" —, nunca zero.
+	if comFinanceiro == n && totalStaked > 0 {
+		dd := round2(maxDD)
+		ts := round2(totalStaked)
+		pf := round2(profit)
+		// ROI = Yield = lucro ÷ total apostado. Sob stake fixa são a mesma
+		// divisão; o contrato expõe os dois só por compatibilidade e a tela usa
+		// rótulo único (AUD-002).
+		roi := round2(100 * profit / totalStaked)
+		result.FinancialsAvailable = true
+		result.MaxDrawdown, result.TotalStaked, result.Profit = &dd, &ts, &pf
+		result.ROI, result.Yield = &roi, &roi
+	} else if n > 0 {
+		result.FinancialsNote = "Sem odd para estas partidas: o resultado abaixo é " +
+			"estatístico. Informe uma odd fixa para simular um cenário financeiro."
 	}
 	return result
 }

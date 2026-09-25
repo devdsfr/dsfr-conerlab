@@ -140,6 +140,18 @@ func (e *Engine) RunStrategy(ctx context.Context, s *domain.Strategy) (*Evaluati
 // critérios mínimos — repetir o backtest só para gravá-lo dobraria o custo do
 // ciclo de descoberta sem produzir nenhum número novo.
 func (e *Engine) PersistResult(ctx context.Context, strategyID int64, res *usecase.BacktestResult) (*Evaluation, error) {
+	// REV-P3: sem série financeira completa não existe ROI, drawdown nem lucro,
+	// e todo o scoring proprietário depende dos três. Pontuar assim mesmo faria
+	// os campos virarem zero — e zero aqui significaria "rendeu nada" em vez de
+	// "não dá para medir", que é a confusão que o AUD-002 existe para impedir.
+	//
+	// O Simulador é quem aceita partidas sem odd (AllowMissingOdds); Engine e
+	// Discovery nunca as recebem, então esta guarda não deve disparar em
+	// operação normal. Se disparar, é sinal de que alguém mudou o caminho.
+	if !res.FinancialsAvailable {
+		return nil, fmt.Errorf("backtest sem série financeira completa: não é possível pontuar a estratégia")
+	}
+
 	// execução anterior ANTES de gravar a atual — base dos deltas do Health.
 	prev, err := e.repo.LastBacktests(ctx, strategyID, 1)
 	if err != nil {
@@ -172,7 +184,7 @@ func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
 	winRate := r.HitRate / 100
 	sampleNorm := clamp01(float64(r.MatchCount) / sampleCap)
 	invVar := 1 - 4*winRate*(1-winRate) // variância Bernoulli normalizada (p=0.5 → 0)
-	invDD := 1 - clamp01(r.MaxDrawdown/drawdownCapStk)
+	invDD := 1 - clamp01(derefOrZero(r.MaxDrawdown)/drawdownCapStk)
 	consistency := formulas.ConsistencyIndex(winRate, invVar, invDD, sampleNorm)
 	confidence := formulas.ConfidenceScore(sampleNorm, consistency/100, invVar, sampleNorm)
 
@@ -181,8 +193,8 @@ func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
 		Games:      r.MatchCount,
 		Wins:       r.Hits,
 		Losses:     r.Misses,
-		ROI:        ptr(r.ROI),
-		Yield:      ptr(r.Yield),
+		ROI:        r.ROI,
+		Yield:      r.Yield,
 
 		// AUD-002: EV fica NULO porque não é calculado em lugar nenhum.
 		//
@@ -196,8 +208,8 @@ func backtestRow(strategyID int64, r *usecase.BacktestResult) *domain.Backtest {
 		// (AUD-003), o valor honesto é NULL — "não calculado" — e não um número
 		// emprestado de outra métrica.
 		EV:               nil,
-		Drawdown:         ptr(r.MaxDrawdown),
-		Profit:           ptr(r.Profit),
+		Drawdown:         r.MaxDrawdown,
+		Profit:           r.Profit,
 		Confidence:       ptr(round2(confidence)),
 		AlgorithmVersion: formulas.Version,
 	}
@@ -209,8 +221,8 @@ func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtes
 	var dROI, dDD, dCons float64
 	if prev != nil {
 		winRate := r.HitRate / 100
-		dROI = clampD((r.ROI - deref(prev.ROI)) / roiCapPct)
-		dDD = clampD((r.MaxDrawdown - deref(prev.Drawdown)) / drawdownCapStk)
+		dROI = clampD((derefOrZero(r.ROI) - deref(prev.ROI)) / roiCapPct)
+		dDD = clampD((derefOrZero(r.MaxDrawdown) - deref(prev.Drawdown)) / drawdownCapStk)
 		prevWinRate := 0.0
 		if prev.Games > 0 {
 			prevWinRate = float64(prev.Wins) / float64(prev.Games)
@@ -238,8 +250,8 @@ func healthRow(strategyID int64, r *usecase.BacktestResult, prev *domain.Backtes
 // scoresRow calcula os scores proprietários (Catálogo 23, 24, 26–32).
 func scoresRow(strategyID int64, r *usecase.BacktestResult, health, trend float64) *domain.StrategyScores {
 	winRate := r.HitRate / 100
-	roiNorm := clamp01(r.ROI / roiCapPct)
-	invDD := 1 - clamp01(r.MaxDrawdown/drawdownCapStk)
+	roiNorm := clamp01(derefOrZero(r.ROI) / roiCapPct)
+	invDD := 1 - clamp01(derefOrZero(r.MaxDrawdown)/drawdownCapStk)
 	sampleNorm := clamp01(float64(r.MatchCount) / sampleCap)
 	invVar := 1 - 4*winRate*(1-winRate)
 	consistency := formulas.ConsistencyIndex(winRate, invVar, invDD, sampleNorm)

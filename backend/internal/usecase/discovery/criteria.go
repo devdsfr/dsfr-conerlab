@@ -168,11 +168,15 @@ func (c Criteria) withDefaults() Criteria {
 // drawdownPct converte o drawdown máximo (expresso em unidades de stake pelo
 // motor de backtest) em percentual do capital movimentado — é assim que o doc 08
 // enuncia o limite ("Drawdown <= 20%").
-func drawdownPct(r *usecase.BacktestResult) float64 {
-	if r.TotalStaked <= 0 {
-		return 0
+// REV-P3: os campos financeiros passaram a ser nuláveis. Sem série financeira
+// não existe drawdown percentual — e devolver 0 aqui aprovaria a combinação por
+// "risco zero", que é o oposto da verdade. O segundo retorno diz se o número
+// existe.
+func drawdownPct(r *usecase.BacktestResult) (float64, bool) {
+	if r.TotalStaked == nil || *r.TotalStaked <= 0 || r.MaxDrawdown == nil {
+		return 0, false
 	}
-	return 100 * r.MaxDrawdown / r.TotalStaked
+	return 100 * *r.MaxDrawdown / *r.TotalStaked, true
 }
 
 // rejection descreve por que uma combinação foi descartada. Serve para
@@ -231,16 +235,23 @@ func (c Criteria) validate(r *usecase.BacktestResult) rejection {
 	if r.HitRate < c.MinWinRate {
 		return rejectWinRate
 	}
-	if r.ROI < c.MinROI {
-		return rejectROI
-	}
-	if r.Yield < c.MinYield {
-		return rejectYield
-	}
-	if r.Yield <= 0 {
+	// Sem série financeira completa não há ROI, yield nem drawdown para testar.
+	// Descartar é o comportamento correto: publicar estratégia exige medida
+	// financeira, e ausência de medida nunca pode passar por medida favorável.
+	if !r.FinancialsAvailable || r.ROI == nil || r.Yield == nil {
 		return rejectNonPositiveProfit
 	}
-	if drawdownPct(r) > c.MaxDrawdown {
+	if *r.ROI < c.MinROI {
+		return rejectROI
+	}
+	if *r.Yield < c.MinYield {
+		return rejectYield
+	}
+	if *r.Yield <= 0 {
+		return rejectNonPositiveProfit
+	}
+	dd, ddOK := drawdownPct(r)
+	if !ddOK || dd > c.MaxDrawdown {
 		return rejectDrawdown
 	}
 	return ""

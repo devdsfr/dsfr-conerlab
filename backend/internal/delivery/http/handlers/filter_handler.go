@@ -62,6 +62,12 @@ func (h *FilterHandler) Run(c *gin.Context) {
 		ShotsThreshold:         req.ShotsThreshold,
 		ShotsOnTargetThreshold: req.ShotsOnTargetThreshold,
 		FixedOdd:               req.FixedOdd,
+
+		// O Simulador aceita partidas sem odd: o usuário tem direito ao
+		// resultado ESTATÍSTICO (amostra, acertos, taxa) mesmo quando não há
+		// cenário financeiro possível. Sem isto, a métrica principal do produto
+		// devolvia zero ocorrência sempre que a base não tinha corner_odds.
+		AllowMissingOdds: true,
 	}
 
 	// Cap de histórico do plano gratuito: sem token, ou com token de usuário sem

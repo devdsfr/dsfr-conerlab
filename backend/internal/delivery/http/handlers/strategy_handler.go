@@ -30,6 +30,23 @@ type createStrategyRequest struct {
 	Description string `json:"description"`
 	Definition  string `json:"definition" binding:"required"` // JSON (mesmo formato do Simulador)
 	Favorite    bool   `json:"favorite"`
+
+	// REV-P3 / correção 5: de onde veio a estratégia. Só "simulator" é aceito do
+	// cliente; qualquer outro valor cai no default "user". "discovery" NÃO pode ser
+	// reivindicado por requisição — ele significa "passou pelo Discovery Engine,
+	// com holdout e correção de múltiplos testes", e é gravado só pelo motor.
+	Origin string `json:"origin"`
+}
+
+// origemPermitida traduz o campo `origin` da requisição para o valor gravado.
+// Uma estratégia salva do Simulador é exatamente isso: um recorte que o usuário
+// montou à mão e que NÃO foi submetido a holdout nem a correção de múltiplas
+// comparações. Marcá-la como "discovery" a faria parecer validada.
+func origemPermitida(v string) string {
+	if v == "simulator" {
+		return "simulator"
+	}
+	return "user"
 }
 
 // Create godoc
@@ -52,10 +69,12 @@ func (h *StrategyHandler) Create(c *gin.Context) {
 		Name:        req.Name,
 		Description: req.Description,
 		Definition:  req.Definition,
-		Origin:      "user",
+		Origin:      origemPermitida(req.Origin),
 		Visibility:  "private",
-		Active:      true,
-		Favorite:    req.Favorite,
+		// Active = true só quer dizer "aparece na lista do usuário". Não promove a
+		// estratégia a validada nem aprovada: isso depende do Discovery Engine.
+		Active:   true,
+		Favorite: req.Favorite,
 	}
 	if err := h.repo.Create(c.Request.Context(), s); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

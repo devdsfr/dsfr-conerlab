@@ -3088,3 +3088,203 @@ Backtest ou OpenAI; nenhuma escrita.
 - Fullscreen/modal dos gráficos e tooltip nativo do componente.
 - Equipes duplicadas (Athletic Club 442 "Brazil" × 1198 "Espanha").
 - Cache HTTP servindo payload antigo após deploy.
+
+---
+
+## REV-P3 — Simulador / Backtest
+
+**Data:** 2026-09-24 · **Status:** ⏳ Fase A concluída. Nenhuma alteração de código.
+
+### FASE A — Arquitetura e fluxo
+
+| camada | arquivo | linhas |
+|---|---|---|
+| UI | `features/filters/filters.component.{ts,html}` | 376 + 380 |
+| API | `POST /api/v1/filters/run` (+ `/filters` save/list, `/exports/filters/run`) | — |
+| handler | `handlers/filter_handler.go` | 206 |
+| usecase/engine | `usecase/filter_usecase.go` — `RunBacktest` + `buildBacktestResult` | 680 |
+| repository | `MatchRepo.AllMatches(leagueID, seasonIDs)` — `ORDER BY match_date ASC`, `status='FINALIZADO'` | — |
+| tabela | `matches` | — |
+
+**Fluxo:** UI monta `FilterRunRequest` → handler separa `league_id`/`season_ids` de
+`FilterCriteria` → aplica cap de histórico → `RunBacktest` carrega `AllMatches`, aplica
+janela temporal, expande cada partida em *candidates*, filtra por mando/métrica/odd, monta
+`entries` → `buildBacktestResult` agrega.
+
+**Campos, provados pelo código** (não pelo nome):
+
+| campo | significado real |
+|---|---|
+| `match_count` | `len(entries)` — **entradas**, não partidas (ver DEFEITO 1) |
+| `hits` / `misses` | entradas em que `total > threshold` (ou desfecho, nos mercados de resultado) |
+| `hit_rate` | `100 × hits / len(entries)` |
+| `odd` | odd registrada da partida, ou `FixedOdd`, ou `1.0` via `fixedOddOrOne` |
+| `profit_loss` | `stake × (odd−1)` no acerto, `−stake` no erro |
+| `total_staked` | `stake × len(entries)` |
+| `ROI` | `100 × profit / total_staked` |
+| `Yield` | **literalmente o mesmo valor** (`result.Yield = round2(roi)`) |
+| `EV` | **não existe** no contrato do backend |
+| `max_drawdown` | maior `pico − acumulado` da curva de P/L, **em unidades monetárias** |
+| `odds_source` | `real` / `synthetic` / `fixed` / `none` |
+| `financials_reliable` | `true` só quando todas as odds são `real` |
+
+### DEFEITO 1 — dupla contagem (AUD-021) CONFIRMADA em produção
+
+```go
+for _, m := range allMatches {
+    if criteria.TeamID != nil { ...; continue }
+    candidates = append(candidates, asHome(m), asAway(m))   // duas por partida
+}
+```
+
+Sem equipe selecionada, cada partida entra duas vezes. Medido em produção:
+
+| simulação | `match_count` | `match_id` distintos |
+|---|---|---|
+| La Liga 2026 · gols > 2 · odd 1.50 | **138** | **69** |
+| Brasileirão 2026 · gols > 2 · odd 1.50 | **200** | **100** |
+
+Exatamente 2×. Como a métrica é o TOTAL da partida, as duas perspectivas produzem o
+**mesmo valor**, então cada partida vira duas ocorrências idênticas.
+
+Consequências medidas (La Liga 2026):
+
+| grandeza | valor exibido | valor correto |
+|---|---|---|
+| ocorrências | 138 | 69 |
+| total apostado | R$ 13.800 | R$ 6.900 |
+| lucro | −R$ 2.100 | −R$ 1.050 |
+| ROI | −15,22% | −15,22% (não muda) |
+| drawdown | 2.700 | inflado — cada perda vira duas seguidas |
+| `longest_lose_streak` | — | inflado pelo mesmo motivo |
+
+`hit_rate` e `ROI` sobrevivem porque numerador e denominador dobram juntos. **Contagem,
+exposição financeira, drawdown e sequências não sobrevivem.**
+
+### DEFEITO 2 — "gols funciona, escanteios dá zero" REPRODUZIDO, com causa
+
+| simulação (Brasileirão 2026, anônimo) | `match_count` | `odds_source` |
+|---|---|---|
+| gols > 2, odd fixa 1.50 | **200** | `fixed` |
+| escanteios > 4, 5, 6, 7, 8, 9, 10 | **0 em todos** | `none` |
+| escanteios > 8 **com odd fixa 1.50** | **0** | `none` |
+
+Cadeia causal provada no código:
+
+1. O ramo de escanteios exige odd registrada: `odd, hasOdd = c.match.OddForThreshold(...)`;
+   `if !hasOdd { continue }` (AUD-012 — correto em si, não fabrica 1.0).
+2. **`FixedOdd` NUNCA é consultada no ramo de escanteios.** Os mercados de resultado têm
+   esse fallback explícito; escanteios não. Por isso informar odd fixa não muda nada.
+3. Gols/impedimentos/chutes usam `fixedOddOrOne(criteria.FixedOdd)`, que devolve **1.0**
+   quando não há odd — nunca descartam partida.
+4. As partidas recentes (as únicas dentro do cap de 90 dias) vieram do worker, que não
+   grava `corner_odds`.
+
+Resultado: **a métrica principal do produto devolve 0 ocorrências, enquanto a secundária
+devolve 200.** Não é ausência de dado de escanteios — os escanteios existem; é ausência de
+odd.
+
+E `fixedOddOrOne` devolvendo 1.0 significa `pl = stake × (1−1) = 0` no acerto e `−stake` no
+erro: **P/L estruturalmente negativo**, a mesma classe de problema do AUD-012, viva nas
+métricas sem odd.
+
+### DEFEITO 3 — EV fabricado no frontend
+
+O backend recusa calcular EV (documentado em `aidocs.go`: *"exigiria uma probabilidade
+independente... com a taxa de acerto do próprio lote o EV colapsa no ROI realizado"*).
+
+O frontend calcula assim mesmo:
+
+```ts
+expectedRoiPct(r, odd) { return (this.hitRateFraction(r) * odd - 1) * 100; }
+breakEvenOdd(r)        { return 1 / this.hitRateFraction(r); }
+readonly oddScenarios = [1.5, 1.8, 2.0, 2.5, 3.0, 4.0];
+```
+
+É a fórmula de valor esperado usando a taxa de acerto **do próprio lote** como
+probabilidade — exatamente o que o backend evita. Exibido como **"ROI esperado por
+aposta"** e como tabela de seis odds marcando quais dão retorno positivo.
+
+Três problemas ao mesmo tempo: EV fabricado; linguagem preditiva ("esperado"); e uma grade
+que aponta quais odds compensam, o que resvala em recomendação.
+
+### O que está CORRETO
+
+- `AllMatches` filtra `status='FINALIZADO'` e `ORDER BY match_date ASC`; `sortByDate` é
+  chamado antes do laço de drawdown/streak → ordem cronológica garantida.
+- `LastNGames` pega os N mais recentes (`list[len-N:]` sobre lista ASC).
+- Janela temporal `[DateFrom, DateTo)` aplicada **antes** de `LastNGames` (AUD-003).
+- `OpponentTier` recusado por `Validate()` (AUD-004).
+- `odds_source` + `financials_reliable` implementados (AUD-001); `synthetic`/`fixed`/`none`
+  nunca marcam financeiro como confiável.
+- **EV ausente** do contrato do backend.
+- A UI exibe **"ROI / Yield"** como rótulo único com um valor — não os apresenta como dois
+  indicadores independentes (AUD-002).
+- `pl = stake × (odd−1)` / `−stake` é a fórmula correta.
+
+### Situações auditadas
+
+**Odds.** Base sem nenhuma odd `real` (medido no REV-P2: só `synthetic` e `unknown`). Logo
+`financials_reliable` é sempre `false` hoje. O campo **"Odds máximas"** filtra partidas
+cuja odd registrada exceda o limite — e, quando não há odd registrada, **descarta a
+partida** (`if !hasOdd || odd > MaxOdds { continue }`). Não é um teto de cenário: é um
+filtro de elegibilidade.
+
+**ROI/Yield/EV.** ROI = Yield = `100 × profit / total_staked`, mesma fórmula, mesmo
+denominador, mesma unidade. EV não existe no backend; existe de fato no frontend como
+`expectedRoiPct`.
+
+**Drawdown (AUD-006).** Absoluto, em unidades monetárias, sem normalizar por stake nem por
+tamanho da amostra. Continua com a fragilidade registrada no AUD-006, agora agravada pela
+dupla contagem.
+
+**Occurrences.** `entries[]` traz `match_id`, data, equipe, adversário, mando, total, odd e
+P/L — auditável. A tabela da tela usa `r.entries` diretamente, então agregado e tabela não
+divergem. Mas com a dupla contagem a tabela lista **a mesma partida duas vezes**.
+
+**Salvar.** `createStrategy` grava `Origin: "user"` fixo, `Visibility: "private"`,
+`Active: true`. Não vira `origin=discovery`, então **não** é promovida a estratégia
+validada — a proteção existe. Porém **não há `origin="simulator"`**: o que veio do
+Simulador é indistinguível do que foi criado à mão, exceto por texto livre na descrição.
+
+**Reprodutibilidade.** O Simulador **não tem estado na URL** — nenhum `ActivatedRoute` no
+componente. Recarregar perde tudo. Pior: `maxAgeDays = 90` para anônimo é relativo a
+`time.Now()`, então **a mesma simulação muda de resultado conforme o dia**.
+
+**Compounding.** Não existe. Stake é sempre fixa.
+
+**Testes existentes.** `filter_odds_source_test.go`, `filter_result_test.go`,
+`filter_tier_test.go`. **Lacunas:** nenhum teste de dupla contagem, de `match_count` vs
+partidas distintas, do caso determinístico 15/5/75%/R$250/12,5%, de drawdown, de ordem
+cronológica, nem do estado "nenhuma partida" vs "métrica indisponível".
+
+### Plano mínimo de correção proposto (não executado)
+
+1. **Deduplicar por partida** quando a métrica for de TOTAL e não houver equipe
+   selecionada — uma entrada por `match_id`. Corrige contagem, exposição, drawdown e
+   streaks de uma vez. *(maior impacto)*
+2. **Permitir `FixedOdd` no ramo de escanteios**, marcando `odds_source="fixed"` — destrava
+   a métrica principal sem fabricar odd de mercado.
+3. **Eliminar `fixedOddOrOne` → 1.0**: sem odd, o resultado é estatístico (taxa de acerto),
+   e os campos financeiros ficam nulos em vez de estruturalmente negativos.
+4. **Remover o EV do frontend** ou reescrevê-lo como cenário explícito, sem "esperado".
+5. **`origin="simulator"`** ao salvar do Simulador.
+6. **Estado na URL** e cap de histórico absoluto (data de corte) em vez de relativo.
+7. **Separar visualmente** resultado estatístico de cenário financeiro.
+
+### Riscos
+
+- O item 1 muda `match_count`, `total_staked` e `profit` de toda simulação sem equipe —
+  números publicados hoje vão mudar. É correção, não regressão, mas precisa ser anunciada.
+- O item 3 zera campos financeiros que hoje aparecem preenchidos (com valores sem sentido).
+- Nenhuma alteração proposta toca AUD-001..004.
+
+### Limitações desta investigação
+
+- Rodei como **usuário anônimo**, então todo backtest veio limitado a 90 dias
+  (`history_capped=true`). O CASO C (La Liga 2025) caiu inteiro fora da janela — o zero ali
+  é legítimo, não defeito. **Não consegui exercitar o caminho das odds `synthetic`** (base
+  legada de 14/07, fora da janela).
+- Console do Neon não autenticado; evidência obtida pela API de produção.
+
+## REV-P3 = PARCIAL — Fase A concluída

@@ -4134,3 +4134,306 @@ Conforme §6 e §7 do prompt: **nenhum destes virou ✅ por teste local**, e nen
 criado para forjar amostra.
 
 ## REV-P3 = PARCIAL — correções finais implementadas localmente, aguardando novo deploy/validação
+
+---
+
+## REV-P3 — Deploy e validação focada das pendências
+
+> **Nota de restauração (25/09/2026).** Esta seção e a seguinte foram escritas nas
+> passagens anteriores, mas **desapareceram do arquivo antes de serem commitadas**: o
+> `CORRECOES_AUDITORIA.md` no disco foi substituído pela versão do HEAD (convertida para
+> CRLF), provavelmente por editor ou `git checkout` no Windows. Nenhuma delas chegou a
+> nenhum commit. Foram restauradas com o texto original, sem alteração de conteúdo.
+
+Data: **25/09/2026**. Escopo: somente os itens 11, 16, 32 e 33 e os pontos associados.
+Os demais itens mantêm a evidência da Fase D. Toda evidência abaixo é de produção
+(`https://dsfrcornerlab.com.br`), usuário anônimo.
+
+### Correção de registro anterior
+
+O resumo final da Fase E registrou **"27 ✅ / 6 ⚠️ / 3 ❌ / 4 NA"**. Está **errado**. A
+tabela dos 40 itens logo acima dele, conferida linha a linha, soma:
+
+- ✅ 30 — 1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 13, 14, 17, 19, 20, 21, 22, 23, 24, 25, 27, 28, 31, 34–40
+- ⚠️ 5 — 7, 16, 29, 30, 33
+- ❌ 2 — 11, 32
+- NA 3 — 15, 18, 26
+
+A tabela estava certa; a linha de resumo, não. O texto anterior não foi alterado — esta
+nota é a correção.
+
+### Deploy
+
+| Item | Valor |
+|---|---|
+| Branch | `main` |
+| Commit | `25931e5` — "REV-P3 pendencias: estado vazio, metric_scope, accounting, max_odds_applicable" |
+| origin/main | `25931e5` (push feito pelo Daniel; eu não manipulo credenciais) |
+| Backend | **no ar** — resposta de `/filters/run` traz `accounting` e `metric_scope` |
+| Frontend | **no ar** — mensagem "Nenhuma partida encontrada…", aviso de `max_odds` e cabeçalhos "Mandante/Visitante" renderizados |
+| Migration | nenhuma |
+| Erros | nenhum |
+
+### Estado vazio — La Liga 2025
+
+`/filtros?league=8&seasons=12&metric=corners&threshold=8&last_n=0&stake=100&fixed_odd=1.5`
+
+Backend: `match_count 0 · odds_source "none"` (antes deste deploy: `"fixed"`) ·
+financeiro `null` · `accounting` todo zero.
+
+UI exibe *"Nenhuma partida encontrada para os filtros selecionados. Não há amostra para
+analisar, então não existem taxa de acerto, média nem resultado financeiro para este
+recorte — nem como zero."* Verificado ausente: "Taxa de acerto", "Média de", "Maior
+sequência", "ROI / Yield", "Drawdown máximo" e o banner "Cenário com odd fixa".
+
+### Métrica indisponível — Champions 2026 · Egnatia Rrogozhinë
+
+Nenhuma liga/temporada inteira está 100 % sem métrica (varredura de 20 recortes ×
+impedimentos/chutes/chutes no gol). O caso real foi obtido por filtro de equipe legítimo:
+
+`/filtros?league=23&seasons=37&team=4748&metric=offsides&threshold=1&last_n=0&stake=100`
+
+Backend: `match_count 0 · observations_in_window 4 · excluded_no_metric 4 ·
+matches_in_window 108 · odds_source "none"` · financeiro `null`.
+
+UI: estado próprio, *"Esta estatística não está disponível para a amostra selecionada"*,
+sem nenhum card estatístico ou financeiro.
+
+❌ **Defeito introduzido por mim, achado nesta validação.** O texto seguinte diz:
+
+> O recorte tem **108** partida(s), mas o provedor não publicou esta métrica em
+> **nenhuma** delas.
+
+É **falso**: 53 das 108 partidas da Champions têm impedimentos. O recorte da equipe são
+**4** observações. `sample-state` usa `matches_in_window` (contagem antes da regra,
+incluindo o filtro de equipe) onde deveria usar `observations_in_window`. Os testes locais
+não pegaram porque em nenhum deles havia filtro de equipe. Correção de uma linha,
+**não aplicada** — esta passagem era só deploy, validação e registro.
+
+### Zero real — Brasileirão 2026 · gols · "acima de 0"
+
+`match_count 100 · 91 acertos · 9 erros`. As 9 partidas 0×0 aparecem na tabela com
+**0**, "Erro", `−100` — estado `com-amostra`, nem vazio nem indisponível. Exemplo:
+`match_id 16462`, 2026-07-23, Botafogo × Vitória, `total_goals 0`.
+
+Financeiro com odd 1,20: `91 × 20 − 9 × 100 = 1.820 − 900 = 920`; `920 ÷ 10.000 = 9,2 %`.
+UI: lucro 920, ROI 9,2 %. Bate.
+
+### Coluna Mando
+
+**Match-level** (escanteios, Brasileirão 2026): cabeçalhos
+`Data · Mandante · Visitante · Escanteios · Resultado · Odd · Resultado (stake)`.
+**Sem** coluna Mando. Primeira linha: `2026-07-16 | Vitoria | Vasco DA Gama | 5 | Erro | — | —`.
+
+**Team-level** (vitória, Brasileirão 2026): cabeçalhos
+`Data · Equipe · Adversário · Mando · Vitória · Resultado · Odd · Resultado (stake)`.
+200 linhas: **100 Casa + 100 Fora**. Mesma partida 16442:
+
+```
+2026-07-16 | Vitoria       | Vasco DA Gama | Casa | Acerto | 1.8 fixa |  +80
+2026-07-16 | Vasco DA Gama | Vitoria       | Fora | Erro   | 1.8 fixa | −100
+```
+
+A perspectiva é real e a coluna corresponde a ela.
+
+### Accounting — identidade em 5 configurações de produção
+
+| Config | obs. | eleg. | sem métrica | teto odd | sem odd | mando | outras | fecha |
+|---|---|---|---|---|---|---|---|---|
+| C1 Brasileirão · impedimentos > 2 | 100 | 87 | 13 | 0 | 0 | 0 | 0 | ✅ |
+| C2 Brasileirão · vitória · só fora | 200 | 100 | 0 | 0 | 0 | 100 | 0 | ✅ |
+| C3 Champions · chutes > 20 | 108 | 59 | 49 | 0 | 0 | 0 | 0 | ✅ |
+| C4 Brasileirão · escanteios · max_odds 5 | 100 | 100 | 0 | 0 | 0 | 0 | 0 | ✅ |
+| C5 Egnatia · impedimentos | 4 | 0 | 4 | 0 | 0 | 0 | 0 | ✅ |
+
+C2 prova que o team-level conta **observações** (200) e não partidas (100).
+UI de C1: *"Composição da amostra: 100 partidas no recorte · 87 analisadas · 13 fora:
+13 sem a estatística publicada pelo provedor."*
+
+### max_odds_applicable
+
+**Caso A — sem odd aplicável.** C4: `max_odds_requested 5 · max_odds_applicable 0`. UI:
+*"'Odds máximas' não teve efeito. O teto de 'odds máximas' (5) não foi aplicado a nenhuma
+partida: nenhuma delas tem odd de mercado registrada no banco para comparar."* ✅
+
+**Caso B — com odd aplicável.** **NA.** Varredura de todas as 20 liga/temporada ×
+escanteios e vitória (40 consultas, 2.586 observações): `max_odds_applicable = 0` em
+todas. Não existe amostra em produção. Nenhum dado foi criado. Coberto apenas por
+`TestMaxOdds_TemEfeitoQuandoHaOddDeMercado` (local).
+
+### Achado novo, pré-existente (não é regressão desta passagem)
+
+Nos mercados de **resultado** (vitória, empate, não perde), a tabela mostra a coluna
+"Vitória" com **0** em todas as linhas, e o card exibe **"Média de vitória 0"**.
+
+Causa: `entryTotal()` e `averageValue()` em `filters.component.ts` não têm ramo para
+esses mercados e caem no `default`, que devolve `total_corners`/`average_corners` — campos
+que o backend **não preenche** para resultado. É ausência exibida como zero, no próprio
+Simulador. Existe desde `fcd2854` (27/07/2026), quando os mercados de resultado entraram.
+Não foi introduzido pelo REV-P3, mas afeta o item 7.
+
+### Escanteios NULL → 0 (reafirmado, não corrigido)
+
+- Origem provada: `internal/usecase/sync_usecase.go:119-124` converte `nil` em `0` antes de gravar.
+- Schema: `home_corners/away_corners INT NOT NULL DEFAULT 0` (`migrations/001_init.sql`).
+- Correção exige migration + `domain.Match.HomeCorners` → `*int` + propagação por Comparador (P2) e Dashboard (P1).
+- Os zeros já gravados não guardam se eram ausência — não há como recuperar.
+
+Pendência fora do fechamento imediato do P3.
+
+### Regressão (commit `25931e5`)
+
+| Comando | Resultado |
+|---|---|
+| `gofmt -l internal/ pkg/ cmd/` | vazio |
+| `go build ./...` | OK |
+| `go vet ./...` | OK |
+| `go test -count=1 ./...` | 9 pacotes `ok` |
+| `npx ng build --configuration production` | OK — 642,16 kB |
+| `sample-state.spec.ts` (node:assert) | 13/13 |
+| `simulator-url-state.spec.ts` (node:assert) | 11/11 |
+| Runner de componente Angular | **NA — inexistente** |
+
+Nenhuma regressão nos itens já aprovados: os números de CASO A (100 / 67 / 50 / 0,5 %) e
+CASO B (69 / 35 / −1.650 / −23,91 %) seguem idênticos.
+
+### Itens afetados
+
+| # | Item | Antes | Agora | Evidência de produção |
+|---|---|---|---|---|
+| 11 | `metric_sample_size` | ❌ | ✅ | `accounting` em 5 configurações, identidade fecha em todas; UI "100 no recorte · 87 analisadas · 13 fora" |
+| 16 | Geral/Casa/Fora | ⚠️ | ✅ | match-level sem coluna Mando; team-level 100 Casa + 100 Fora, par da partida 16442 |
+| 32 | No-data explícito | ❌ | ✅ | La Liga 2025: mensagem explícita, nenhum card de 0 %, média 0, sequência, ROI ou drawdown; `odds_source none` |
+| 33 | Metric-unavailable explícito | ⚠️ | ⚠️ | Estado e mensagem corretos, sem painel enganoso — **mas a frase de contagem é falsa com filtro de equipe** ("108 partidas… nenhuma delas") |
+| 7 | Ausência ≠ zero | ⚠️ | ⚠️ | Continua: NULL→0 do pipeline **e** o novo achado dos mercados de resultado ("Média de vitória 0") |
+
+### Status total dos 40 itens
+
+- ✅ **33** — os 30 anteriores + 11, 16, 32
+- ⚠️ **4** — 7, 29, 30, 33
+- ❌ **0**
+- NA **3** — 15, 18, 26 (justificativas na Fase E, inalteradas)
+
+### O que impede o fechamento
+
+| # | Bloqueio | Natureza |
+|---|---|---|
+| 33 | Frase de contagem usa `matches_in_window` em vez de `observations_in_window` | defeito meu, correção de 1 linha, dentro do escopo |
+| 7 | (a) "Média de vitória 0" e coluna "Vitória 0" nos mercados de resultado | defeito pré-existente do Simulador, dentro do escopo |
+| 7 | (b) escanteios NULL gravados como 0 na ingestão | fora do escopo — migration + P1/P2 |
+| 29, 30 | provenance do save não validada em produção | exige sessão autenticada; só teste local |
+
+## REV-P3 = PARCIAL — 33 ✅ / 4 ⚠️ / 0 ❌ / 3 NA. Bloqueiam: itens 7, 29, 30 e 33.
+
+---
+
+## REV-P3 — Correção dos itens 33 e 7 (Simulador)
+
+> **Restaurada** — ver nota de restauração da seção anterior. Texto original, sem
+> alteração. O código descrito aqui **foi** commitado: `28dc417` ("fix"), pelo Daniel.
+
+Data: **25/09/2026**. Escopo: somente os dois defeitos funcionais restantes do próprio
+Simulador. Escanteios NULL → 0 **não** foi tocado. P1/P2 não foram reabertos. Sem deploy.
+**Nenhum arquivo de backend foi alterado** — as duas correções são de apresentação.
+
+### Item 33 — contagem errada no estado metric-unavailable
+
+**Causa.** `sample-state.ts` e o template usavam `accounting.matches_in_window` — partidas
+da competição **antes** do filtro de equipe. Medido em produção (Champions 2026, Egnatia
+Rrogozhinë, impedimentos): `matches_in_window 108`, `observations_in_window 4`,
+`excluded_no_metric 4`. A tela dizia "O recorte tem 108 partida(s), mas o provedor não
+publicou esta métrica em nenhuma delas" — falso: 53 das 108 têm o dado.
+
+**Correção.**
+- `estadoAmostra()` decide `metrica-ausente` por `observations_in_window > 0`
+  (antes `matches_in_window > 0`). Equipe sem nenhuma observação no recorte passa a ser
+  estado vazio, que é o que ela é.
+- Nova função pura `mensagemMetricaAusente(r)`: usa `observations_in_window` e
+  `excluded_no_metric`, ambos do recorte efetivo. Unidade: "partidas" em regra
+  match-level (onde observação = partida, inclusive com filtro de equipe);
+  "observações" em team-level.
+- Se nem todas as observações saíram por falta de métrica (parte por mando, por exemplo),
+  a frase **não** afirma "nenhuma delas" — separa os números.
+
+### Item 7 — mercados de resultado exibindo zero artificial
+
+**Causa.** `entryTotal()` e `averageValue()` em `filters.component.ts` resolviam o valor
+por `switch (this.metric)` com `default` em escanteios. Vitória, empate e não perde
+caíam no `default` e liam `total_corners`/`average_corners`, que o backend não preenche
+nesses mercados. Medido em produção: coluna "Vitória" = 0 em 200/200 linhas e card
+"Média de vitória 0". Existe desde `fcd2854` (27/07/2026).
+
+Segundo defeito na mesma função, achado na investigação: ela lia `this.metric` — o
+**formulário**, não a métrica com que o resultado foi gerado. Trocar a métrica depois de
+rodar fazia a tabela antiga ler outro campo.
+
+**Correção — classificação centralizada** em `sample-state.ts`:
+
+```
+tipoMercado(metric)  → 'numerico'   : corners, goals, offsides, shots, shots_on_target
+                     → 'categorico' : win, draw, win_or_draw ("Não perde")
+valorObservado(metric, e) → número, ou null em categórico
+mediaObservada(r)         → número, ou null em categórico
+rotuloMetrica(metric)     → rótulo; métrica desconhecida devolve o próprio código, nunca "Escanteios"
+```
+
+Todas recebem a métrica **do resultado** (`r.metric`). No componente, `entryTotal`,
+`entryLabel`, `averageValue` e `averageLabel` foram removidos.
+
+- **Tabela:** `colunasDaTabela()` só inclui a coluna numérica em mercado numérico. Em
+  categórico fica a coluna "Resultado" (Acerto/Erro), que já é a observação.
+- **Card de média:** renderizado só quando `mediaObservada(r) !== null`. A comparação é
+  explícita com `null` porque `@if (x; as y)` trataria média 0 como ausente — e média
+  observada 0 é zero real.
+- **Não** se converteu booleano em 0/1 para fabricar uma "média de vitória". A proporção
+  de acertos já existe e se chama taxa de acerto; não foi renomeada para probabilidade.
+
+### Arquivos
+
+`frontend/src/app/features/filters/sample-state.ts` · `sample-state.spec.ts` ·
+`filters.component.ts` · `filters.component.html`.
+
+### Testes — `sample-state.spec.ts` (node:assert), 28/28
+
+Novos (15): 33.1 filtro de equipe diz 4 e não contém 108 · 33.2 sem filtro de equipe
+continua correto · 33.3 team-level fala em observações · 33.4 exclusão mista não afirma
+"nenhuma delas" · 33.5 equipe sem observação é estado vazio · 7.1 classificação
+centralizada · 7.2–7.4 vitória/empate/não perde com `valorObservado` null · 7.5
+categóricos com `mediaObservada` null mesmo com `average_corners: 0` · 7.6 taxa de acerto
+preservada · 7.7 zero real numérico continua 0 · 7.8 numéricas leem o campo certo · 7.9
+métrica desconhecida não vira "Escanteios" · 7.10 match/team-level seguem corretos.
+
+### Validação local com payloads REAIS de produção
+
+| Caso | Antes (produção) | Depois (lógica nova, dados reais) |
+|---|---|---|
+| **A** Egnatia · impedimentos | "O recorte tem **108** partida(s)… nenhuma delas" | "O recorte selecionado tem **4** partidas, mas o provedor não publicou esta métrica em nenhuma delas." |
+| **B** Brasileirão · vitória | coluna "Vitória = 0" em 200/200; card "Média de vitória 0" | coluna numérica fora; card não renderizado; taxa 35 % (70/130) preservada; Mando presente |
+| **C** Brasileirão · empate | mesmo caminho de código que B (*derivado, não observado na UI*) | mesma garantia; taxa 30 % (60/140) preservada |
+| **D** Brasileirão · gols > 0 | 9 partidas 0×0 exibidas como 0 | inalterado: `valorObservado` = **0**, média 2,68, estado `com-amostra` |
+
+Checagem cruzada: vitória 70 acertos + 30 empates (60 ÷ 2) = 100 partidas.
+
+### Regressão
+
+`gofmt` vazio · `go build`/`vet` OK · `go test -count=1` 9 pacotes ok · `ng build`
+642,16 kB · `sample-state.spec.ts` 28/28 · `simulator-url-state.spec.ts` 11/11 ·
+runner Angular **NA — inexistente**.
+
+### Observações registradas, não corrigidas
+
+1. **`metric` vazio em resultado sem ocorrências** — com `match_count 0` o backend devolve
+   `"metric": ""`; `buildBacktestResult` retorna antes de preencher. Sem efeito visível hoje.
+2. **`average_corners: 0` no JSON dos mercados de resultado** — a tela não exibe mais, mas o
+   contrato envia 0 onde não há medida. Corrigir exige médias nuláveis no backend, que
+   também alimentam Engine e Discovery.
+3. **Escanteios NULL → 0** — backlog estrutural separado, inalterado.
+
+### Impacto na DoD
+
+| # | Antes | Agora |
+|---|---|---|
+| 33 | ⚠️ | ⚠️ — corrigido localmente, aguardando produção |
+| 7 | ⚠️ | ⚠️ — parte do Simulador corrigida localmente; parte do pipeline segue como backlog |
+
+## REV-P3 = PARCIAL — itens 7 e 33 corrigidos localmente, aguardando deploy final e validação de provenance

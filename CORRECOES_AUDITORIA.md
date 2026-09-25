@@ -4612,3 +4612,352 @@ para um item próprio, os 39 itens restantes estão sustentados por evidência d
 (36 ✅ + 3 NA justificados). Essa é uma decisão de escopo que cabe a ele — não a mim.
 
 ## REV-P3 = PARCIAL — 36 ✅ / 1 ⚠️ / 0 ❌ / 3 NA. Único bloqueio: item 7 (escanteios NULL → 0, backlog estrutural fora do escopo autorizado).
+
+---
+
+# REV-P4 — Discovery
+
+## REV-P4 — Fase A (investigação)
+
+Data: **25/09/2026**. Commit auditado: `374dbc3` (= origin/main, árvore limpa).
+Nenhum código foi alterado. Três experimentos temporários rodaram localmente e foram
+removidos (`git status` limpo ao final).
+
+### 1. Arquitetura atual
+
+| Camada | Arquivo | Papel |
+|---|---|---|
+| Grade | `internal/usecase/discovery/combinations.go` | `generateCombos` — espaço de busca |
+| Motor | `internal/usecase/discovery/engine.go` | `RunAll` → `RunLeague` → `mine` → `applyFDR` → `validate` → `publish` → `DeactivateDiscoveredExcept` |
+| Critérios | `internal/usecase/discovery/criteria.go` | limiares do doc 08 + parâmetros AUD-003 |
+| Estatística | `internal/usecase/discovery/validation.go` | `splitHistory`, `pValue`, `checkHoldout` |
+| Fórmulas | `internal/formulas/significance.go`, `scores.go` | binomial, BH/BY, DSFR v1.1 |
+| Backtest | `usecase.FilterUsecase` (o mesmo do Simulador), com repositórios memoizados (`cache.go`) |
+| Persistência | `repository/postgres/strategy_repo.go` | `UpsertDiscovered`, `DeactivateDiscoveredExcept`, `ListDiscovered` |
+| Scores | `usecase/strategyengine/engine.go` | `PersistResult`, `scoresRow` (DSFR v1.1), `healthRow` |
+| Migration | `012_discovery_engine.sql` | índice único parcial por `name` onde `origin='discovery'` |
+| Worker | `cmd/worker/main.go` | `runStrategyDiscovery` (IncludeTeams=**true**); `runStrategies` (reavaliação diária) |
+| API | `handlers/discovery_handler.go` | `GET /discovery/strategies` (público), `GET /discovery/progress` (público), `POST /discovery/run` (autenticado) |
+| UI | `frontend/.../features/discovery/` | ranking, botão "Procurar agora", resumo da última varredura |
+
+### 2–3. Grade atual e número real de combinações
+
+```
+Escanteios : linhas {6,7,8,9,10} × mando {"",home,away} × janela {0,10,20} × teto de odd {1.70,2.20,3.50}
+           = 5 × 3 × 3 × 3 = 135
+Resultado  : mercados {win,draw,win_or_draw} × mando {3} × janela {3} = 27
+Total/liga = 162
+```
+
+**O "162" da UI vem daqui**: 135 de escanteios + 27 de mercados de resultado, que entraram
+depois do corte 540 → 135. A UI exibe `LeagueResult.Combinations`, ou seja, as combinações
+**geradas** — não as testadas.
+
+**O worker usa uma grade maior que a API.** `cmd/worker` liga `IncludeTeams: true`
+(soma 5 × 3 × 3 = **45 combinações por equipe**), e a API ("Procurar agora") usa `false`.
+Uma liga com 20 equipes tem 162 combinações pela API e **1.062** pelo cron.
+
+**Opponent tier:** eixo removido da grade (AUD-004) ✅. Resta código morto: `combo.tier`,
+`Definition.OpponentTier` e `FilterCriteria.OpponentTier` são preenchidos com string vazia
+e nunca variam.
+
+### 4. Fluxo estatístico
+
+1. `AllMatches` — só `status = 'FINALIZADO'`, ordenado por `match_date ASC`.
+2. `splitHistory(TrainFraction = 0,70)` — corte pelo **quantil da contagem** de partidas;
+   **todas** as partidas da data do corte vão para a validação; janelas meio-abertas
+   `treino = [primeira, corte)` e `validação = [corte, ∞)`; `inWindow` implementa
+   `[From, To)` ✅. Sem partidas futuras no holdout, porque só entra `FINALIZADO` ✅.
+3. `mine` — backtest de cada combinação **só na janela de treino**, com
+   `RequireRealOdds = true` ✅. Em seguida, **nesta ordem**: `crit.validate` (amostra ≥ 100,
+   win rate ≥ 75 %, ROI ≥ 10 %, Yield ≥ 5 %, lucro > 0, drawdown ≤ 20 % do apostado), DSFR ≥ 40,
+   e p-valor calculável.
+4. `applyFDR` — Benjamini–Yekutieli, q = 0,10, **sobre os que sobraram do passo 3**.
+5. `validate` — reexecuta na janela de validação: amostra ≥ 30, lucro > 0, p ≤ 0,05
+   (sem correção de multiplicidade).
+6. `publish` — ordena por DSFR, teto de 40 por liga, grava `origin='discovery'`,
+   `visibility='public'`, `active=true` e persiste o backtest **da janela de treino**.
+7. `DeactivateDiscoveredExcept` — as demais descobertas da liga viram `active = FALSE`
+   (**não** são apagadas) ✅.
+
+Fórmulas conferidas: `BinomialAtLeast` é a cauda exata em log ✅; `FDRThreshold` faz o
+step-up de BH, com fator `1/H(m)` no BY ✅; hipótese nula `p0 = média(1/odd)` do próprio
+backtest.
+
+### 5. Odds / procedência (AUD-001)
+
+`RequireRealOdds = true` na mineração ✅, na validação ✅ e na reavaliação
+(`strategyengine.Definition.criteria()`) ✅. Odd `synthetic` e odd ausente são rejeitadas:
+provado localmente com as duas situações — **162/162 combinações rejeitadas, 0 publicadas**.
+
+Produção: `GET /discovery/strategies` → `count: 0`. Na varredura do REV-P3 (20
+liga/temporada, 2.586 observações, janela de 90 dias), `max_odds_applicable = 0` em todas.
+**Discovery financeiro publicando zero é o resultado correto hoje, e nada o contorna.**
+
+### 6. FDR / múltiplas comparações
+
+#### ❌ Bug comprovado B1 — o FDR recebe um m selecionado pelo próprio resultado
+
+`applyFDR` roda sobre `passed`, que só contém combinações que **já** passaram por win
+rate, ROI, Yield, drawdown e DSFR — todos funções do mesmo resultado que gera o p-valor.
+Isso é inferência seletiva: o `m` fica artificialmente pequeno e o procedimento deixa de
+controlar o FDR. E `LeagueResult.Tested` é documentado como "combinações com p-valor
+calculável", mas conta só esses sobreviventes.
+
+**Medido** (experimento local, ruído puro com odds justas, **critérios de produção**,
+200 seeds × 700 partidas):
+
+| | m médio no FDR | "significativas" falsas | seeds com ≥ 1 | validadas | publicadas |
+|---|---|---|---|---|---|
+| Atual | **0,75** | 132 | **17/200 (8,5 %)** | 0 | 0 |
+| m honesto (todas as testáveis que só passaram no filtro de amostra) | 70 | 27 | 2/200 (1 %) | — | — |
+
+A camada de FDR deixa passar cerca de **8× mais falsos positivos** que o procedimento
+correto. **Hoje a proteção contra publicar ruído depende inteiramente do holdout** (0
+validadas em 200 seeds). Não tem impacto atual em produção, porque sem odd real nada chega
+lá, mas é **latente**: vale no dia em que entrarem odds reais.
+
+O filtro de amostra mínima pode ficar antes do FDR, porque não depende do resultado
+("independent filtering"). Win rate, ROI, Yield, drawdown e DSFR não podem.
+
+### 7. Teste de ruído
+
+O teste existente `TestCicloSobreRuidoPuroNaoPublicaNada` (5 seeds × 700 partidas) **passa**,
+mas usa `permissiveDocCriteria()` — o que é intencional para exercitar o FDR, mas **não
+exercita o B1**, que só aparece com os critérios de produção. O experimento acima (200 seeds,
+critérios de produção) publicou **0**, mas também mostrou o FDR falhando no meio do caminho.
+
+### 8. Dupla contagem e janela
+
+Discovery usa o mesmo motor do Simulador: a regra de partida gera uma observação por
+partida ✅ (sem 200/100 nem 138/69).
+
+#### ❌ Bug comprovado B2 — regressão com origem no REV-P3: `LastNGames` em regra de partida usa só jogos EM CASA
+
+Com a deduplicação da correção 1 do REV-P3, a regra de partida gera só o candidato do
+mandante (`asHome`). O bloco `LastNGames` agrupa candidatos por `teamID` — que passou a ser
+sempre o mandante. Então "últimos N jogos de cada equipe" virou **"últimos N jogos em casa
+de cada equipe"**.
+
+Prova (experimento local): duas equipes, 8 jogos alternando o mando, `last_n = 2`.
+
+| Regra | Esperado | Obtido |
+|---|---|---|
+| Escanteios (partida) | partidas **7, 8** | partidas **5, 6, 7, 8** — as 5 e 6 não estão entre os 2 últimos de ninguém |
+| Vitória (equipe) | 7, 8 nas duas perspectivas | 7, 8 nas duas perspectivas ✅ |
+
+Afeta **o eixo de janela 10/20 do Discovery** (2/3 da grade de escanteios) e **o Simulador**,
+cujo padrão na tela é `last_n = 10`. O REV-P3 foi declarado RESOLVIDO sem teste de janela
+em regra de partida; é uma regressão, e corrigi-la mexe em código do P3.
+
+### 9. Amostra
+
+| Onde | Unidade | Limite |
+|---|---|---|
+| treino | observações (= partidas em escanteios; 2 por partida em resultado sem equipe) | `MinGames` 100 (trava absoluta 50) |
+| validação | observações | `HoldoutMinGames` 30 |
+| filtro de amostra | `MatchCount` do backtest | — |
+
+Com `RequireRealOdds` e nenhuma odd real, a amostra é 0 em toda combinação.
+
+### 10–12. Financeiro, EV, ROI/Yield
+
+Todos os filtros de ROI, Yield, lucro e drawdown exigem `FinancialsAvailable` e ponteiros
+não nulos ✅. EV não existe no contrato nem no score ✅ (AUD-002). Os gates de ROI e Yield
+continuam medindo a mesma quantidade: o código diz isso em voz alta, e só o de ROI
+efetivamente barra.
+
+### 13. Drawdown (AUD-006 — registrado, não corrigido)
+
+Duas normalizações **opostas** no mesmo pipeline:
+
+- filtro do Discovery: `MaxDrawdown / TotalStaked` — **encolhe** com o tamanho da amostra;
+- score DSFR: `1 − MaxDrawdown / drawdownCapStk` (stakes absolutos) — **piora** com o tamanho
+  da amostra, enquanto o componente de amostra melhora.
+
+Não bloqueia a validade da publicação hoje. Continua como AUD-006.
+
+### 14. DSFR Score
+
+`formulas.DSFRScoreV11`: ROI **30**, Win Rate **20**, Drawdown **15**, Amostra **15**,
+Consistência **15**, Variância **5** ✅. Sem EV, sem Yield ✅. É o único chamado
+(`strategyengine/engine.go:263`).
+
+**AUD-007 continua aberto:** `InvVariance = 1 − 4p(1−p)` é função pura do win rate, e
+`ConsistencyIndex` é composto de win rate, InvVariance, InvDrawdown e amostra. O peso
+efetivo do win rate passa de 20 para cerca de 34 pontos.
+
+### 15. Persistência
+
+Por estratégia descoberta ficam: `origin='discovery'`, `visibility='public'`, `active`,
+`created_at`, o backtest **da janela de treino**, health e scores. **Não existem colunas**
+para janela de treino, janela de validação, p-valor, limiar FDR, número de testes ou
+procedência da odd: essa evidência só aparece **como texto** na `description`.
+Desativadas continuam no banco (`active = FALSE`) ✅.
+
+### 16. Publicação
+
+Exige, em sequência: split possível → treino com odd real → critérios do doc 08 →
+DSFR ≥ 40 → p-valor calculável → sobreviver ao BY → holdout (≥ 30, lucro > 0, p ≤ 0,05) →
+top 40 por DSFR. Win rate alto sozinho não publica ✅. O B1 enfraquece o passo do BY.
+
+### 17. Reavaliação
+
+`runStrategies` roda **todo dia** sobre todas as estratégias ativas, usando
+`Definition.criteria()`, **sem `DateFrom`/`DateTo`** — ou seja, o histórico inteiro,
+**incluindo a janela de treino onde o padrão foi garimpado**. A limitação histórica
+continua. Além disso, a reavaliação grava novo backtest, health e scores por cima, e a tela
+passa a mostrar a mistura; a evidência de descoberta (holdout) sobrevive só no texto.
+
+Efeito colateral: as estratégias de usuário e do Simulador também são reavaliadas com
+`RequireRealOdds`. Sem odd real, `PersistResult` recusa ("sem série financeira completa") e
+cada uma vira **1 erro por dia** no `worker_runs` do strategy engine. Isso é do domínio do
+P5; fica registrado.
+
+### 18–19. Zero descobertas e funil de rejeição
+
+A tela trata zero como resultado legítimo ✅ ("Nenhuma estratégia aprovada por aqui").
+
+#### ❌ Bug comprovado B3 — o funil atribui a causa errada
+
+Sem odd real (situação de produção), **162/162 combinações são rejeitadas como
+`amostra_insuficiente`**, porque `RequireRealOdds` zera a amostra antes de qualquer teste.
+A causa real — ausência de odd de mercado — não aparece. A mensagem de vazio da tela
+("nenhuma combinação atingiu amostra suficiente, retorno, consistência e drawdown")
+reforça a leitura errada. E o comentário de `combinations.go`, que diz que os mercados de
+resultado caem em `sem_pvalor_calculavel`, é **falso**: caem antes, também como
+`amostra_insuficiente`.
+
+O `accounting` do REV-P3 (`excluded_no_odd`) já tem a informação para corrigir isso sem
+inventar contagem.
+
+**Persistência do funil:** `worker_runs.details` do Discovery guarda só ligas, combinações,
+publicadas e desativadas — **sem** testadas, significativas, validadas nem motivos. O
+resultado da varredura manual fica só em memória (`progress.Tracker`) e some a cada deploy.
+**Nenhum endpoint expõe `worker_runs`.**
+
+### 20. UI
+
+- Linguagem: "padrão identificado", disclaimer "não constituem recomendação de aposta" ✅.
+- ⚠️ "combinações testadas" mostra as **geradas** (162), não o `m` do teste.
+- ⚠️ O texto "Cada combinação roda um backtest sobre o histórico completo" é **falso**: a
+  mineração usa só os 70 % mais antigos.
+- A tela não mostra o funil (testadas → significativas → validadas).
+
+### 21. "Procurar agora"
+
+| Pergunta | Resposta |
+|---|---|
+| Dispara processamento pesado? | Sim — todas as ligas (ou uma, se escolhida), 162 combinações por liga, timeout de 30 min |
+| Síncrono? | Não — goroutine **dentro do processo da API** (web service), resposta 202 imediata |
+| Mesmo pipeline? | Sim — `engine.RunLeague`/`RunAll`, mas com `IncludeTeams=false` (o cron usa `true`) |
+| Publica? | **Sim** — publica e desativa estratégias **públicas** |
+| É admin? | **Não** — basta estar autenticado; o botão aparece para qualquer usuário logado |
+| Pode sobrecarregar produção? | Sim — roda no mesmo processo que atende o site; a única proteção é a trava de execução única (409) |
+
+#### ⚠️ B4 — qualquer usuário autenticado altera o catálogo público
+
+Não há papel de admin na rota. Um usuário comum pode disparar a varredura e, com isso,
+publicar ou desativar descobertas que todos veem.
+
+### 22. Endpoints
+
+| Rota | Auth | Paginação | Observação |
+|---|---|---|---|
+| `GET /discovery/strategies` | pública | só `limit` (padrão 50), sem offset | filtro `league_id` |
+| `GET /discovery/progress` | pública | — | estado em memória |
+| `POST /discovery/run` | autenticada, sem papel | — | ver B4 |
+
+### 24. Casos reais — o que foi possível provar sem acesso ao banco
+
+- O Discovery roda **por liga, somando todas as temporadas** (`seasonIDs` vazio = todas).
+  "La Liga 2026" e "La Liga 2025" **não são casos separados** para o motor: entram juntas
+  e o corte de 70 % é feito sobre o histórico combinado.
+- Odds reais na janela de 90 dias: **0** em todas as ligas (2.586 observações).
+- Descobertas publicadas em produção: **0**.
+- Contagem de partidas por temporada, data de corte, tamanho de treino/validação e odds
+  reais no **histórico completo**: **NA — exige leitura do banco.** O usuário anônimo tem
+  o limite de 90 dias, e eu não faço login no console do Neon. Consultas prontas, só de
+  leitura, abaixo.
+- Se o Discovery agendado **roda de fato** em produção (`DISCOVERY_RUN=true` está no
+  `render.yaml`, mas as variáveis do cron foram configuradas pelo painel no REV-P0):
+  **NA — só `worker_runs` responde**, e nenhum endpoint o expõe.
+
+```sql
+-- (1) Partidas e procedência das odds por liga/temporada (histórico completo)
+SELECT league_id, season_id,
+       count(*)                                              AS partidas,
+       count(*) FILTER (WHERE odds_source = 'real')          AS odds_real,
+       count(*) FILTER (WHERE odds_source = 'synthetic')     AS odds_sinteticas,
+       count(*) FILTER (WHERE corner_odds::text <> '{}')     AS com_corner_odds,
+       count(*) FILTER (WHERE result_odds::text <> '{}')     AS com_result_odds,
+       min(match_date) AS primeira, max(match_date) AS ultima
+FROM matches
+WHERE status = 'FINALIZADO' AND league_id IN (8, 18)
+GROUP BY league_id, season_id ORDER BY league_id, season_id;
+
+-- (2) Data de corte 70/30 por liga, como o motor calcula (todas as temporadas juntas)
+SELECT league_id, count(*) AS partidas,
+       (array_agg(match_date ORDER BY match_date))[floor(count(*) * 0.7)::int + 1] AS corte_aprox
+FROM matches WHERE status = 'FINALIZADO' AND league_id IN (8, 18)
+GROUP BY league_id;
+
+-- (3) O Discovery agendado roda?
+SELECT id, worker, status, started_at, duration_ms, processed, errors, details
+FROM worker_runs WHERE worker IN ('discovery', 'strategy')
+ORDER BY id DESC LIMIT 10;
+
+-- (4) Estado do catálogo de descobertas
+SELECT active, visibility, count(*) FROM strategies
+WHERE origin = 'discovery' GROUP BY active, visibility;
+```
+
+(A consulta 2 aproxima o corte; o motor ainda recua até a primeira partida da mesma data.)
+
+### 12. Bugs comprovados — resumo
+
+| # | Gravidade | Defeito | Impacto hoje |
+|---|---|---|---|
+| **B1** | alta (latente) | FDR aplicado depois de filtros dependentes do resultado; `Tested` mal rotulado | 0 — nada chega ao FDR sem odd real. Vale quando entrarem odds reais |
+| **B2** | alta | `LastNGames` em regra de partida usa só jogos em casa — **regressão do REV-P3** | eixo de janela do Discovery e **Simulador em produção** (padrão `last_n = 10`) |
+| **B3** | média | funil atribui tudo a `amostra_insuficiente` quando a causa é falta de odd real; comentário falso | usuário lê a causa errada |
+| **B4** | média | "Procurar agora" sem papel de admin, publica/desativa o catálogo público, roda no processo da API | risco operacional e de integridade |
+| B5 | média | reavaliação usa o histórico inteiro (inclui treino) e sobrescreve o backtest de descoberta | mistura evidência com monitoramento |
+| B6 | baixa | texto "backtest sobre o histórico completo" falso | UI |
+| B7 | baixa | "combinações testadas" = geradas | UI |
+| B8 | baixa | funil não persistido; `worker_runs` sem endpoint | auditoria só com SQL |
+| B9 | baixa | código morto de `tier`; comentário de `maxOddsOptions` fala em "odd 1.0" (pré-REV-P3) | manutenção |
+| B10 | baixa | `threshold > 0` rejeitaria p-valor 0 por underflow | teórico |
+
+### 13. Limitações (não são bugs desta fase)
+
+- AUD-006 (drawdown com normalizações opostas) e AUD-007 (win rate contado ~34 %) — abertos.
+- `p0 = média(1/odd)` aproxima a Poisson-binomial por uma binomial; com o overround da casa
+  tende a ser conservador, mas não é exato.
+- O holdout testa cada candidato a α = 0,05 sem correção; os candidatos costumam ser muito
+  correlacionados (no experimento, ~8 por seed quando algum passou).
+- Evidência de descoberta não estruturada (só texto).
+- Casos reais do histórico completo pendentes das consultas acima.
+
+### 14. Plano mínimo de correção (proposto, não executado)
+
+Em ordem, uma correção de cada vez:
+
+1. **B2** — em regra de partida, escolher a janela por equipe usando **as duas
+   perspectivas** e só então deduplicar por `match_id`. Teste: o caso das 8 partidas
+   alternadas precisa devolver {7, 8}. **Mexe no motor do REV-P3 e precisa de autorização
+   explícita.**
+2. **B1** — calcular o p-valor de **toda** combinação testável que passar só no filtro de
+   amostra; aplicar o BY sobre esse `m`; aplicar os critérios do doc 08 **depois**, aos
+   sobreviventes. `Tested = m` real. Teste: o experimento de 200 seeds com critérios de
+   produção vira teste permanente.
+3. **B3 + B8** — motivo `sem_odd_real` quando `accounting.excluded_no_odd` responde por toda
+   a amostra; gravar o funil completo em `worker_runs.details`; corrigir o comentário.
+4. **B4** — decisão de produto: restringir `POST /discovery/run` a admin, ou tirar a
+   publicação do disparo manual.
+5. **B6/B7** — textos da UI.
+6. **B5** — separar evidência de descoberta de monitoramento; provavelmente escopo do P5.
+
+Fora do plano: AUD-006 e AUD-007 globais, e integração de odds reais.
+
+## REV-P4 = PARCIAL — Fase A concluída

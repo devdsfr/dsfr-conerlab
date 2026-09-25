@@ -12,6 +12,7 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { DiscoveredStrategy, DiscoveryProgress, DiscoveryRunResult, League } from '../../core/models';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
+import { etapasFunil, explicacaoZero, funilFecha, resumoFunil, rotuloMotivo } from './discovery-funnel';
 
 // Página "Descobertas" — Strategy Discovery Engine (Remodelagem F6, doc 08).
 //
@@ -74,8 +75,10 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
     obsoleta: 'Obsoleta',
   };
 
+  // REV-P4: a v1.1 do DSFR não tem EV nem Yield (AUD-002). O texto antigo
+  // listava os dois — descrevia um score que não é o calculado.
   readonly dsfrTooltip =
-    'DSFR Score (0–100): nota proprietária que resume a qualidade do padrão — pondera ROI, EV, taxa de acerto, yield, drawdown, tamanho da amostra, consistência e variância.';
+    'DSFR Score (0–100, v1.1): resume a qualidade histórica do padrão — pondera retorno (30), taxa de acerto (20), drawdown (15), tamanho da amostra (15), consistência (15) e variância (5).';
   readonly confidenceTooltip =
     'Confiabilidade (0–100): quanta evidência estatística sustenta o número — cresce com o tamanho da amostra e a estabilidade dos resultados.';
   readonly riskTooltip =
@@ -83,23 +86,27 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
   readonly drawdownTooltip =
     'Maior queda acumulada do histórico, em unidades de aposta — o pior momento pelo qual o padrão passou.';
 
-  /** Motivos de descarte devolvidos pelo ciclo, em linguagem de negócio. */
-  readonly rejectionLabels: Record<string, string> = {
-    amostra_insuficiente: 'amostra insuficiente',
-    win_rate_baixo: 'taxa de acerto baixa',
-    roi_baixo: 'ROI baixo',
-    yield_baixo: 'yield baixo',
-    ev_nao_positivo: 'EV não positivo',
-    drawdown_alto: 'drawdown alto',
-    score_baixo: 'score baixo',
-  };
+  // Funil do último ciclo (REV-P4, B3) — funções puras em discovery-funnel.ts.
+  readonly etapasFunil = etapasFunil;
+  readonly funilFecha = funilFecha;
 
-  /** Resumo do último ciclo em uma frase, para o usuário entender o que aconteceu. */
+  /**
+   * Resumo do último ciclo em uma frase. REV-P4: antes dizia "N combinações
+   * TESTADAS", mas N eram as GERADAS (162 por liga); as testadas
+   * estatisticamente são outro número, e sem odd real são zero.
+   */
   lastRunSummary = computed(() => {
     const r = this.lastRun();
     if (!r) return '';
     const scope = r.league_name ? `no ${r.league_name}` : `em ${r.leagues ?? 0} campeonato(s)`;
-    return `${r.combinations} combinações testadas ${scope} · ${r.published} padrão(ões) aprovado(s) e publicado(s)`;
+    if (r.funnel) return `${resumoFunil(r.funnel)} (${scope})`;
+    return `${r.combinations} combinações geradas ${scope} · ${r.published} publicada(s)`;
+  });
+
+  /** Por que nada foi publicado, com a causa dominante real. */
+  lastRunZero = computed(() => {
+    const f = this.lastRun()?.funnel;
+    return f ? explicacaoZero(f) : null;
   });
 
   constructor(private api: ApiService, public auth: AuthService, private router: Router) {}
@@ -169,7 +176,11 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
           this.startPolling();
           return;
         }
-        this.error.set(err?.error?.error ?? 'Erro ao executar a busca por estratégias');
+        // REV-P4 (B4): 403 = não é administrador. O botão já não aparece para
+        // quem não é, mas uma sessão antiga ou uma chamada direta cai aqui.
+        this.error.set(err?.status === 403
+          ? 'Disparar a busca manualmente é restrito a administradores. As descobertas publicadas continuam disponíveis abaixo.'
+          : (err?.error?.error ?? 'Erro ao executar a busca por padrões'));
         this.running.set(false);
       },
     });
@@ -275,7 +286,7 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
   rejectionEntries(r?: Record<string, number>): { label: string; count: number }[] {
     if (!r) return [];
     return Object.entries(r)
-      .map(([k, count]) => ({ label: this.rejectionLabels[k] ?? k, count }))
+      .map(([k, count]) => ({ label: rotuloMotivo(k), count }))
       .sort((a, b) => b.count - a.count);
   }
 }

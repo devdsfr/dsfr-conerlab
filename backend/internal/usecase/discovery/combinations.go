@@ -44,27 +44,29 @@ var (
 	// temporada, apurada com os jogos anteriores à data de cada partida — sem
 	// isso o filtro carrega look-ahead por construção.
 
-	// Teto de odd. TODOS os valores são > 0 DE PROPÓSITO: com MaxOdds = 0 o motor
-	// aceita jogos sem odd histórica e assume odd 1.0, o que produziria um ROI
-	// artificialmente negativo e sem significado. Exigir um teto garante que só
-	// entrem no backtest jogos com odd real registrada — sem isso não há como
-	// validar ROI/EV, que são critérios obrigatórios do doc 08.
+	// Teto de odd sobre a odd de MERCADO. Todos os valores são > 0 porque o eixo
+	// é uma restrição de elegibilidade: com RequireRealOdds (AUD-001) só entram
+	// jogos com odd real registrada, e o teto recorta entre eles. (O comentário
+	// antigo falava em "odd 1.0 assumida" — esse fallback não existe mais desde
+	// o REV-P3: ausência de odd é nil, nunca 1,00.)
 	maxOddsOptions = []float64{1.70, 2.20, 3.50}
 
 	// Mercados de RESULTADO. Não têm linha nem teto de odd: o desfecho da partida
 	// já é a resposta, e não há odd registrada para aplicar um teto.
 	//
 	// LEIA ISTO ANTES DE ESPERAR RESULTADO DESTE EIXO. Nenhuma rota do sistema
-	// grava matches.result_odds hoje. Sem odd não existe hipótese nula, e sem
-	// hipótese nula o teste de significância do AUD-003 não é calculável — todas
-	// estas combinações são descartadas com o motivo "sem_pvalor_calculavel". É o
-	// comportamento correto: publicar sem poder testar é o defeito que a auditoria
-	// inteira existe para impedir.
+	// grava matches.result_odds hoje. Com RequireRealOdds as partidas sem odd de
+	// mercado saem do backtest, e estas combinações são descartadas com o motivo
+	// "sem_odd_real" (REV-P4, B3 — antes caíam em "amostra_insuficiente", e este
+	// comentário dizia, errado, "sem_pvalor_calculavel"). É o comportamento
+	// correto: publicar sem poder testar é o defeito que a auditoria inteira
+	// existe para impedir.
 	//
 	// O eixo fica aqui porque o dia em que a coleta de odds 1X2 entrar, ele passa
 	// a funcionar sem mudança de código. Enquanto isso, o custo é só CPU: as
-	// combinações são rejeitadas ANTES de entrar na correção de múltiplos testes
-	// (ver mine), então não endurecem o limiar das combinações de escanteios.
+	// combinações são rejeitadas na elegibilidade ESTRUTURAL, antes da correção de
+	// múltiplos testes (ver mine), então não entram no m do FDR — o que é
+	// legítimo, porque a exclusão não depende do resultado.
 	resultMetrics = []string{usecase.MetricWin, usecase.MetricDraw, usecase.MetricWinOrDraw}
 )
 
@@ -75,7 +77,6 @@ type combo struct {
 	line     int
 	homeAway string
 	window   int
-	tier     string
 	maxOdds  float64
 
 	// metric vazio = escanteios (o padrão histórico do motor). Preenchido nos
@@ -169,7 +170,6 @@ func (c combo) definition(leagueID int64, seasonIDs []int64) (string, error) {
 		LastNGames:       c.window,
 		HomeAway:         c.homeAway,
 		CornersThreshold: c.line,
-		OpponentTier:     c.tier,
 		MaxOdds:          c.maxOdds,
 		Metric:           c.effectiveMetric(),
 	}
@@ -202,9 +202,6 @@ func (c combo) name(leagueName string) string {
 	parts = append(parts, homeAwayLabel(c.homeAway))
 	if c.window > 0 {
 		parts = append(parts, fmt.Sprintf("últimos %d", c.window))
-	}
-	if c.tier != "" {
-		parts = append(parts, "vs "+c.tier)
 	}
 	// Mercado de resultado não tem teto de odd — incluir "odd ≤ 0,00" no nome
 	// tornaria o identificador confuso e, pior, igual entre combinações distintas.

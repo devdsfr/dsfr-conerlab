@@ -504,8 +504,34 @@ export interface DiscoveryRunResult {
   published: number;
   deactivated: number;
   errors: number;
-  /** Contagem por motivo de descarte (amostra_insuficiente, roi_baixo, ...). */
+  /** Contagem por motivo de descarte (sem_odd_real, amostra_insuficiente, ...). */
   rejections?: Record<string, number>;
+  /** REV-P4 (B3): funil auditável, agregado de todas as ligas do ciclo. */
+  funnel?: DiscoveryFunnel;
+}
+
+// REV-P4 (B3): onde cada combinação gerada parou. Espelha discovery.Funnel no
+// backend; as identidades estão em discovery-funnel.ts (funilFecha).
+export interface DiscoveryFunnel {
+  generated: number;
+  backtest_errors: number;
+  rejected_no_real_odds: number;
+  rejected_no_metric: number;
+  rejected_insufficient_sample: number;
+  rejected_not_testable: number;
+  tested_statistically: number;
+  rejected_fdr: number;
+  fdr_survivors: number;
+  rejected_secondary: number;
+  holdout_input: number;
+  holdout_errors: number;
+  rejected_holdout: number;
+  holdout_interrupted: number;
+  holdout_validated: number;
+  capped_per_league: number;
+  publish_errors: number;
+  published: number;
+  interrupted?: boolean;
 }
 
 export interface StrategyEvaluation {
@@ -628,6 +654,10 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
+  // REV-P4 (B4): administrador da plataforma. Só esconde o botão "Procurar
+  // agora" — a barreira de verdade é o backend (403 para não administrador).
+  // Ausente em sessões gravadas antes do deploy: tratado como false.
+  is_admin?: boolean;
 }
 
 export interface AuthResponse {

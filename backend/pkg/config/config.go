@@ -87,6 +87,11 @@ type Config struct {
 	// separada por vírgula em DEV_PREMIUM_EMAILS. Vazio por padrão.
 	DevPremiumEmails []string
 
+	// AdminEmails são os administradores da plataforma (REV-P4, B4) — hoje só
+	// eles disparam o Discovery manual ("Procurar agora"). Lista vazia =
+	// ninguém é administrador (falha fechada). Ver pkg/adminaccess.
+	AdminEmails []string
+
 	// Envio de e-mail (Resend — ver pkg/email) usado pelo fluxo "esqueci minha
 	// senha". Sem RESEND_API_KEY configurada, POST /auth/forgot-password responde
 	// 503 com mensagem clara em vez de quebrar o restante da aplicação.
@@ -123,6 +128,7 @@ func Load() Config {
 		StripeTrialDays:     getEnvInt("STRIPE_TRIAL_DAYS", 7),
 		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:4200"),
 		DevPremiumEmails:    getEnvList("DEV_PREMIUM_EMAILS"),
+		AdminEmails:         getEnvList("ADMIN_EMAILS"),
 
 		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
 		EmailFrom:    getEnv("EMAIL_FROM", "CornerLab <onboarding@resend.dev>"),

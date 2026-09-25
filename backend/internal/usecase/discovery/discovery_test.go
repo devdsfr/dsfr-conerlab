@@ -168,11 +168,20 @@ func TestGenerateCombosCoversFullLeagueGrid(t *testing.T) {
 
 // AUD-004: nenhuma combinação pode nascer com tier preenchido. Se voltar, volta
 // junto o filtro que comparava com uma constante gravada no código.
+//
+// REV-P4: o campo `tier` de combo foi removido (era sempre vazio — código morto
+// do eixo antigo). A garantia deixou de ser "o campo está vazio" e passou a ser
+// estrutural; o que continua testável é o que sai do motor: nenhuma definição
+// persistida carrega opponent_tier, mesmo com equipes que tenham tier gravado.
 func TestGenerateCombosNaoUsaTier(t *testing.T) {
 	combos := generateCombos([]domain.Team{{ID: 1, Name: "Palmeiras", Tier: "G12"}}, true)
 	for _, c := range combos {
-		if c.tier != "" {
-			t.Fatalf("combinação com tier %q: o eixo foi removido (AUD-004)", c.tier)
+		raw, err := c.definition(18, []int64{26})
+		if err != nil {
+			t.Fatalf("definition falhou: %v", err)
+		}
+		if strings.Contains(raw, "opponent_tier") {
+			t.Fatalf("definição com opponent_tier (AUD-004 removeu o eixo): %s", raw)
 		}
 	}
 }
@@ -232,7 +241,7 @@ func TestComboNameTruncatesLongLeagueNames(t *testing.T) {
 
 func TestComboDefinitionMatchesFilterFormat(t *testing.T) {
 	teamID := int64(7)
-	c := combo{teamID: &teamID, line: 9, homeAway: "home", window: 10, tier: "G6", maxOdds: 2.20}
+	c := combo{teamID: &teamID, line: 9, homeAway: "home", window: 10, maxOdds: 2.20}
 
 	raw, err := c.definition(18, []int64{26, 27})
 	if err != nil {
@@ -245,7 +254,7 @@ func TestComboDefinitionMatchesFilterFormat(t *testing.T) {
 		t.Fatalf("definição gerada não é válida para o Strategy Engine: %v", err)
 	}
 	if d.LeagueID != 18 || len(d.SeasonIDs) != 2 || d.CornersThreshold != 9 ||
-		d.HomeAway != "home" || d.LastNGames != 10 || d.OpponentTier != "G6" ||
+		d.HomeAway != "home" || d.LastNGames != 10 || d.OpponentTier != "" ||
 		d.MaxOdds != 2.20 || d.Metric != "corners" {
 		t.Errorf("definição não reflete a combinação: %+v", d)
 	}
@@ -327,10 +336,10 @@ func TestDescribeNeverRecommends(t *testing.T) {
 		"garantido", "lucro certo", "vai acontecer", "tendência para o próximo",
 		"oportunidade de entrada",
 	}
-	for _, tier := range []string{"", "G6"} {
+	for _, window := range []int{0, 10} {
 		for _, team := range []string{"", "Palmeiras"} {
 			c := candidate{
-				combo:  combo{line: 9, homeAway: "away", tier: tier, teamName: team, maxOdds: 1.70},
+				combo:  combo{line: 9, homeAway: "away", window: window, teamName: team, maxOdds: 1.70},
 				result: approvedResult(),
 				dsfr:   88,
 			}

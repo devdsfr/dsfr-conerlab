@@ -103,6 +103,84 @@ type LeagueResult struct {
 	Deactivated int            `json:"deactivated"`
 	Errors      int            `json:"errors"`
 	Rejections  map[string]int `json:"rejections"`
+
+	// Funnel é o funil auditável do ciclo (REV-P4, B3). Cada combinação gerada
+	// termina em exatamente UM estágio, e as identidades de Funnel.Check fecham.
+	Funnel Funnel `json:"funnel"`
+}
+
+// Funnel conta, estágio a estágio, onde cada combinação gerada parou.
+//
+// Só contém o que o motor mede. As identidades (ver Check) são:
+//
+//	Generated         = BacktestErrors + NoRealOdds + NoMetric + InsufficientSample
+//	                    + NotTestable + TestedStatistically
+//	TestedStatistically = RejectedFDR + FDRSurvivors
+//	FDRSurvivors      = RejectedSecondary + HoldoutInput
+//	HoldoutInput      = HoldoutErrors + RejectedHoldout + HoldoutValidated + HoldoutInterrupted
+//	HoldoutValidated  = CappedPerLeague + PublishErrors + Published
+//
+// TestedStatistically é o m entregue à correção de múltiplas comparações.
+type Funnel struct {
+	Generated int `json:"generated"`
+
+	// Antes do teste — só critérios ESTRUTURAIS, que não dependem do resultado.
+	BacktestErrors     int `json:"backtest_errors"`
+	NoRealOdds         int `json:"rejected_no_real_odds"`
+	NoMetric           int `json:"rejected_no_metric"`
+	InsufficientSample int `json:"rejected_insufficient_sample"`
+	NotTestable        int `json:"rejected_not_testable"`
+
+	// Teste estatístico sobre o conjunto COMPLETO de hipóteses elegíveis.
+	TestedStatistically int `json:"tested_statistically"`
+	RejectedFDR         int `json:"rejected_fdr"`
+	FDRSurvivors        int `json:"fdr_survivors"`
+
+	// Depois do FDR — critérios do doc 08 que dependem do resultado.
+	RejectedSecondary int `json:"rejected_secondary"`
+
+	// Fora da amostra.
+	HoldoutInput       int `json:"holdout_input"`
+	HoldoutErrors      int `json:"holdout_errors"`
+	RejectedHoldout    int `json:"rejected_holdout"`
+	HoldoutInterrupted int `json:"holdout_interrupted"`
+	HoldoutValidated   int `json:"holdout_validated"`
+
+	// Publicação.
+	CappedPerLeague int `json:"capped_per_league"`
+	PublishErrors   int `json:"publish_errors"`
+	Published       int `json:"published"`
+
+	// Interrupted = o ciclo foi cortado (shutdown/timeout) durante a varredura.
+	// Nesse caso nada é publicado e as identidades não se aplicam.
+	Interrupted bool `json:"interrupted,omitempty"`
+}
+
+// Check verifica as identidades do funil. Devolve "" se todas fecham, ou a
+// primeira que não fecha. Usado por testes e antes de gravar o ciclo.
+func (f Funnel) Check() string {
+	if f.Interrupted {
+		return ""
+	}
+	pre := f.BacktestErrors + f.NoRealOdds + f.NoMetric + f.InsufficientSample +
+		f.NotTestable + f.TestedStatistically
+	switch {
+	case f.Generated != pre:
+		return fmt.Sprintf("geradas %d ≠ estruturais+testadas %d", f.Generated, pre)
+	case f.TestedStatistically != f.RejectedFDR+f.FDRSurvivors:
+		return fmt.Sprintf("testadas %d ≠ FDR rejeitadas %d + sobreviventes %d",
+			f.TestedStatistically, f.RejectedFDR, f.FDRSurvivors)
+	case f.FDRSurvivors != f.RejectedSecondary+f.HoldoutInput:
+		return fmt.Sprintf("sobreviventes %d ≠ secundários %d + holdout %d",
+			f.FDRSurvivors, f.RejectedSecondary, f.HoldoutInput)
+	case f.HoldoutInput != f.HoldoutErrors+f.RejectedHoldout+f.HoldoutValidated+f.HoldoutInterrupted:
+		return fmt.Sprintf("holdout %d ≠ erros %d + reprovadas %d + validadas %d + interrompidas %d",
+			f.HoldoutInput, f.HoldoutErrors, f.RejectedHoldout, f.HoldoutValidated, f.HoldoutInterrupted)
+	case f.HoldoutValidated != f.CappedPerLeague+f.PublishErrors+f.Published:
+		return fmt.Sprintf("validadas %d ≠ teto %d + erros %d + publicadas %d",
+			f.HoldoutValidated, f.CappedPerLeague, f.PublishErrors, f.Published)
+	}
+	return ""
 }
 
 // Result resume um ciclo completo (todas as ligas).
@@ -113,6 +191,59 @@ type Result struct {
 	Deactivated  int            `json:"deactivated"`
 	Errors       int            `json:"errors"`
 	ByLeague     []LeagueResult `json:"by_league"`
+
+	// REV-P4 (B3): funil e motivos AGREGADOS. A tela lia `rejections` no topo
+	// do resultado, campo que não existia aqui — a lista de motivos de descarte
+	// nunca foi renderizada em nenhuma varredura.
+	Rejections map[string]int `json:"rejections"`
+	Funnel     Funnel         `json:"funnel"`
+}
+
+// FromLeague monta o Result de um ciclo de uma única liga (disparo manual com
+// liga escolhida), com o funil e os motivos no topo.
+func FromLeague(lr LeagueResult) Result {
+	r := Result{Leagues: 1, Rejections: map[string]int{}}
+	r.absorb(lr)
+	return r
+}
+
+func (r *Result) absorb(lr LeagueResult) {
+	if r.Rejections == nil {
+		r.Rejections = map[string]int{}
+	}
+	r.Combinations += lr.Combinations
+	r.Published += lr.Published
+	r.Deactivated += lr.Deactivated
+	r.Errors += lr.Errors
+	r.ByLeague = append(r.ByLeague, lr)
+	for k, v := range lr.Rejections {
+		r.Rejections[k] += v
+	}
+	r.Funnel.add(lr.Funnel)
+}
+
+// add soma o funil de uma liga ao agregado. As identidades de Check continuam
+// valendo na soma, porque valem em cada parcela.
+func (f *Funnel) add(o Funnel) {
+	f.Generated += o.Generated
+	f.BacktestErrors += o.BacktestErrors
+	f.NoRealOdds += o.NoRealOdds
+	f.NoMetric += o.NoMetric
+	f.InsufficientSample += o.InsufficientSample
+	f.NotTestable += o.NotTestable
+	f.TestedStatistically += o.TestedStatistically
+	f.RejectedFDR += o.RejectedFDR
+	f.FDRSurvivors += o.FDRSurvivors
+	f.RejectedSecondary += o.RejectedSecondary
+	f.HoldoutInput += o.HoldoutInput
+	f.HoldoutErrors += o.HoldoutErrors
+	f.RejectedHoldout += o.RejectedHoldout
+	f.HoldoutInterrupted += o.HoldoutInterrupted
+	f.HoldoutValidated += o.HoldoutValidated
+	f.CappedPerLeague += o.CappedPerLeague
+	f.PublishErrors += o.PublishErrors
+	f.Published += o.Published
+	f.Interrupted = f.Interrupted || o.Interrupted
 }
 
 // WithProgress liga o acompanhamento de andamento a este motor, para a barra de
@@ -141,19 +272,21 @@ func (e *Engine) RunAll(ctx context.Context) (Result, error) {
 	// cada liga). O texto abaixo da barra mostra o progresso fino, dentro da liga.
 	e.report.Phase(PhaseScan, "Minerando combinações", len(leagues))
 
+	out.Rejections = map[string]int{}
 	for _, l := range leagues {
 		e.report.Step(l.Name)
 		lr, err := e.RunLeague(ctx, l.ID, nil)
 		if err != nil {
 			out.Errors++
+			// Um ciclo interrompido também entra no agregado, marcado, para o
+			// registro dizer que houve interrupção em vez de sumir com a liga.
+			if lr.Funnel.Interrupted {
+				out.Funnel.Interrupted = true
+			}
 			continue
 		}
 		out.Leagues++
-		out.Combinations += lr.Combinations
-		out.Published += lr.Published
-		out.Deactivated += lr.Deactivated
-		out.Errors += lr.Errors
-		out.ByLeague = append(out.ByLeague, lr)
+		out.absorb(lr)
 	}
 	return out, nil
 }
@@ -231,9 +364,22 @@ func (e *Engine) RunLeague(ctx context.Context, leagueID int64, seasonIDs []int6
 
 	combos := generateCombos(teams, e.opts.IncludeTeams)
 	res.Combinations = len(combos)
+	res.Funnel.Generated = len(combos)
 
 	approved := e.mine(ctx, filters, leagueID, seasonIDs, combos, train, &res)
+	if res.Funnel.Interrupted {
+		// Varredura incompleta: o m do FDR seria menor que o real. Não publica e,
+		// principalmente, não desativa as descobertas vigentes com base num ciclo
+		// que não terminou.
+		return res, ctx.Err()
+	}
 	approved = e.validate(ctx, filters, leagueID, seasonIDs, approved, holdout, &res)
+	if res.Funnel.HoldoutInterrupted > 0 {
+		// Mesmo motivo: publicar só parte dos validados e desativar o resto
+		// retiraria do ar descobertas que nem chegaram a ser checadas.
+		res.Funnel.Interrupted = true
+		return res, ctx.Err()
+	}
 	res.Approved = len(approved)
 
 	published, err := e.publish(ctx, league.Name, leagueID, seasonIDs, approved, &res)
@@ -251,15 +397,28 @@ func (e *Engine) RunLeague(ctx context.Context, leagueID int64, seasonIDs []int6
 	return res, nil
 }
 
-// mine executa o backtest de cada combinação NA JANELA DE DESCOBERTA e aplica os
-// critérios do doc 08 mais a correção para testes múltiplos (AUD-003). Erros de
-// uma combinação isolada (ex.: definição inválida) são contados e o ciclo segue
-// — uma combinação ruim não pode invalidar a varredura inteira.
+// mine executa o backtest de cada combinação NA JANELA DE DESCOBERTA, aplica a
+// correção para testes múltiplos (AUD-003) e só DEPOIS os critérios do doc 08.
 //
-// Duas passagens são necessárias e a ordem não é negociável: o limiar de
-// significância depende de QUANTOS testes foram feitos, então nenhum candidato
-// pode ser aprovado antes de a varredura inteira terminar. Aprovar na primeira
-// passagem seria aplicar um limiar fixo — o defeito que esta correção remove.
+// REV-P4 (B1) — a ordem é o conteúdo da correção:
+//
+//  1. ELEGIBILIDADE ESTRUTURAL — só o que não depende do resultado: erro de
+//     backtest, falta de odd real, métrica não publicada, amostra abaixo do
+//     mínimo, p-valor não calculável.
+//  2. p-valor de TODAS as hipóteses elegíveis; m = quantas são.
+//  3. BH/BY sobre esse conjunto completo.
+//  4. SÓ ENTÃO os critérios do doc 08 que dependem do resultado (win rate, ROI,
+//     yield, lucro, drawdown, DSFR), aplicados aos sobreviventes.
+//
+// Antes os passos 4 vinham antes do 2: o FDR recebia só as combinações que já
+// "pareciam boas". Medido sobre ruído puro com os critérios de produção (200
+// seeds × 700 partidas): m médio de 0,75 contra ~70 elegíveis, e falsos
+// "significativos" em 8,5 % das simulações contra ~1 % no procedimento correto.
+// O holdout segurava a publicação; a camada de FDR não cumpria o que prometia.
+//
+// Erros de uma combinação isolada são contados e o ciclo segue. Um ciclo
+// interrompido NÃO publica nada: a correção só é válida sobre a varredura
+// completa — corrigir sobre um prefixo usaria um m menor que o real.
 func (e *Engine) mine(
 	ctx context.Context,
 	filters *usecase.FilterUsecase,
@@ -270,7 +429,8 @@ func (e *Engine) mine(
 	res *LeagueResult,
 ) []candidate {
 	crit := e.opts.Criteria
-	var passed []candidate
+	f := &res.Funnel
+	var hipoteses []candidate
 
 	// Reporta a cada 25 combinações: dá movimento visível no texto sem travar o
 	// laço pegando o mutex do tracker milhares de vezes.
@@ -278,11 +438,7 @@ func (e *Engine) mine(
 
 	for i, c := range combos {
 		if ctx.Err() != nil {
-			// Shutdown no meio da varredura: NÃO devolve o que já foi minerado.
-			// A correção de múltiplos testes só é válida sobre a varredura
-			// COMPLETA — corrigir sobre um prefixo do espaço de busca usaria um
-			// m menor que o real e afrouxaria o limiar. Ciclo interrompido não
-			// publica nada.
+			f.Interrupted = true
 			return nil
 		}
 
@@ -296,7 +452,6 @@ func (e *Engine) mine(
 			LastNGames:       c.window,
 			HomeAway:         c.homeAway,
 			CornersThreshold: c.line,
-			OpponentTier:     c.tier,
 			MaxOdds:          c.maxOdds,
 			Metric:           c.effectiveMetric(),
 
@@ -305,6 +460,7 @@ func (e *Engine) mine(
 			// por "odd <= X" sobre ela seleciona lotes de média alta e devolve
 			// acerto alto por construção, não por vantagem. Sem odd real, a
 			// combinação simplesmente não é testável e não vira estratégia.
+			// Não há odd fixa aqui: odd digitada é cenário, não mercado.
 			RequireRealOdds: true,
 
 			// AUD-003: só a janela de descoberta. A de validação não existe para
@@ -318,52 +474,77 @@ func (e *Engine) mine(
 		result, err := filters.RunBacktest(ctx, leagueID, seasonIDs, criteria, 0)
 		if err != nil {
 			res.Errors++
+			f.BacktestErrors++
 			continue
 		}
 
-		if reason := crit.validate(result); reason != "" {
+		// 1. Elegibilidade estrutural.
+		if reason := crit.structuralSample(result); reason != "" {
 			res.Rejections[string(reason)]++
+			switch reason {
+			case rejectNoRealOdds:
+				f.NoRealOdds++
+			case rejectNoMetric:
+				f.NoMetric++
+			default:
+				f.InsufficientSample++
+			}
 			continue
 		}
-
-		// Último filtro do doc 08 (faixa "Descartar" = score < 40). O score é o
-		// mesmo que a estratégia receberá ao ser persistida.
-		dsfr := strategyengine.PreviewScores(result).DSFRScore
-		if dsfr < crit.MinDSFR {
-			res.Rejections[string(rejectScore)]++
-			continue
-		}
-
 		// AUD-003: p-valor unilateral contra a probabilidade que a odd embutia.
 		// Sem odd utilizável não há hipótese nula — e sem hipótese nula não se
 		// publica. "Não testável" reprova; nunca passa direto.
 		p, ok := pValue(result)
 		if !ok {
 			res.Rejections[string(rejectNotTestable)]++
+			f.NotTestable++
 			continue
 		}
 
-		passed = append(passed, candidate{combo: c, result: result, dsfr: dsfr, pValue: p})
+		hipoteses = append(hipoteses, candidate{combo: c, result: result, pValue: p})
 	}
 
-	return e.applyFDR(passed, res)
+	// 2–3. Correção sobre o conjunto completo.
+	sobreviventes := e.applyFDR(hipoteses, res)
+
+	// 4. Critérios do doc 08 que dependem do resultado — só agora.
+	var aprovadas []candidate
+	for _, c := range sobreviventes {
+		if reason := crit.secondary(c.result); reason != "" {
+			res.Rejections[string(reason)]++
+			f.RejectedSecondary++
+			continue
+		}
+		// Último filtro do doc 08 (faixa "Descartar" = score < 40). O score é o
+		// mesmo que a estratégia receberá ao ser persistida.
+		c.dsfr = strategyengine.PreviewScores(c.result).DSFRScore
+		if c.dsfr < crit.MinDSFR {
+			res.Rejections[string(rejectScore)]++
+			f.RejectedSecondary++
+			continue
+		}
+		aprovadas = append(aprovadas, c)
+	}
+	return aprovadas
 }
 
-// applyFDR corrige o limiar de significância pelo número de testes efetivamente
-// realizados e devolve só os candidatos que sobrevivem.
+// applyFDR corrige o limiar de significância pelo número de hipóteses
+// ELEGÍVEIS — todas as que passaram só nos critérios estruturais — e devolve as
+// que sobrevivem.
 //
-// O limiar NÃO é uma constante: quanto mais combinações o ciclo testar, mais
+// O limiar NÃO é uma constante: quanto mais hipóteses o ciclo testar, mais
 // exigente ele fica. É isso que torna o espaço de busca um custo em vez de uma
-// vantagem — hoje ampliar a grade aumenta a chance de achar sorte, e a correção
-// é o que cobra por isso.
-func (e *Engine) applyFDR(passed []candidate, res *LeagueResult) []candidate {
-	res.Tested = len(passed)
-	if len(passed) == 0 {
+// vantagem.
+func (e *Engine) applyFDR(hipoteses []candidate, res *LeagueResult) []candidate {
+	f := &res.Funnel
+	res.Tested = len(hipoteses)
+	f.TestedStatistically = len(hipoteses)
+	if len(hipoteses) == 0 {
 		return nil
 	}
 
-	pvalues := make([]float64, len(passed))
-	for i, c := range passed {
+	pvalues := make([]float64, len(hipoteses))
+	for i, c := range hipoteses {
 		pvalues[i] = c.pValue
 	}
 
@@ -371,23 +552,25 @@ func (e *Engine) applyFDR(passed []candidate, res *LeagueResult) []candidate {
 	if err != nil {
 		// Critério inválido não pode virar "publique tudo". Reprova o lote.
 		res.Errors++
-		res.Rejections[string(rejectMultipleTesting)] += len(passed)
+		res.Rejections[string(rejectMultipleTesting)] += len(hipoteses)
+		f.RejectedFDR += len(hipoteses)
 		return nil
 	}
 	res.FDRThreshold = threshold
 
 	// threshold == 0 significa que nenhum p-valor sobreviveu ao procedimento.
-	// A comparação abaixo já cuida disso (nenhum p-valor real é <= 0), mas o
-	// caso é explicitado porque tratá-lo como "sem limiar" publicaria tudo.
+	// Tratá-lo como "sem limiar" publicaria tudo.
 	var significant []candidate
-	for _, c := range passed {
+	for _, c := range hipoteses {
 		if threshold > 0 && c.pValue <= threshold {
 			significant = append(significant, c)
 			continue
 		}
 		res.Rejections[string(rejectMultipleTesting)]++
+		f.RejectedFDR++
 	}
 	res.Significant = len(significant)
+	f.FDRSurvivors = len(significant)
 	return significant
 }
 
@@ -406,14 +589,21 @@ func (e *Engine) validate(
 	holdout window,
 	res *LeagueResult,
 ) []candidate {
+	f := &res.Funnel
+	f.HoldoutInput = len(candidates)
 	if len(candidates) == 0 {
 		return nil
 	}
 	crit := e.opts.Criteria
 	var validated []candidate
 
-	for _, c := range candidates {
+	for i, c := range candidates {
 		if ctx.Err() != nil {
+			// As que não chegaram a ser checadas ficam registradas como
+			// interrompidas, não como reprovadas.
+			f.HoldoutInterrupted = len(candidates) - i
+			f.HoldoutValidated = len(validated)
+			res.Validated = len(validated)
 			return validated
 		}
 
@@ -422,7 +612,6 @@ func (e *Engine) validate(
 			LastNGames:       c.combo.window,
 			HomeAway:         c.combo.homeAway,
 			CornersThreshold: c.combo.line,
-			OpponentTier:     c.combo.tier,
 			MaxOdds:          c.combo.maxOdds,
 			Metric:           c.combo.effectiveMetric(),
 			RequireRealOdds:  true,
@@ -434,12 +623,14 @@ func (e *Engine) validate(
 		out, err := filters.RunBacktest(ctx, leagueID, seasonIDs, criteria, 0)
 		if err != nil {
 			res.Errors++
+			f.HoldoutErrors++
 			continue
 		}
 
 		verdict := checkHoldout(out, crit.HoldoutMinGames, crit.HoldoutAlpha)
 		if !verdict.Passed {
 			res.Rejections[string(verdict.Reason)]++
+			f.RejectedHoldout++
 			continue
 		}
 
@@ -448,6 +639,7 @@ func (e *Engine) validate(
 	}
 
 	res.Validated = len(validated)
+	f.HoldoutValidated = len(validated)
 	return validated
 }
 
@@ -471,6 +663,7 @@ func (e *Engine) publish(
 		return approved[i].combo.name(leagueName) < approved[j].combo.name(leagueName)
 	})
 	if len(approved) > e.opts.Criteria.MaxPerLeague {
+		res.Funnel.CappedPerLeague = len(approved) - e.opts.Criteria.MaxPerLeague
 		approved = approved[:e.opts.Criteria.MaxPerLeague]
 	}
 
@@ -479,6 +672,7 @@ func (e *Engine) publish(
 		definition, err := c.combo.definition(leagueID, seasonIDs)
 		if err != nil {
 			res.Errors++
+			res.Funnel.PublishErrors++
 			continue
 		}
 
@@ -492,14 +686,17 @@ func (e *Engine) publish(
 		}
 		if err := e.strategies.UpsertDiscovered(ctx, s); err != nil {
 			res.Errors++
+			res.Funnel.PublishErrors++
 			continue
 		}
 		if _, err := e.persister.PersistResult(ctx, s.ID, c.result); err != nil {
 			res.Errors++
+			res.Funnel.PublishErrors++
 			continue
 		}
 		published = append(published, s.ID)
 	}
+	res.Funnel.Published = len(published)
 	return published, nil
 }
 
@@ -520,9 +717,6 @@ func describe(c candidate, leagueName string) string {
 	filters := homeAwayLabel(c.combo.homeAway)
 	if c.combo.window > 0 {
 		filters += fmt.Sprintf(", janela dos últimos %d jogos de cada equipe", c.combo.window)
-	}
-	if c.combo.tier != "" {
-		filters += fmt.Sprintf(", apenas contra adversários do grupo %s", c.combo.tier)
 	}
 
 	// O que foi observado muda conforme o mercado: escanteios é limiar sobre um

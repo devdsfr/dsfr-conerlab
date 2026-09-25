@@ -243,11 +243,28 @@ combinação, usando o MESMO motor do Simulador de Filtros (por isso qualquer n�
 publicado é reproduzível na tela).
 
 **Espaço de busca por campeonato:** 5 linhas de escanteio × 3 mandos × 3 janelas ×
-3 tetos de odd = 135 combinações. Eram 540 até 09/2026, quando o eixo de tier de
-adversário saiu — ele multiplicava a grade por 4 sem acrescentar hipótese nenhuma
-(ver "Tier de adversário" na seção de termos).
+3 tetos de odd = 135 combinações de escanteios, mais 3 mercados de resultado × 3
+mandos × 3 janelas = 27, total **162**. O ciclo diário soma ainda 45 por equipe
+(5 linhas × 3 mandos × 3 tetos). O eixo de tier de adversário saiu em 09/2026 — ele
+multiplicava a grade por 4 sem acrescentar hipótese nenhuma (ver "Tier de
+adversário" na seção de termos).
 
-### Critérios de aprovação — precisa passar em TODOS
+### Ordem das etapas (importa)
+
+1. **Elegibilidade estrutural** — só o que não depende do resultado: odd real de
+   mercado (motivo sem_odd_real), estatística publicada (sem_metrica), amostra
+   mínima (amostra_insuficiente) e teste calculável (sem_pvalor_calculavel).
+2. **Teste estatístico sobre TODAS as elegíveis**, com correção para múltiplos
+   testes (detalhes abaixo).
+3. **Critérios de qualidade** da tabela seguinte, aplicados só a quem sobreviveu
+   ao teste.
+4. **Reteste fora da amostra.**
+
+A ordem 2 → 3 é deliberada: aplicar os critérios de qualidade antes do teste
+entregaria à correção só as combinações que já "pareciam boas", e a correção
+perderia o sentido.
+
+### Critérios de qualidade — precisa passar em TODOS
 
 | Critério | Limite | Motivo de rejeição |
 |---|---|---|
@@ -263,11 +280,10 @@ adversário saiu — ele multiplicava a grade por 4 sem acrescentar hipótese ne
 **Guarda contra overfitting:** a trava de %d jogos não é configurável. Existe porque
 com amostra pequena é fácil achar "100%% de acerto" por acaso — e isso não se repete.
 
-### Passar nos critérios acima NÃO basta
+### As barreiras estatísticas
 
-Passar em todos eles ainda é um resultado dentro da amostra. Como o motor testa
-centenas de combinações contra o mesmo histórico, algumas passam por sorte. Há mais
-duas barreiras, e as duas são obrigatórias:
+Como o motor testa centenas de combinações contra o mesmo histórico, algumas passam
+por sorte. Há três barreiras, todas obrigatórias:
 
 **1. Corte temporal.** O histórico de cada campeonato é dividido por data: os %.0f%%
 mais antigos formam a janela de DESCOBERTA e os %.0f%% mais recentes a janela de
@@ -279,7 +295,8 @@ permite esse corte não publica nada (motivo: liga_sem_janela_de_validacao).
 binomial unilateral contra a probabilidade que a própria odd embutia (1 ÷ odd). Não
 se pergunta "a taxa de acerto é alta?" — uma linha fácil acerta 90%% e paga 1.05, o
 que é prejuízo. Pergunta-se se o acerto observado supera o que a odd já precificava.
-Os p-valores de todas as combinações passam por controle de falsas descobertas
+Os p-valores de todas as combinações elegíveis — antes de qualquer critério de
+qualidade — passam por controle de falsas descobertas
 (Benjamini–Yekutieli, q = %.2f), então **o limiar depende de quantos testes foram
 feitos**: testar mais custa mais caro. Motivo de rejeição: nao_sobreviveu_correcao_fdr.
 

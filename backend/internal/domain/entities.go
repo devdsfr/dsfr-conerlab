@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/devdsfr/cornerlab/pkg/adminaccess"
 	"github.com/devdsfr/cornerlab/pkg/devaccess"
 )
 
@@ -240,6 +242,24 @@ func (u User) IsPremium() bool {
 		return true
 	}
 	return u.SubscriptionStatus == "active" || u.SubscriptionStatus == "trialing"
+}
+
+// IsAdmin indica se o usuário é administrador da plataforma (REV-P4, B4) — ver
+// pkg/adminaccess. Hoje só o disparo manual do Discovery depende disto.
+func (u User) IsAdmin() bool {
+	return adminaccess.IsAdmin(u.Email)
+}
+
+// MarshalJSON acrescenta `is_admin` ao JSON do usuário. Assim toda resposta
+// que já devolve o usuário (login, cadastro) informa ao frontend se o botão
+// "Procurar agora" deve aparecer — sem que o frontend seja a barreira: a
+// barreira é middleware.RequireAdmin.
+func (u User) MarshalJSON() ([]byte, error) {
+	type semMetodos User
+	return json.Marshal(struct {
+		semMetodos
+		IsAdmin bool `json:"is_admin"`
+	}{semMetodos(u), u.IsAdmin()})
 }
 
 // PasswordResetToken representa uma solicitação de "esqueci minha senha" pendente.

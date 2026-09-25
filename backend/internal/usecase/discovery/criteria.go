@@ -210,6 +210,11 @@ const (
 	// publicado: sem janela de validação não há como saber se o padrão
 	// sobrevive fora da amostra, e publicar sem saber é o defeito original.
 	rejectNotSplittable rejection = "liga_sem_janela_de_validacao"
+
+	// REV-P4 (B3): causas estruturais que antes apareciam todas como
+	// "amostra_insuficiente". Ver structuralSample.
+	rejectNoRealOdds rejection = "sem_odd_real"
+	rejectNoMetric   rejection = "sem_metrica"
 )
 
 // validate aplica os critérios do doc 08 na ordem do documento e devolve o
@@ -232,6 +237,40 @@ func (c Criteria) validate(r *usecase.BacktestResult) rejection {
 	if r.MatchCount < c.MinGames {
 		return rejectSample
 	}
+	return c.secondary(r)
+}
+
+// structuralSample é o único critério de AMOSTRA aplicado ANTES do FDR (REV-P4,
+// B1). Ele pode reduzir o número de hipóteses porque não depende do resultado:
+// a contagem de observações de uma combinação é a mesma quer ela acerte muito,
+// quer erre muito ("independent filtering").
+//
+// Também devolve a CAUSA correta da falta de amostra (REV-P4, B3). Sem odd real,
+// todas as 162 combinações eram rotuladas "amostra_insuficiente" — verdade
+// literal, mas enganosa: a amostra só faltava porque as partidas sem odd de
+// mercado são excluídas. A regra é mensurável, não um palpite: se as observações
+// excluídas por falta de odd real, somadas às elegíveis, bastariam para o
+// mínimo, a causa é a odd. O mesmo vale para métrica não publicada.
+func (c Criteria) structuralSample(r *usecase.BacktestResult) rejection {
+	if r.MatchCount >= c.MinGames {
+		return ""
+	}
+	a := r.Accounting
+	if a.ExcludedNoOdd > 0 && r.MatchCount+a.ExcludedNoOdd >= c.MinGames {
+		return rejectNoRealOdds
+	}
+	if a.ExcludedNoMetric > 0 && r.MatchCount+a.ExcludedNoMetric >= c.MinGames {
+		return rejectNoMetric
+	}
+	return rejectSample
+}
+
+// secondary são os critérios do doc 08 que DEPENDEM DO RESULTADO: win rate,
+// ROI, yield, lucro e drawdown. REV-P4 (B1): eles só podem ser aplicados DEPOIS
+// da correção de múltiplas comparações. Aplicados antes — como era —, reduzem
+// o m entregue ao FDR selecionando exatamente as hipóteses de p-valor baixo, e
+// o procedimento deixa de controlar a taxa de falsas descobertas.
+func (c Criteria) secondary(r *usecase.BacktestResult) rejection {
 	if r.HitRate < c.MinWinRate {
 		return rejectWinRate
 	}

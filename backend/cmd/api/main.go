@@ -23,6 +23,7 @@ import (
 	"github.com/devdsfr/cornerlab/internal/usecase/intelligence"
 	"github.com/devdsfr/cornerlab/internal/usecase/statsync"
 	"github.com/devdsfr/cornerlab/internal/usecase/strategyengine"
+	"github.com/devdsfr/cornerlab/pkg/adminaccess"
 	"github.com/devdsfr/cornerlab/pkg/cache"
 	"github.com/devdsfr/cornerlab/pkg/config"
 	"github.com/devdsfr/cornerlab/pkg/database"
@@ -37,6 +38,12 @@ func main() {
 	appLog := logger.New(cfg.Environment)
 	slog.SetDefault(appLog)
 	devaccess.Configure(cfg.DevPremiumEmails)
+	// REV-P4 (B4): administradores. Lista vazia é falha fechada — o disparo
+	// manual do Discovery fica indisponível para todos, e o log diz isso.
+	adminaccess.Configure(cfg.AdminEmails)
+	if adminaccess.Count() == 0 {
+		slog.Warn("ADMIN_EMAILS vazio: nenhum usuário pode disparar o Discovery manual")
+	}
 
 	// ValidateAPI, e não Validate: a API é o único binário que assina e verifica
 	// JWT, então é o único que pode exigir JWT_SECRET. Exigir isso de todos

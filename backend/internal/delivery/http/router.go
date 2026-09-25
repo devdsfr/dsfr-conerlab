@@ -161,7 +161,11 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 
 			// "Procurar novas estratégias agora" — exige login pelo custo do ciclo
 			// (varredura completa do histórico da liga), não por ser recurso pago.
-			authGroup.POST("/discovery/run", h.Discovery.Run)
+			// REV-P4 (B4): disparo manual SÓ para administrador. A varredura
+			// publica e desativa estratégias PÚBLICAS e roda dentro do processo
+			// da API; antes bastava estar logado. A barreira é esta, no backend;
+			// o frontend só esconde o botão.
+			authGroup.POST("/discovery/run", middleware.RequireAdmin(users), h.Discovery.Run)
 
 			authGroup.GET("/billing/status", h.Billing.Status)
 			authGroup.POST("/billing/checkout", h.Billing.Checkout)

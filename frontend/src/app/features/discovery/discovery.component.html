@@ -2,10 +2,12 @@
   <header>
     <h1 class="text-2xl font-semibold text-slate-100">Descobertas</h1>
     <p class="text-sm text-slate-300 mt-1 max-w-3xl">
-      Aqui você não monta nada. O CornerLab combina automaticamente centenas de configurações de
-      filtro, executa o backtest de cada uma sobre o histórico armazenado e descarta tudo que não
-      passa nos critérios mínimos de amostra, retorno, consistência e drawdown. Sobra apenas o que
-      se sustentou nos dados — e explicado em texto, não só em números.
+      Aqui você não monta nada. O CornerLab combina automaticamente configurações de filtro
+      (162 por campeonato), procura padrões na parte mais antiga do histórico, aplica um teste
+      estatístico com correção para múltiplos testes e só publica o que se repete na parte mais
+      recente, que a busca não viu. Isso exige odd real de mercado: sem ela, nada é testado.
+      O que aparece aqui é <strong class="text-slate-100">padrão histórico</strong> — não é
+      recomendação de aposta nem previsão.
     </p>
   </header>
 
@@ -31,13 +33,15 @@
       Atualizar
     </button>
 
-    @if (auth.isAuthenticated()) {
+    <!-- REV-P4 (B4): só administrador vê o botão. A barreira real é o backend
+         (403); esconder aqui é só para não oferecer o que vai ser recusado. -->
+    @if (auth.isAdmin()) {
       <button
         mat-flat-button
         color="primary"
         (click)="run()"
         [disabled]="running()"
-        matTooltip="Executa uma nova varredura agora. Normalmente isso roda automaticamente todos os dias — use aqui se acabou de sincronizar dados novos."
+        matTooltip="Administrador: executa uma nova varredura agora e publica/desativa padrões para todos os usuários. Normalmente isso roda automaticamente todos os dias."
       >
         <!-- Cada ramo mantém um único nó na raiz para o mat-icon ser projetado no
              slot de ícone do MatButton (NG8011); o rótulo fica fora do @if. -->
@@ -50,8 +54,7 @@
       </button>
     } @else {
       <p class="text-xs text-slate-400 max-w-xs">
-        A busca por novas estratégias é atualizada automaticamente todos os dias.
-        <span class="text-slate-300">Entre na sua conta</span> para disparar uma varredura sob demanda.
+        A busca por novos padrões roda automaticamente uma vez por dia.
       </p>
     }
   </section>
@@ -77,7 +80,8 @@
           <div class="text-xs text-slate-400 mt-2">{{ p.message }}</div>
         }
         <div class="text-xs text-slate-500 mt-1">
-          Cada combinação roda um backtest sobre o histórico completo — são milhares por ciclo.
+          Cada combinação roda um backtest na parte mais antiga do histórico (70%); as que
+          sobrevivem ao teste são reexecutadas na parte mais recente.
           Pode fechar a página: a varredura continua no servidor.
         </div>
       </section>
@@ -94,7 +98,31 @@
       <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
       <p class="text-sm text-slate-300">{{ lastRunSummary() }}</p>
 
-      @if (rejectionEntries(run.rejections).length) {
+      <!-- REV-P4 (B3): funil auditável. Cada combinação para em exatamente um
+           estágio; se as contas não fecharem, a tela avisa em vez de exibir. -->
+      @if (run.funnel; as f) {
+        @if (lastRunZero(); as zero) {
+          <p class="text-sm text-slate-300">{{ zero }}</p>
+        }
+        @if (funilFecha(f)) {
+          <ol class="text-xs space-y-0.5">
+            @for (e of etapasFunil(f); track e.chave) {
+              <li class="flex justify-between gap-4 max-w-md"
+                  [class.text-slate-200]="e.tipo === 'passou'"
+                  [class.text-slate-400]="e.tipo === 'saida'"
+                  [class.pl-4]="e.tipo === 'saida'">
+                <span>{{ e.tipo === 'saida' ? '↳ ' : '' }}{{ e.rotulo }}</span>
+                <span class="tabular-nums">{{ e.quantidade }}</span>
+              </li>
+            }
+          </ol>
+        } @else {
+          <p class="text-xs text-amber-400">
+            {{ f.interrupted ? 'A varredura foi interrompida antes de terminar; nada foi publicado nem desativado.'
+                             : 'As contagens deste ciclo não fecham — o funil não é exibido.' }}
+          </p>
+        }
+      } @else if (rejectionEntries(run.rejections).length) {
         <div>
           <p class="text-xs text-slate-400 mb-1">
             Combinações descartadas por não atenderem aos critérios mínimos:
@@ -123,11 +151,13 @@
   } @else if (!strategies().length) {
     <section class="cl-card p-6 text-center space-y-2">
       <mat-icon class="!w-10 !h-10 !text-[40px] text-slate-600" aria-hidden="true">search_off</mat-icon>
-      <h2 class="text-slate-100 font-medium">Nenhuma estratégia aprovada por aqui</h2>
+      <h2 class="text-slate-100 font-medium">Nenhum padrão histórico publicado por aqui</h2>
       <p class="text-sm text-slate-400 max-w-lg mx-auto">
-        Isso é um resultado legítimo, não um erro: no histórico disponível deste recorte, nenhuma
-        combinação atingiu simultaneamente amostra suficiente, retorno, consistência e controle de
-        drawdown. Publicar um padrão fraco seria pior do que não publicar nenhum.
+        Isso é um resultado legítimo, não um erro. Para ser publicado, um padrão precisa de odd real
+        de mercado, amostra suficiente, significância depois da correção para múltiplos testes e
+        repetição na parte do histórico que a busca não viu. Sem odd real de mercado nenhuma
+        combinação chega a ser testada — o sistema não a substitui por odd estimada nem por odd
+        digitada. Publicar um padrão sem evidência seria pior do que não publicar nenhum.
       </p>
     </section>
   } @else {

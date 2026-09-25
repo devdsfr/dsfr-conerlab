@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/devdsfr/cornerlab/internal/domain"
@@ -534,7 +535,18 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 			}
 			continue
 		}
-		if matchLevel && criteria.HomeAway == "" {
+		// REV-P3 — regressão pontual descoberta no REV-P4 (B2).
+		//
+		// Com janela ("últimos N jogos de cada equipe") a regra de partida PRECISA
+		// das duas perspectivas durante a seleção: a janela é por equipe, e uma
+		// equipe joga em casa e fora. Gerar só o candidato do mandante — como a
+		// correção 1 do REV-P3 passou a fazer — transformava a janela em "últimos
+		// N jogos EM CASA de cada equipe". Medido: 8 jogos alternando mando,
+		// last_n = 2 devolvia 4 partidas (5, 6, 7, 8) em vez de 2 (7, 8).
+		//
+		// As duas perspectivas existem aqui SÓ para escolher a janela; logo
+		// abaixo a regra de partida volta a ter uma observação por partida.
+		if matchLevel && criteria.HomeAway == "" && criteria.LastNGames <= 0 {
 			candidates = append(candidates, asHome(m))
 			continue
 		}
@@ -546,13 +558,61 @@ func (u *FilterUsecase) RunBacktest(ctx context.Context, leagueID int64, seasonI
 		for _, c := range candidates {
 			byTeam[c.teamID] = append(byTeam[c.teamID], c)
 		}
+
+		// REV-P4 (B2b): as equipes são percorridas em ordem FIXA. Antes o laço
+		// iterava o map diretamente, e a ordem de iteração de map em Go é
+		// aleatória por especificação. As datas saíam em ordem (sortByDate é
+		// estável), mas partidas do MESMO DIA — a rodada inteira — trocavam de
+		// posição a cada execução. Sequências e drawdown dependem dessa ordem:
+		// medido, 100 execuções idênticas deram 26 resultados diferentes
+		// (maior sequência de erros entre 3 e 11, drawdown entre 16 e 19).
+		teamIDs := make([]int64, 0, len(byTeam))
+		for id := range byTeam {
+			teamIDs = append(teamIDs, id)
+		}
+		sort.Slice(teamIDs, func(i, j int) bool { return teamIDs[i] < teamIDs[j] })
+
 		candidates = nil
-		for _, list := range byTeam {
+		for _, id := range teamIDs {
+			list := byTeam[id]
 			if len(list) > criteria.LastNGames {
 				list = list[len(list)-criteria.LastNGames:]
 			}
 			candidates = append(candidates, list...)
 		}
+
+		// B2: regra de partida sem mando pedido volta a UMA observação por
+		// partida. Uma partida entra se estiver na janela de QUALQUER das duas
+		// equipes; a representação canônica continua sendo a do mandante, como
+		// no caminho sem janela. Não é dedup cego: acontece só depois de a
+		// janela ter sido escolhida com as duas perspectivas, e só para a regra
+		// cujo valor é da partida inteira.
+		if matchLevel && criteria.HomeAway == "" && criteria.TeamID == nil {
+			vistas := make(map[int64]bool, len(candidates))
+			dedup := candidates[:0:0]
+			for _, c := range candidates {
+				if vistas[c.match.ID] {
+					continue
+				}
+				vistas[c.match.ID] = true
+				dedup = append(dedup, asHome(c.match))
+			}
+			candidates = dedup
+		}
+
+		// Ordem cronológica determinística: data, depois id da partida, depois
+		// mandante antes do visitante. É a mesma ordem do caminho sem janela
+		// (allMatches vem por data), agora com desempate explícito.
+		sort.SliceStable(candidates, func(i, j int) bool {
+			a, b := candidates[i], candidates[j]
+			if !a.match.MatchDate.Equal(b.match.MatchDate) {
+				return a.match.MatchDate.Before(b.match.MatchDate)
+			}
+			if a.match.ID != b.match.ID {
+				return a.match.ID < b.match.ID
+			}
+			return a.isHome && !b.isHome
+		})
 	}
 
 	entries := make([]BacktestEntry, 0)

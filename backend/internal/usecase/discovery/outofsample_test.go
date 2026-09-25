@@ -77,6 +77,10 @@ func (fakeLeagueRepo) ListSeasons(context.Context, int64) ([]domain.Season, erro
 type fakeStrategyRepo struct {
 	published []domain.Strategy
 	nextID    int64
+
+	// REV-P4 (B1c): conta chamadas de desativação, para provar que um ciclo
+	// interrompido não retira do ar as descobertas vigentes.
+	deactivateCalls int
 }
 
 func (f *fakeStrategyRepo) UpsertDiscovered(_ context.Context, s *domain.Strategy) error {
@@ -86,6 +90,7 @@ func (f *fakeStrategyRepo) UpsertDiscovered(_ context.Context, s *domain.Strateg
 	return nil
 }
 func (f *fakeStrategyRepo) DeactivateDiscoveredExcept(context.Context, int64, []int64) (int, error) {
+	f.deactivateCalls++
 	return 0, nil
 }
 func (f *fakeStrategyRepo) Create(context.Context, *domain.Strategy) error { return nil }

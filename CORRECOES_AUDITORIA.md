@@ -4961,3 +4961,242 @@ Em ordem, uma correção de cada vez:
 Fora do plano: AUD-006 e AUD-007 globais, e integração de odds reais.
 
 ## REV-P4 = PARCIAL — Fase A concluída
+
+---
+
+## REV-P4 — Fase B (implementação)
+
+Data: **25/09/2026**. Base: `f3adffe`. Ordem cumprida: **B2 → B1 → B3 → B4 → textos/UI**,
+uma causa por vez, cada uma com teste antes de passar à seguinte.
+
+Autorizações usadas: (1) reabrir **somente** o ponto do REV-P3 necessário ao B2;
+(2) "Procurar agora" restrito a administrador.
+
+### REV-P3 — regressão pontual descoberta no REV-P4 (B2 e B2b)
+
+Único trecho do P3 reaberto: o bloco de `LastNGames` em `usecase/filter_usecase.go`.
+Nenhum outro item do P3 foi tocado.
+
+**B2 — janela em regra de partida.** Causa: a correção 1 do REV-P3 passou a gerar só
+o candidato do mandante em regra de partida; o agrupamento por equipe da janela
+enxergava então só jogos em casa. Correção: com janela, a regra de partida gera as
+duas perspectivas **só para escolher a janela**; em seguida volta a uma observação
+por partida (representante canônico: mandante), e só quando não há mando pedido nem
+equipe selecionada. Não é dedup cego.
+
+Semântica fixada:
+
+- **Regra de partida:** janela por equipe, **independente de mando**; a partida entra
+  se estiver entre as últimas N de qualquer das duas equipes, e entra uma vez.
+- **Regra de equipe:** inalterada, perspectiva de cada equipe.
+- **Mando pedido:** filtra **depois** da janela (como antes do REV-P3).
+
+| Caso (8 jogos alternando mando, `last_n = 2`) | Antes | Depois |
+|---|---|---|
+| Escanteios, qualquer mando | **5, 6, 7, 8** | **7, 8** |
+| Escanteios, só em casa | — | 7, 8 (ambas em casa) |
+| Escanteios, só fora | — | 7, 8 (ambas fora) |
+| Vitória (equipe) | 7, 7, 8, 8 | 7, 7, 8, 8 (inalterado) |
+
+**B2b — ordem não determinística (achado durante o B2, mesmo bloco).** A janela
+reconstruía os candidatos iterando um `map` do Go, cuja ordem é aleatória por
+especificação. As datas saíam em ordem (`sortByDate` é estável), mas partidas do
+**mesmo dia** trocavam de posição a cada execução. Medido antes da correção:
+**100 execuções idênticas → 26 resultados diferentes** (maior sequência de erros entre
+3 e 11, drawdown entre 16 e 19; nº de partidas e de acertos estáveis). Afetava o
+Simulador em produção (padrão `last_n = 10`), o componente de drawdown do DSFR e o
+filtro de drawdown do Discovery. Correção: equipes percorridas em ordem fixa e
+ordenação explícita por (data, id da partida, mandante antes de visitante).
+
+### B1 — FDR sobre o conjunto completo de hipóteses
+
+`discovery/engine.go` (`mine`, `applyFDR`) e `discovery/criteria.go`.
+
+Ordem nova, documentada no código:
+
+1. **Elegibilidade estrutural** (não depende do resultado): erro de backtest, falta de
+   odd real, métrica não publicada, amostra < mínimo, p-valor não calculável.
+2. p-valor de **todas** as hipóteses elegíveis; **m = quantas são**.
+3. BY (q = 0,10) sobre esse conjunto.
+4. **Só então** os critérios do doc 08 que dependem do resultado — win rate, ROI,
+   yield, lucro, drawdown, DSFR ≥ 40 — sobre os sobreviventes.
+5. Holdout.
+
+**O que entra antes do FDR:** só amostra mínima e testabilidade. A amostra pode reduzir
+m porque não depende do resultado ("independent filtering"). **Nada que olha acerto,
+retorno ou score reduz m.**
+
+`crit.validate` foi dividido em `structuralSample` (antes do FDR) e `secondary` (depois);
+`validate` continua existindo e fazendo os dois, para os testes antigos.
+
+**Correção da minha redação na Fase A.** Escrevi que o procedimento antigo "deixa de
+controlar o FDR". Mais preciso: com hipótese nula completa, o BY com m correto garante
+no máximo q = 10 % de ciclos com falso positivo. O antigo deu 8,5 %, **ainda abaixo do
+nominal**. O defeito é que ele deixou de ser o BY: aplicado a um conjunto pré-selecionado
+pelo resultado, não tem garantia teórica e, na prática, deixou passar 8× mais que o
+procedimento correto.
+
+**B1c — ciclo interrompido desativava as descobertas vigentes (achado durante o B1).**
+Com timeout/shutdown no meio da varredura, `mine` devolvia vazio e o fluxo seguia até
+`DeactivateDiscoveredExcept(liga, [])` — **retirando do ar todas as descobertas da liga**
+por causa de um ciclo que não terminou. O comentário do código dizia "ciclo interrompido
+não publica nada", mas ele desativava. Correção: ciclo interrompido (na varredura ou no
+holdout) retorna erro antes de publicar ou desativar, e o funil marca `interrupted`.
+
+### B3 — funil de rejeição com a causa real
+
+- Motivos novos: `sem_odd_real` e `sem_metrica`. A regra é mensurável, não um palpite:
+  se as observações excluídas por falta de odd real, somadas às elegíveis, bastariam
+  para o mínimo, a causa é a odd. O mesmo vale para métrica.
+- `LeagueResult.Funnel` com 18 contadores e identidades verificadas por `Funnel.Check`:
+
+```
+geradas            = erros + sem_odd_real + sem_métrica + amostra + não_testável + testadas
+testadas (= m)     = rejeitadas_FDR + sobreviventes_FDR
+sobreviventes_FDR  = rejeitadas_secundários + entrada_holdout
+entrada_holdout    = erros + reprovadas + validadas + interrompidas
+validadas          = teto_por_liga + erros_publicação + publicadas
+```
+
+- **Achado:** o resultado agregado (`discovery.Result`) não tinha o campo `rejections`,
+  mas a tela lia `run.rejections` no topo. **A lista de motivos nunca foi renderizada**,
+  em nenhuma varredura. Agora `Result` traz `rejections` e `funnel` agregados
+  (`FromLeague`, `absorb`).
+- `worker_runs.details` do Discovery passa a gravar `funnel` e `rejections`.
+- Comentário falso de `combinations.go` sobre os mercados de resultado corrigido.
+
+### B4 — "Procurar agora" restrito a administrador
+
+- `pkg/adminaccess`: lista de e-mails em `ADMIN_EMAILS`. **Lista vazia = ninguém é
+  admin** (falha fechada), com aviso no log de inicialização.
+- `middleware.RequireAdmin(users)`: carrega o usuário **do banco** a partir do
+  `user_id` do token (mesmo padrão do `RequirePremium`). Respostas: 401 sem
+  token/usuário, **403** para não administrador.
+- Rota: `authGroup.POST("/discovery/run", middleware.RequireAdmin(users), …)`.
+- `domain.User.IsAdmin()` e `MarshalJSON` com `is_admin` — toda resposta que já devolve
+  o usuário (login, cadastro) informa o frontend. O hash de senha continua fora do JSON
+  (testado).
+- Frontend: `AuthService.isAdmin()`; o botão só aparece para admin; 403 mostra mensagem
+  própria. **Esconder o botão não é a barreira** — a barreira é o backend.
+- `render.yaml`: `ADMIN_EMAILS` declarada com `sync: false` (sem valor no repositório).
+
+**Execução manual — auditoria:**
+
+| Pergunta | Resposta |
+|---|---|
+| Síncrona / bloqueia o request? | Não: goroutine na API, resposta 202 |
+| Publica / desativa? | Sim, publica e desativa descobertas públicas |
+| Concorre com o worker? | ⚠️ **Pode.** A trava (`progress.Tracker`, 409) só vale dentro do processo da API. O Cron Job roda em outro container. Um disparo manual durante o cron diário pode fazer os dois ciclos publicarem/desativarem a mesma liga ao mesmo tempo. Com admin-only o risco cai, mas não some. Não redesenhei a infraestrutura; fica como pendência (ex.: advisory lock no Postgres por liga). |
+
+### Textos e UI
+
+| Onde | Antes | Depois |
+|---|---|---|
+| Tooltip do DSFR | "pondera ROI, **EV**, taxa de acerto, **yield**…" | pesos reais da v1.1 (retorno 30, acerto 20, drawdown 15, amostra 15, consistência 15, variância 5) |
+| Barra de progresso | "backtest sobre o **histórico completo**" | "na parte mais antiga (70 %); sobreviventes reexecutados na mais recente" |
+| Resumo da varredura | "**162 combinações testadas**" (eram as geradas) | "162 geradas · N testadas estatisticamente · N significativas · N validadas no holdout · N publicadas" |
+| Última varredura | lista de motivos (nunca renderizava) | funil por estágio + frase com a causa dominante; se não fechar ou foi interrompido, avisa em vez de exibir |
+| Estado vazio | culpa "amostra, retorno, consistência e drawdown" | explica as quatro exigências (odd real, amostra, significância, holdout) sem afirmar o estado atual da base |
+| Cabeçalho | "descarta tudo que não passa nos critérios" | descreve busca, teste com correção e holdout; "padrão histórico, não recomendação" |
+| Rótulos de motivo | faltavam os novos; tinha `ev_nao_positivo` | todos os motivos atuais; a chave antiga continua legível |
+| `aidocs` (contexto para IA) | "135 combinações"; critérios antes do teste | 162 (+45 por equipe no cron); ordem estrutural → teste → critérios → holdout |
+
+Termos proibidos ("oportunidade", "vencedora", "garantida") verificados ausentes da tela.
+
+### Grade e código morto
+
+Grade inalterada: **135 + 27 = 162** (API) e **+45 por equipe** (cron). Campo
+`combo.tier` removido (era sempre vazio); a garantia "tier não volta" passou a ser
+estrutural, e o teste agora verifica que **nenhuma definição persistida** carrega
+`opponent_tier`. `FilterCriteria.OpponentTier` continua existindo porque é a trava do
+AUD-004 que recusa definições antigas.
+
+### Preservado
+
+- `RequireRealOdds = true` na mineração, no holdout e na reavaliação; nenhum fallback
+  sintético, nenhuma odd fixa no Discovery.
+- Reavaliação **não** foi alterada. Registro de semântica:
+  - **EVIDÊNCIA DE DESCOBERTA** = treino + holdout originais (texto da descrição);
+  - **MONITORAMENTO** = reavaliação diária posterior, sobre o histórico inteiro
+    (inclui o treino). **Não é uma nova validação fora da amostra.**
+
+---
+
+## REV-P4 — Fase C (testes locais)
+
+### Experimento de ruído — antes e depois (critérios de produção, 200 seeds × 700 partidas)
+
+| | geradas | m médio no FDR | ciclos com falso significativo | publicadas |
+|---|---|---|---|---|
+| Antes (Fase A) | 162 | **0,75** | 17/200 (8,5 %) | 0 |
+| Controle correto (Fase A) | 162 | 70 | 2/200 (1 %) | — |
+| **Depois** | 162 | **60,00** | **2/200 (1,0 %)** | **0** |
+
+O procedimento corrigido converge para o controle. (O m do depois é 60, e não 70,
+porque o B2 corrigiu a janela: as combinações de janela têm agora a amostra certa, que
+é menor.) **Nenhuma publicação em ruído puro.** Esse experimento virou teste permanente
+(`TestB1_RuidoPuro_CriteriosDeProducao_200Seeds`, pulado só com `-short`).
+
+### Funil em produção simulada (sem odd real, lógica do motor)
+
+`162 geradas · 111 sem odd real · 51 amostra insuficiente · 0 testadas · 0 publicadas`.
+As 51 não teriam amostra nem com todas as odds (sobretudo as de janela curta), então
+"amostra insuficiente" é verdade para elas. Antes: 162/162 "amostra insuficiente".
+
+### Testes obrigatórios
+
+| # | Exigência | Teste |
+|---|---|---|
+| 1–3 | grade 135 / 27 / 162 | `TestGrade_162_Por_Liga`, `TestGrade_PorEquipeSoma45` |
+| 4 | opponent tier ausente | `TestGenerateCombosNaoUsaTier` (reescrito: nenhuma definição com `opponent_tier`) |
+| 5 | janela em regra de partida | `TestB2_MatchLevel_*`, `TestB2_SoEmCasa_LastN`, `TestB2_SoFora_LastN`, `TestB2_ComEquipeSelecionada`, `TestB2_SemMisturaDeTemporada`, `TestB2b_OrdemCronologicaEDeterministica` |
+| 6 | regra de equipe preservada | `TestB2_TeamLevel_Preservado` |
+| 7 | FDR recebe todas as elegíveis | `TestB1_FDRRecebeTodasAsHipotesesElegiveis` (recálculo independente) |
+| 8 | critérios de resultado não reduzem m | `TestB1_FiltrosDeResultadoNaoReduzemM`, `TestB1_CriteriosDeResultadoAgemDepoisDoFDR` |
+| 9–10 | BY e BH | `TestFDR_BH_E_BY_CalculadosAMao` (m = 5, valores à mão) + testes existentes de `formulas` |
+| 11 | q = 0 publica zero | `TestB1_QZeroPublicaZero` (e prova que a configuração não produz q = 0) |
+| 12 | ruído | `TestB1_RuidoPuro_CriteriosDeProducao_200Seeds` + `TestCicloSobreRuidoPuroNaoPublicaNada` |
+| 13 | sem odd real → `sem_odd_real` | `TestB3_SemOddReal_CausaCorreta` (synthetic, unknown e sem odd) |
+| 14 | funil fecha | `Funnel.Check` em todos os testes do motor; `TestB3_FunilFecha_ComPublicacao`, `TestB3_ResultadoAgregadoTrazFunilEMotivos` |
+| 15 | não-admin → 403 | `TestRequireAdmin_UsuarioComumRecebe403` + `TestRotaDiscoveryRun_UsuarioComumRecebe403` (**roteador real**) |
+| 16 | admin permitido | `TestRequireAdmin_AdminPassa` |
+| 17 | frontend esconde para não-admin | `discovery-funnel.spec.ts` (regra de `isAdmin`, sessão antiga = não-admin) |
+| 18 | zero descobertas é válido | `TestZeroDescobertasEEstadoValido` + spec do frontend |
+| extra | ciclo interrompido não desativa | `TestB1c_CicloInterrompidoNaoDesativa`, `TestB1c_CicloCompletoDesativaNormalmente` |
+| extra | `is_admin` no JSON sem vazar hash | `TestUserJSON_TrazIsAdmin` |
+
+**Três expectativas minhas estavam erradas e foram corrigidas nos testes, não no
+código:** esperei 162/162 "sem odd real" (são 111 + 51 que não teriam amostra de
+qualquer jeito); esperei 0 "sem odd real" com odd de escanteio presente (os mercados de
+resultado continuam sem odd real, corretamente); e esperei os 27 de resultado como "sem
+odd real" (6 não têm amostra nem com odd). Os testes agora recalculam de forma
+independente em vez de usar números fixos.
+
+### Regressão
+
+| Comando | Resultado |
+|---|---|
+| `gofmt -l internal pkg cmd` | vazio |
+| `go build ./...` · `go vet ./...` | OK · OK |
+| `go test -count=1 ./...` | 11 pacotes `ok` (Discovery 51,9 s, pelo teste de 200 seeds) |
+| Testes do REV-P3 afetados pelo B2 | todos passam (pacote `usecase` inteiro) |
+| `npx ng build --configuration production` | OK — 642,44 kB |
+| `sample-state.spec.ts` · `simulator-url-state.spec.ts` · `discovery-funnel.spec.ts` | 28/28 · 11/11 · 13/13 |
+| Runner de componente Angular | **NA — inexistente** |
+
+### Riscos e pendências
+
+1. **`ADMIN_EMAILS` precisa ser configurado no web service do Render ANTES ou junto do
+   deploy.** Sem ele ninguém dispara o Discovery manual (falha fechada, intencional).
+2. **Sessões abertas antes do deploy** não têm `is_admin` no usuário salvo: o botão só
+   aparece depois de sair e entrar de novo. O backend recusa corretamente enquanto isso.
+3. **Concorrência cron × disparo manual** (ver B4) — não resolvida.
+4. **Impacto em produção do B2/B2b:** números do Simulador com `last_n > 0` em regra de
+   partida **vão mudar** (menos partidas, agora as certas) e passam a ser estáveis entre
+   recargas. É correção, mas precisa ser anunciada.
+5. Reavaliação sobre histórico inteiro — documentada, não alterada.
+6. Casos reais com histórico completo e prova de que o cron roda o Discovery — seguem
+   dependendo das consultas SQL da Fase A.
+7. AUD-006 e AUD-007 — continuam abertos.
+
+## REV-P4 = PARCIAL — Fases A/B/C concluídas, aguardando deploy e validação em produção

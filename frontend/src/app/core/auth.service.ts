@@ -31,6 +31,12 @@ export class AuthService {
     return !!this.token();
   }
 
+  // REV-P4 (B4): só para decidir o que MOSTRAR. Quem barra é o backend
+  // (middleware.RequireAdmin → 403). Sessão antiga sem o campo = false.
+  isAdmin(): boolean {
+    return this.isAuthenticated() && this.user()?.is_admin === true;
+  }
+
   login(email: string, password: string): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${this.base}/auth/login`, { email, password }).pipe(
       tap(res => this.persist(res)),

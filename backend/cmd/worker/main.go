@@ -404,11 +404,16 @@ func runStrategyDiscovery(ctx context.Context, e *discovery.Engine, repo *postgr
 		slog.Info("ciclo de descoberta de estratégias concluído", fields...)
 	}
 	if idErr == nil {
+		// REV-P4 (B3): o funil completo e os motivos entram no registro do ciclo.
+		// Antes só ficavam ligas/combinações/publicadas/desativadas, e não havia
+		// como saber, depois, por que um ciclo não publicou nada.
 		details := map[string]any{
 			"leagues":      result.Leagues,
 			"combinations": result.Combinations,
 			"published":    result.Published,
 			"deactivated":  result.Deactivated,
+			"funnel":       result.Funnel,
+			"rejections":   result.Rejections,
 		}
 		if err := repo.FinishWorkerRun(ctx, runID, status, result.Published, result.Errors, start, details); err != nil {
 			slog.Error("falha ao registrar worker_run de descoberta", "error", err)

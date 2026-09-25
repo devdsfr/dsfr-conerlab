@@ -178,8 +178,12 @@ func (h *DiscoveryHandler) Run(c *gin.Context) {
 	}
 
 	// A varredura roda em SEGUNDO PLANO e a resposta volta na hora (202). São
-	// milhares de backtests — em produção o último ciclo testou 5.940 combinações
-	// —, tempo suficiente para a requisição ser cortada por proxy ou navegador.
+	// 162 combinações por liga (a API não inclui a grade por equipe; o cron,
+	// sim) — tempo suficiente para a requisição ser cortada por proxy ou navegador.
+	//
+	// REV-P4 (B4): só administrador chega aqui (middleware.RequireAdmin na rota).
+	// A trava abaixo impede duas varreduras manuais simultâneas NESTE processo;
+	// ela NÃO enxerga o Cron Job, que roda em outro container — ver registro.
 	// O acompanhamento é por GET /discovery/progress.
 	if !h.progress.Start("Preparando varredura…") {
 		c.JSON(http.StatusConflict, gin.H{
@@ -204,14 +208,7 @@ func (h *DiscoveryHandler) Run(c *gin.Context) {
 				h.progress.Finish(err, nil)
 				return
 			}
-			h.progress.Finish(nil, discovery.Result{
-				Leagues:      1,
-				Combinations: result.Combinations,
-				Published:    result.Published,
-				Deactivated:  result.Deactivated,
-				Errors:       result.Errors,
-				ByLeague:     []discovery.LeagueResult{result},
-			})
+			h.progress.Finish(nil, discovery.FromLeague(result))
 			return
 		}
 

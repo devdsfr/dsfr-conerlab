@@ -16,7 +16,12 @@ import {
   avisoMaxOddsSemEfeito,
   estadoAmostra,
   explicacaoExclusoes,
+  mediaObservada,
+  mensagemMetricaAusente,
   mostraColunaMando,
+  rotuloMetrica,
+  tipoMercado,
+  valorObservado,
 } from './sample-state';
 
 let executados = 0;
@@ -156,6 +161,150 @@ teste('sem exclusão nenhuma → sem texto (ruído não ajuda)', () => {
     accounting: conta({ matches_in_window: 100, observations_in_window: 100, eligible_entries: 100, excluded_entries: 0 }),
   });
   assert.strictEqual(explicacaoExclusoes(r), null);
+});
+
+
+// =============================================================================
+// REV-P3 item 33 — metric-unavailable usa o recorte EFETIVO
+// Caso real de produção (25/09/2026): Champions 2026 · Egnatia · impedimentos.
+// =============================================================================
+
+teste('33.1 — com filtro de equipe a mensagem diz 4, não 108', () => {
+  const r = resultado({
+    match_count: 0, metric_scope: 'match',
+    accounting: conta({
+      matches_in_window: 108, observations_in_window: 4,
+      excluded_entries: 4, excluded_no_metric: 4, eligible_entries: 0,
+    }),
+  });
+  assert.strictEqual(estadoAmostra(r), 'metrica-ausente');
+  const msg = mensagemMetricaAusente(r);
+  assert.ok(msg.includes('4 partidas'), `mensagem deveria citar 4: "${msg}"`);
+  assert.ok(!msg.includes('108'),
+    'a contagem da competição inteira não pode aparecer: 53 das 108 TÊM o dado');
+  assert.ok(msg.includes('nenhuma delas'));
+});
+
+teste('33.2 — sem filtro de equipe (observações = partidas) continua correto', () => {
+  const r = resultado({
+    match_count: 0, metric_scope: 'match',
+    accounting: conta({
+      matches_in_window: 12, observations_in_window: 12,
+      excluded_entries: 12, excluded_no_metric: 12,
+    }),
+  });
+  const msg = mensagemMetricaAusente(r);
+  assert.ok(msg.includes('12 partidas'), msg);
+});
+
+teste('33.3 — team-level fala em observações, não partidas', () => {
+  const r = resultado({
+    match_count: 0, metric_scope: 'team',
+    accounting: conta({
+      matches_in_window: 50, observations_in_window: 6,
+      excluded_entries: 6, excluded_no_metric: 6,
+    }),
+  });
+  assert.ok(mensagemMetricaAusente(r).includes('6 observações'));
+});
+
+teste('33.4 — exclusão mista não afirma "nenhuma delas"', () => {
+  const r = resultado({
+    match_count: 0, metric_scope: 'team',
+    accounting: conta({
+      matches_in_window: 4, observations_in_window: 8,
+      excluded_entries: 8, excluded_no_metric: 3, excluded_by_venue: 5,
+    }),
+  });
+  const msg = mensagemMetricaAusente(r);
+  assert.ok(!msg.includes('nenhuma delas'), 'só 3 de 8 saíram por falta de métrica');
+  assert.ok(msg.includes('8 observações') && msg.includes('em 3 delas'), msg);
+});
+
+teste('33.5 — equipe sem nenhuma observação no recorte é estado vazio, não métrica-ausente', () => {
+  const r = resultado({
+    match_count: 0,
+    accounting: conta({ matches_in_window: 108, observations_in_window: 0 }),
+  });
+  assert.strictEqual(estadoAmostra(r), 'vazio',
+    'equipe sem nenhum jogo no recorte: não há métrica ausente, há ausência de partida');
+});
+
+// =============================================================================
+// REV-P3 item 7 — mercados categóricos não têm valor numérico
+// =============================================================================
+
+const linha = { total_corners: 0, total_goals: 0, total_offsides: 0, total_shots: 0, total_shots_on_target: 0 };
+
+teste('7.1 — classificação centralizada', () => {
+  for (const m of ['win', 'draw', 'win_or_draw']) assert.strictEqual(tipoMercado(m), 'categorico', m);
+  for (const m of ['corners', 'goals', 'offsides', 'shots', 'shots_on_target']) {
+    assert.strictEqual(tipoMercado(m), 'numerico', m);
+  }
+});
+
+teste('7.2 — vitória NÃO produz valor 0 artificial na linha', () => {
+  assert.strictEqual(valorObservado('win', linha), null);
+});
+
+teste('7.3 — empate NÃO produz valor 0 artificial na linha', () => {
+  assert.strictEqual(valorObservado('draw', linha), null);
+});
+
+teste('7.4 — não perde NÃO produz valor 0 artificial na linha', () => {
+  assert.strictEqual(valorObservado('win_or_draw', linha), null);
+});
+
+teste('7.5 — mercados categóricos não têm média numérica (N/A, não 0)', () => {
+  for (const m of ['win', 'draw', 'win_or_draw']) {
+    const r = resultado({ match_count: 200, metric: m, average_corners: 0 } as Partial<BacktestResult>);
+    assert.strictEqual(mediaObservada(r), null, `${m}: "Média de ${rotuloMetrica(m).toLowerCase()} 0" era o defeito`);
+  }
+});
+
+teste('7.6 — a taxa de acerto continua disponível nos categóricos', () => {
+  // O conserto remove a MÉDIA, não a taxa. A proporção de acertos já é o número
+  // honesto desses mercados — sem renomeá-la para probabilidade.
+  const r = resultado({ match_count: 200, metric: 'win', hit_rate: 35, hits: 70, misses: 130 } as Partial<BacktestResult>);
+  assert.strictEqual(tipoMercado(r.metric), 'categorico');
+  assert.strictEqual(r.hit_rate, 35);
+  assert.strictEqual(estadoAmostra(r), 'com-amostra');
+});
+
+teste('7.7 — ZERO REAL numérico continua zero (0 gols, 0 escanteios, 0 impedimentos)', () => {
+  assert.strictEqual(valorObservado('goals', { ...linha, total_goals: 0 }), 0);
+  assert.strictEqual(valorObservado('corners', { ...linha, total_corners: 0 }), 0);
+  assert.strictEqual(valorObservado('offsides', { ...linha, total_offsides: 0 }), 0);
+  // e a média observada 0 é média, não ausência
+  const r = resultado({ match_count: 5, metric: 'goals', average_goals: 0 } as Partial<BacktestResult>);
+  assert.strictEqual(mediaObservada(r), 0);
+});
+
+teste('7.8 — métricas numéricas continuam lendo o campo certo', () => {
+  const e = { total_corners: 11, total_goals: 3, total_offsides: 4, total_shots: 25, total_shots_on_target: 9 };
+  assert.strictEqual(valorObservado('corners', e), 11);
+  assert.strictEqual(valorObservado('goals', e), 3);
+  assert.strictEqual(valorObservado('offsides', e), 4);
+  assert.strictEqual(valorObservado('shots', e), 25);
+  assert.strictEqual(valorObservado('shots_on_target', e), 9);
+  const r = resultado({ match_count: 5, metric: 'shots', average_shots: 22.4 } as Partial<BacktestResult>);
+  assert.strictEqual(mediaObservada(r), 22.4);
+});
+
+teste('7.9 — métrica desconhecida não vira "Escanteios"', () => {
+  assert.strictEqual(rotuloMetrica('placar_exato'), 'placar_exato');
+  assert.strictEqual(rotuloMetrica('win_or_draw'), 'Não perde');
+});
+
+teste('7.10 — match-level/team-level seguem corretos junto com o tipo de mercado', () => {
+  // escanteios: numérico + partida → sem Mando, com valor
+  const esc = resultado({ metric_scope: 'match', metric: 'corners' } as Partial<BacktestResult>);
+  assert.strictEqual(mostraColunaMando(esc), false);
+  assert.strictEqual(tipoMercado(esc.metric), 'numerico');
+  // vitória: categórico + equipe → com Mando, sem valor numérico
+  const vit = resultado({ metric_scope: 'team', metric: 'win' } as Partial<BacktestResult>);
+  assert.strictEqual(mostraColunaMando(vit), true);
+  assert.strictEqual(tipoMercado(vit.metric), 'categorico');
 });
 
 console.log(`\n${executados} testes de estado de amostra do Simulador — todos passaram.`);

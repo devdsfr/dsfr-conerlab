@@ -248,8 +248,9 @@
       <div class="cl-card p-8 text-center">
         <div class="text-slate-200 font-medium">Esta estatística não está disponível para a amostra selecionada.</div>
         <div class="text-xs text-slate-400 mt-2">
-          O recorte tem {{ r.accounting.matches_in_window }} partida(s), mas o provedor não
-          publicou esta métrica em nenhuma delas. Elas ficam de fora do backtest —
+          <!-- REV-P3 item 33: a contagem é do recorte EFETIVO (observations_in_window),
+               não da competição inteira. Ver mensagemMetricaAusente(). -->
+          {{ mensagemMetricaAusente(r) }} Elas ficam de fora do backtest —
           <strong class="text-slate-300">não entram como zero</strong>. Experimente outra
           métrica ou outro período.
         </div>
@@ -333,10 +334,17 @@
           <div class="text-xs text-slate-500">Sem odd — não calculável.</div>
         }
       </div>
-      <div class="cl-card p-4">
-        <div class="text-xs text-slate-400">{{ averageLabel() }}</div>
-        <div class="text-xl font-semibold">{{ averageValue(r) }}</div>
-      </div>
+      <!-- REV-P3 item 7: média só existe para métrica NUMÉRICA. Em vitória, empate
+           e não perde o card mostrava "Média de vitória 0" (lido de escanteios).
+           A proporção de acertos desses mercados já é a taxa de acerto acima. -->
+      <!-- Comparação explícita com null: `@if (x; as y)` trataria a média 0 como
+           ausente, e média observada 0 é zero real. -->
+      @if (mediaObservada(r) !== null) {
+        <div class="cl-card p-4">
+          <div class="text-xs text-slate-400">Média de {{ rotuloMetrica(r.metric).toLowerCase() }}</div>
+          <div class="text-xl font-semibold">{{ mediaObservada(r) }}</div>
+        </div>
+      }
       <div class="cl-card p-4">
         <div class="text-xs text-slate-400">Maior sequência (acertos)</div>
         <div class="text-xl font-semibold">{{ r.longest_win_streak }}</div>
@@ -416,8 +424,10 @@
             <td mat-cell *matCellDef="let e">{{ e.is_home ? 'Casa' : 'Fora' }}</td>
           </ng-container>
           <ng-container matColumnDef="total">
-            <th mat-header-cell *matHeaderCellDef>{{ entryLabel() }}</th>
-            <td mat-cell *matCellDef="let e">{{ entryTotal(e) }}</td>
+            <!-- Só entra em métrica numérica (ver colunasDaTabela). O valor vem da
+                 métrica DO RESULTADO, não do formulário. Zero observado = 0. -->
+            <th mat-header-cell *matHeaderCellDef>{{ rotuloMetrica(r.metric) }}</th>
+            <td mat-cell *matCellDef="let e">{{ valorObservado(r.metric, e) }}</td>
           </ng-container>
           <ng-container matColumnDef="hit">
             <th mat-header-cell *matHeaderCellDef>Resultado</th>

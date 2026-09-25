@@ -17,7 +17,17 @@ import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { BacktestEntry, BacktestResult, FilterRunRequest, League, Season, Team } from '../../core/models';
 import { desserializarEstado, serializarEstado } from './simulator-url-state';
-import { avisoMaxOddsSemEfeito, estadoAmostra, explicacaoExclusoes, mostraColunaMando } from './sample-state';
+import {
+  avisoMaxOddsSemEfeito,
+  estadoAmostra,
+  explicacaoExclusoes,
+  mediaObservada,
+  mensagemMetricaAusente,
+  mostraColunaMando,
+  rotuloMetrica,
+  tipoMercado,
+  valorObservado,
+} from './sample-state';
 import { AdSlotComponent } from '../../shared/ad-slot.component';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
 
@@ -89,10 +99,16 @@ export class FiltersComponent implements OnInit {
   // valor é da partida inteira e a coluna "Mando" não é aplicável — exibi-la
   // afirmava uma perspectiva que a ocorrência não tem (100/100 linhas diziam
   // "Casa" em produção). `team`/`opponent` viram "Partida" no cabeçalho.
+  //
+  // REV-P3 item 7: em mercado CATEGÓRICO (vitória, empate, não perde) a coluna
+  // numérica `total` também sai — não existe valor a mostrar, e a coluna
+  // "Resultado" (Acerto/Erro) já é a observação. Antes ela exibia 0 em todas as
+  // linhas, lido de escanteios, que o backend não preenche nesses mercados.
   colunasDaTabela(r: BacktestResult): string[] {
     const base = ['match_date', 'team', 'opponent'];
     if (mostraColunaMando(r)) base.push('is_home');
-    return [...base, 'total', 'hit', 'odd', 'profit_loss'];
+    if (tipoMercado(r.metric) === 'numerico') base.push('total');
+    return [...base, 'hit', 'odd', 'profit_loss'];
   }
 
   // Expostos ao template (funções puras, testadas em sample-state.spec.ts).
@@ -100,6 +116,11 @@ export class FiltersComponent implements OnInit {
   readonly explicacaoExclusoes = explicacaoExclusoes;
   readonly avisoMaxOddsSemEfeito = avisoMaxOddsSemEfeito;
   readonly mostraColunaMando = mostraColunaMando;
+  readonly mensagemMetricaAusente = mensagemMetricaAusente;
+  readonly tipoMercado = tipoMercado;
+  readonly valorObservado = valorObservado;
+  readonly mediaObservada = mediaObservada;
+  readonly rotuloMetrica = rotuloMetrica;
 
   get isGoals(): boolean {
     return this.metric === 'goals';
@@ -135,43 +156,20 @@ export class FiltersComponent implements OnInit {
   get isResultMetric(): boolean {
     return this.metric === 'win' || this.metric === 'draw' || this.metric === 'win_or_draw';
   }
+  // Rótulo da métrica ATUAL DO FORMULÁRIO (usado ao salvar a estratégia). Para
+  // exibir um RESULTADO, o template usa rotuloMetrica(r.metric) — ver abaixo.
   private label(): string {
-    return {
-      corners: 'Escanteios',
-      goals: 'Gols',
-      offsides: 'Impedimentos',
-      shots: 'Chutes',
-      shots_on_target: 'Chutes no gol',
-      win: 'Vitória',
-      draw: 'Empate',
-      win_or_draw: 'Não perde',
-    }[this.metric];
+    return rotuloMetrica(this.metric);
   }
-  // Total da métrica ativa por entrada.
-  entryTotal(e: BacktestEntry): number {
-    switch (this.metric) {
-      case 'goals': return e.total_goals;
-      case 'offsides': return e.total_offsides;
-      case 'shots': return e.total_shots;
-      case 'shots_on_target': return e.total_shots_on_target;
-      default: return e.total_corners;
-    }
-  }
-  entryLabel(): string {
-    return this.label();
-  }
-  averageValue(r: BacktestResult): number {
-    switch (this.metric) {
-      case 'goals': return r.average_goals;
-      case 'offsides': return r.average_offsides;
-      case 'shots': return r.average_shots;
-      case 'shots_on_target': return r.average_shots_on_target;
-      default: return r.average_corners;
-    }
-  }
-  averageLabel(): string {
-    return `Média de ${this.label().toLowerCase()}`;
-  }
+
+  // REV-P3 item 7: entryTotal/entryLabel/averageValue/averageLabel foram
+  // removidos daqui. Eles liam `this.metric` — o estado atual do FORMULÁRIO — e
+  // caíam em escanteios no `default`. Dois defeitos juntos:
+  //   1. mercados de resultado exibiam "Vitória 0" e "Média de vitória 0";
+  //   2. trocar a métrica depois de rodar fazia a tabela ANTIGA ler outro campo.
+  // O template agora chama valorObservado(r.metric, e) e mediaObservada(r), que
+  // usam a métrica com que o resultado foi gerado e devolvem null (N/A) quando a
+  // métrica é categórica. Funções puras em sample-state.ts.
 
   // ---- REV-P3 / correção 4: o "EV" foi REMOVIDO ------------------------------
   // Existia aqui um bloco de "análise de valor" que calculava

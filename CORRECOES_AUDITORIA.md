@@ -5867,3 +5867,240 @@ Outros registros, também fora do fechamento:
 - hibernação do plano gratuito: primeira requisição do dia pode levar mais de 10 s.
 
 ## REV-P4 = RESOLVIDO — 40 ✅ / 0 ⚠️ / 0 ❌
+
+
+---
+
+# REV-P5 — ESTRATÉGIAS — Fase A (investigação)
+
+Data: 26/09/2026. Base: `295e770` (HEAD = origin/main). Nenhuma correção feita.
+Evidência de produção: somente `SELECT` no Neon (projeto `cornerlab`, branch
+production) e leitura da tela `/estrategias` com a sessão já aberta do Daniel (sem
+clicar em "Executar agora", "Pausar", estrela ou excluir). Testes de backend com dois
+usuários foram rodados em arquivo temporário (`zz_p5_faseA_tmp_test.go`) e o arquivo
+foi removido; os resultados estão transcritos em §15.
+
+## 1. Arquitetura
+
+```
+DB strategies / backtests / strategy_health / strategy_scores   (migration 011, 012)
+  └─ repository/postgres/strategy_repo.go (StrategyRepository)
+       └─ usecase/strategyengine/engine.go  RunStrategy → RunBacktest(RequireRealOdds, maxAge 0) → PersistResult
+       └─ usecase/discovery/engine.go       UpsertDiscovered / desativação (origin=discovery, owner NULL, public)
+  └─ delivery/http/handlers/strategy_handler.go
+       POST /strategies · GET /strategies · GET /strategies/:id · POST /strategies/:id/run
+       PATCH /strategies/:id (active/favorite) · DELETE /strategies/:id      (todas autenticadas)
+       autorização única: ownedStrategy = dono OU (owner NULL e visibility=public)
+  └─ cmd/worker  RunAll → ListActive (WHERE active) → RunStrategy de cada uma
+  └─ frontend features/strategies (lista + detalhe) · features/filters buildDefinition() (Salvar como estratégia)
+```
+
+Não existem: endpoint de edição da definição, clone/duplicação de estratégia
+(`/filters/:id/duplicate` é de filtros salvos), trilha de auditoria de quem executou/
+alterou, colunas validated/approved.
+
+## 2. Schema / campos
+
+`strategies`: id, owner_id (NULL = sistema; FK ON DELETE CASCADE), name VARCHAR(120),
+description, definition JSONB, origin (user|simulator|discovery), visibility
+(private|public), active, favorite, created_at, updated_at.
+`backtests`: games, wins, losses, voids, roi, yield, ev, drawdown, profit, confidence,
+period_start, period_end, algorithm_version — **sem odds_source, sem janela gravada**
+(`backtestRow` não preenche period_start/period_end).
+`strategy_health` (1 por estratégia, upsert), `strategy_scores` (1 por estratégia, upsert).
+
+`Definition` (motor): league_id (obrigatório), season_ids, team_id, last_n_games,
+home_away, corners_threshold (**int**), opponent_tier, max_odds, stake, metric, demais
+limiares (int), fixed_odd. O Simulador salva esses campos; **não salva datas**
+(date_from/date_to nem o recorte efetivo do cap de 90 dias).
+
+## 3. Origins
+
+| origin | quem grava | owner | visibility |
+|---|---|---|---|
+| user | POST /strategies sem origin (ou com valor não aceito) | usuário | private |
+| simulator | POST /strategies com origin=simulator | usuário | private |
+| discovery | só o Discovery Engine (UpsertDiscovered) | NULL | public |
+
+Provado (teste temporário, §15): POST com `origin=discovery, visibility=public,
+owner_id=null, active=false, id=10` grava `origin=user, visibility=private, owner=<quem
+chamou>, active=true`. **Sem mass assignment na criação.**
+
+## 4. Matriz ORIGIN × ACTIVE × VISIBILITY × OWNER × EVIDENCE
+
+| origin | active | vis. | owner | evidência | quem vê | reavaliação diária | estado em produção |
+|---|---|---|---|---|---|---|---|
+| discovery | true | public | NULL | backtest/health/scores (histórico inteiro) | todos (lista + ranking Discovery) | sim | **0** |
+| discovery | false | public | NULL | congelada; pode ser sobrescrita por "Executar agora" | **todos**, em "Minhas estratégias", com PAUSADA | não | **5** (ids 3–7) |
+| simulator | true/false | private | usuário | nenhuma possível hoje (RequireRealOdds, 0 odd real) | dono | sim se ativa → erro | 0 (43 excluída) |
+| user | true/false | private | usuário | idem | dono | idem | 0 (44 excluída) |
+
+## 5. Ownership
+
+`ownedStrategy`: dono ou "pública do sistema". O comentário diz "esta última só para
+leitura/execução", mas a mesma função guarda PATCH e DELETE. Privada de outro usuário:
+GET/PATCH/DELETE → 404 (provado, §15). `isOwner` do frontend é por **origin**, não por
+owner_id — correto hoje só porque toda user/simulator é privada do dono.
+
+## 6. Visibility
+
+`ListForUser`: `owner_id = $1 OR (owner_id IS NULL AND visibility='public')` — **sem
+filtro de active**. Consequência em produção: todo usuário vê as 5 descobertas antigas,
+invalidadas, sob o título "Minhas estratégias (5)". `ListDiscovered` (ranking do
+Discovery) filtra `active` → 0 itens. Não existe visibility por usuário; public é
+global.
+
+## 7. Active
+
+Semântica real: "entra na reavaliação diária" (`ListActive`) e, para discovery, "aparece
+no ranking público". Rótulo na tela: PAUSADA / Pausar / Reativar. Para as descobertas
+desativadas, PAUSADA não comunica que foram **invalidadas** (odd sintética, AUD-001).
+
+## 8. Fluxo Simulador → Estratégia
+
+`buildDefinition()` → POST /strategies (origin=simulator) → private, active=true, badge
+"Do simulador" (REV-P3). Divergência estrutural: o Simulador calcula com
+`AllowMissingOdds` + `fixed_odd`; a estratégia é avaliada com `RequireRealOdds`, que
+ignora a odd fixa. Sem odd real em produção, **toda** estratégia do Simulador dá 0 jogo →
+"Executar agora" devolve erro ("backtest sem série financeira completa") e o worker
+contaria 1 erro/dia por estratégia ativa. O que o usuário viu no Simulador nunca é
+reproduzido na Estratégia. Reprodutibilidade adicional perdida: a definição não guarda
+as datas; o cap de 90 dias do Simulador é relativo a "hoje", e a estratégia roda sem cap
+(`maxAge 0`). `last_n` usa o mesmo motor (ordem determinística desde o B2b do P4), mas
+sobre universos diferentes (com/sem cap; com/sem exigência de odd real).
+
+## 9. Fluxo Discovery → Estratégia
+
+Discovery publica (UpsertDiscovered, `ON CONFLICT (name) WHERE origin='discovery'`,
+atualiza description) e grava backtest/health/scores via `PersistResult` com o resultado
+do **treino+holdout**. Depois, a reavaliação diária recalcula sobre o **histórico
+inteiro**. Ao desativar, só `active=false`: a **description antiga permanece**. Em
+produção a id 5 exibe hoje: "Em 124 ocorrências … acima de 6.5 em 100.0% … retorno
+15.29% … Classificação DSFR: **Elite (score 95.3)**", ao lado de DSFR **26**, Health 50 e
+histórico com 3 execuções de 0 jogo.
+
+## 10. Edição
+
+Não existe edição de definição/nome/descrição (N/A). PATCH só altera active/favorite.
+
+## 11. Exclusão
+
+`DELETE … WHERE id=$1 AND owner_id=$2`. Dono: exclui (CASCADE leva backtests/health/
+scores). Não-dono em estratégia do sistema: **204 sem apagar nada** (falso sucesso,
+provado §15). Na UI o botão só aparece para user/simulator. Produção: 43 e 44 foram
+excluídas (sequence `strategies_id_seq` = 44; tabela só tem ids 3–7).
+
+## 12. Reavaliação
+
+Worker `strategy` diário (cron 11:17 UTC). worker_runs 23/26/29/32/35/39 (21–26/09):
+`{"evaluated":0,"strategies":0}`, errors 0. **Correção do backlog do P4:** a nota
+"43/44 geram 1 erro/dia" está desatualizada — já em 25/09 11:17 havia 0 estratégias
+ativas; hoje o worker não avalia nada. O cabeçalho da tela ("backtest, saúde e scores
+recalculados automaticamente") não corresponde ao estado atual.
+
+## 13. Scores / Health
+
+DSFR v1.1 (ROI 30/WR 20/DD 15/Amostra 15/Consist. 15/Var. 5, sem EV/Yield). Tooltip do
+frontend: "pondera ROI, **EV**, taxa de acerto, **yield**, drawdown…" — **desatualizado**.
+`variationEntries` ainda rotula `ev`. Em produção (id 5): backtests 50, 52, 53 com
+games=0 gravados como roi 0.000 / yield 0.000 / drawdown 0.000 / confidence 35, e
+scores DSFR 26, robustez 28, risco 25, ranking 28.15, health 50 derivados de **zero
+jogos**; a tela mostra "ROI 0%, Yield 0%" e "ROI: 0, Drawdown: 0, Consistência: 0". Isso
+é ausência exibida como zero (mesma classe do AUD-002). Esses registros foram gravados
+**antes** da guarda `!FinancialsAvailable` (commit 8488992, 24/09 23:53 BRT; gravações
+23:26 BRT). Com o código atual, 0 jogo não grava — mas os registros antigos continuam
+exibidos.
+
+## 14. Financials
+
+ROI = Yield (mesma divisão, AUD-002) mas a tabela de execuções mostra duas colunas.
+`bt.roi` nulo seria exibido como "—%". EV: backtests novos gravam NULL ✅; 8 backtests
+antigos (algorithm 1.0) têm ev = roi = yield = 15.29 (histórico pré-AUD-002, não exibido
+como EV). Sem odds_source no backtest: não dá para distinguir execução com odd sintética
+de odd real — as 8 execuções "124/124, 15.29%" são da era da odd sintética.
+
+## 15. Segurança (testes temporários, dois usuários, fake que reproduz o SQL real)
+
+| teste | resultado |
+|---|---|
+| user 2 PATCH `{"active":true,"favorite":true}` em discovery pública inativa (owner NULL) | **200; active=true, favorite=true** — S1 CONFIRMADO |
+| user 2 DELETE na mesma | **204; continua existindo** — S3 CONFIRMADO |
+| user 2 GET/PATCH/DELETE em privada do user 1 | 404/404/404; nada muda — IDOR bloqueado ✅ |
+| dono PATCH na própria | 200 ✅ |
+| POST com origin/visibility/owner/active/id forjados | 201 origin=user, private, owner=chamador, active=true — sem mass assignment ✅ |
+
+- **S1 (alta):** `SetFlags` não filtra owner e `ownedStrategy` libera o sistema. Qualquer
+  usuário autenticado pode reativar uma descoberta invalidada → ela volta ao ranking
+  público do Discovery (ListDiscovered filtra active) e à reavaliação diária. `favorite`
+  é coluna global: a estrela de um usuário aparece para todos. A estrela é exibida em
+  todos os cards, inclusive os do sistema — o favorite é alcançável **pela UI**; o
+  active, por chamada direta à API.
+- **S2 (média, já ocorreu em produção):** `POST /strategies/:id/run` em estratégia do
+  sistema por qualquer usuário grava backtest/health/scores **globais**. Ocorreu:
+  backtests 52 e 53 da id 5 em 24/09 23:26 BRT (duas execuções com 3 s de intervalo;
+  estratégia inativa, portanto não foi o worker). Não há registro de quem executou.
+  Hoje bloqueado de fato pela guarda + 0 odd real; volta a ser alcançável quando
+  houver odd real. Também é custo pesado dentro de requisição HTTP disparável por
+  qualquer usuário.
+- **S3 (baixa):** DELETE 204 falso.
+- `favorite` global (não por usuário) — defeito de modelo.
+
+## 16. Dados reais de produção (SELECT)
+
+- strategies: 5 linhas, ids 3–7, todas `discovery / public / owner NULL / active=false /
+  favorite=false`, Brasileirão Série A, criadas 02/08. sequence = 44; 4 usuários.
+- backtests: 9–12 por estratégia; `period_start` preenchido em **0**; ev preenchido em 8–10
+  (todos da algorithm 1.0). id 5 tem 11 (8×124 jogos 1.0; 3×0 jogo 1.1).
+- health e scores: existem para as 5; DSFR 26.00, stage nascimento em todas.
+- worker `strategy` 21–26/09: 0 estratégias, 0 avaliadas, 0 erros.
+- UI `/estrategias` (sessão do Daniel): "Minhas estratégias (5)", todas PAUSADA +
+  DESCOBERTA, estrela em todas; detalhe da id 5 conforme §9/§13; nome "6.5+" e resumo
+  "acima de 6" (limiar int: ">6" = 6.5+, correto, mas duas notações na mesma tela).
+
+## 17. Bugs comprovados
+
+| id | gravidade | descrição | evidência |
+|---|---|---|---|
+| P5-B1 | alta | S1: não-dono altera active/favorite de estratégia do sistema | teste §15 + código |
+| P5-B2 | média | S2: não-dono executa e sobrescreve evidência global | produção: backtests 52/53 id 5 |
+| P5-B3 | alta (produto) | descobertas invalidadas listadas a todos como "Minhas estratégias", com descrição "Elite 95.3 / 100% / 15.29%" contraditória com DSFR 26 | produção UI + SQL |
+| P5-B4 | média | zero jogo persistido/exibido como ROI 0%, Yield 0%, DD 0, e scores/health derivados de 0 jogo | produção: backtests 50/52/53, scores |
+| P5-B5 | média | estratégia do Simulador nunca é executável/pontuável (RequireRealOdds ignora fixed_odd); "Executar agora" e textos prometem o contrário | código + 0 odd real |
+| P5-B6 | baixa | tooltip DSFR cita EV e yield (v1.1 não usa) | código vs pesos v1.1 |
+| P5-B7 | baixa | DELETE de sistema devolve 204 sem apagar | teste §15 |
+| P5-B8 | baixa | cabeçalho "recalculados automaticamente" e empty state "clique em Executar agora" não correspondem ao estado atual | worker_runs + código |
+
+Correção de registro anterior: a nota do backlog do P4 sobre 43/44 gerarem erro diário
+está desatualizada (ambas já excluídas; worker com 0 erros desde 21/09).
+
+## 18. Riscos
+
+- Reativação por qualquer usuário recoloca no ranking público padrões invalidados.
+- Backtest sem janela nem fonte de odd: impossível auditar o que cada execução mediu.
+- Reavaliação sobre histórico inteiro mistura treino e dados novos (backlog P4 §2).
+- Simulador ↔ Estratégia: o usuário salva um resultado que o sistema nunca reproduz.
+- Reprodutibilidade: definição sem datas.
+- Sem trilha de auditoria de execuções manuais.
+
+## 19. Plano mínimo proposto (aguarda aprovação — nada implementado)
+
+1. **B1/B2/B7 (backend, pequeno):** separar leitura de escrita — `ownedStrategy` continua
+   para GET; PATCH, DELETE e POST run exigem dono (não-dono → 404; sistema → 403 ou 404).
+   `SetFlags` passa a filtrar `owner_id`. Testes com dois usuários (os de §15 viram
+   permanentes).
+2. **B3 (backend, pequeno):** `ListForUser` mostra do sistema só `active`; ou separa
+   "Minhas" de "Do sistema" no frontend. Descrição de descoberta desativada não é
+   exibida como evidência atual (ex.: aviso "invalidada em …").
+3. **B4 (frontend + regra):** 0 jogo exibido como "sem jogos com odd real", não 0%;
+   scores/health de backtest com 0 jogo não exibidos. Sem apagar dados.
+4. **B6/B8 (texto):** tooltip DSFR v1.1; cabeçalho e empty state honestos.
+5. **B5 (decisão do Daniel):** comunicar na tela e no salvar que estratégia exige odd
+   real e hoje não é avaliável — correção de texto; mudar o motor fica fora do mínimo.
+6. Backlog (não mínimo): favorite por usuário, period_start/end + odds_source no
+   backtest, datas na definição, auditoria de execução.
+
+Não propõe: apagar as estratégias 3–7, apagar backtests, criar odds, criar contas.
+
+## 20. Status
+
+**REV-P5 = PARCIAL — Fase A concluída.** Aguardando aprovação explícita para a Fase B.

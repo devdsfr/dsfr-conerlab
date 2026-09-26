@@ -5268,3 +5268,82 @@ Ids e ordem idênticos em todas as execuções (primeiras: 16440, 16442, 16444, 
 4. Consultas de `worker_runs` e de partidas: rodadas por quem tiver sessão no Neon.
 
 ## REV-P4 = PARCIAL — bloqueado por ADMIN_EMAILS (is_admin = false após login pós-deploy)
+
+### Fase D — evidências do banco (Neon, projeto `cornerlab`, branch `production`)
+
+Obtidas pelo Chrome do Daniel, **na sessão já aberta dele no Neon** (sem digitar
+credencial), só com `SELECT`. Observação: o primeiro link recebido abria o projeto
+**`finance-dsfr`**, que não é o CornerLab; nada foi executado lá — o editor daquele
+projeto tinha um `CREATE EXTENSION` preenchido, que foi deixado intacto.
+
+#### O Discovery agendado roda de verdade
+
+```
+SELECT id, worker, status, started_at, duration_ms, processed, errors, details
+FROM worker_runs WHERE worker IN ('discovery','strategy') ORDER BY id DESC LIMIT 6;
+```
+
+| id | worker | status | started_at (UTC) | duração | details |
+|---|---|---|---|---|---|
+| 36 | discovery | ok | 2026-09-25 11:17:00 | 20,2 s | 12 ligas · 24.804 combinações · 0 publicadas · 0 desativadas |
+| 35 | strategy | ok | 2026-09-25 11:17:00 | 0,2 s | 0 estratégias ativas · 0 avaliadas |
+| 33 | discovery | ok | 2026-09-24 11:17:27 | 18,1 s | idem |
+| 32 | strategy | ok | 2026-09-24 11:17:26 | 0,2 s | idem |
+| 30 | discovery | ok | 2026-09-23 11:16:39 | 18,9 s | idem |
+| 29 | strategy | ok | 2026-09-23 11:16:39 | 0,2 s | idem |
+
+- **Item 9 do prompt respondido:** o cron (`DISCOVERY_RUN=true` efetivo) executa o
+  Discovery todo dia por volta de 08:17 BRT, com status `ok`. Prova operacional, não
+  `render.yaml`.
+- 24.804 = 12 × 162 (grade das ligas) + 22.860 (grade por equipe, 45 × 508 vínculos
+  equipe–liga): é o cron com `IncludeTeams = true`, como documentado na Fase A.
+- As três execuções são **anteriores ao deploy do `5fe6fba`** (commit da noite de
+  25/09), por isso `details` ainda não traz `funnel`/`rejections`. A primeira execução
+  com o funil será a de **26/09, ~11:17 UTC**.
+- Às 11:17 de 25/09 havia **0 estratégias ativas**. As de teste 43 e 44 (criadas às
+  21:43) passarão a ser reavaliadas a partir de 26/09; sem odd real, `PersistResult`
+  as recusa — a Fase A já previa 1 erro por estratégia por dia no `strategy`.
+
+#### Odd real: zero em todo o histórico, em todas as ligas
+
+```
+SELECT m.league_id, l.name, count(*) partidas,
+       count(*) FILTER (WHERE m.odds_source='real') odds_real, ...
+FROM matches m JOIN leagues l ON l.id=m.league_id
+WHERE m.status='FINALIZADO' GROUP BY 1,2 ORDER BY 1;
+```
+
+| liga | nome | partidas | odd real | odd sintética | com result_odds | primeira | última | corte 70 % (aprox.) |
+|---|---|---|---|---|---|---|---|---|
+| 2 | MLS | 388 | **0** | 0 | 0 | 2026-02-21 | 2026-09-24 | 2026-08-15 |
+| 6 | Premier League | 430 | **0** | 380 | 0 | 2025-08-15 | 2026-09-20 | 2026-03-20 |
+| 8 | La Liga | 449 | **0** | 380 | 0 | 2025-08-15 | 2026-09-20 | 2026-04-22 |
+| 10 | Serie A | 430 | **0** | 380 | 0 | 2025-08-23 | 2026-09-20 | 2026-04-04 |
+| 12 | Bundesliga | 344 | **0** | 308 | 0 | 2025-08-22 | 2026-09-20 | 2026-03-22 |
+| 16 | Ligue 1 | 354 | **0** | 309 | 0 | 2025-08-15 | 2026-09-20 | 2026-04-05 |
+| 18 | Brasileirão Série A | 348 | **0** | 248 | 0 | 2024-10-26 | 2026-09-20 | 2026-05-31 |
+| 19 | Brasileirão Série B | 310 | **0** | 190 | 0 | 2024-11-15 | 2026-09-22 | 2026-07-28 |
+| 20 | Copa do Brasil | 150 | **0** | 126 | 0 | 2026-02-17 | 2026-09-03 | 2026-04-23 |
+| 21 | Libertadores | 149 | **0** | 125 | 0 | 2026-02-04 | 2026-09-18 | 2026-05-21 |
+| 22 | Sul-Americana | 152 | **0** | 112 | 0 | 2026-03-03 | 2026-09-18 | 2026-05-27 |
+| 23 | Champions League | 108 | **0** | 0 | 0 | 2026-07-07 | 2026-09-10 | 2026-08-11 |
+
+Consequências verificáveis:
+
+- **Discovery financeiro publicando 0 é o resultado correto em todas as ligas** — nenhuma
+  tem uma única partida com odd de mercado, no histórico inteiro. Nada contorna isso
+  (AUD-001 preservado).
+- **O motor agrupa as temporadas de cada liga.** La Liga tem 449 partidas = 2025 inteira
+  (380) + 2026 até agora; o corte de 70 % cai em 22/04/2026, então a janela de treino é
+  quase toda 2025 e a de validação é o fim de 2025 mais 2026. Brasileirão idem: 2024
+  parcial + 2026.
+- As 1.968 partidas com odd sintética seguem descartadas pelo `RequireRealOdds`.
+
+### Status após as evidências do banco
+
+Resolvidos pela consulta: cron do Discovery (item 9), odds reais por liga (itens 10 e
+24) e agrupamento de temporadas. **Continuam bloqueados por `ADMIN_EMAILS`:** B4 com
+admin em produção, execução manual única, funil real por liga na tela e em
+`/discovery/progress`.
+
+## REV-P4 = PARCIAL — bloqueado por ADMIN_EMAILS (is_admin = false após login pós-deploy)

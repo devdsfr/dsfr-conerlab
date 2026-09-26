@@ -5347,3 +5347,196 @@ admin em produção, execução manual única, funil real por liga na tela e em
 `/discovery/progress`.
 
 ## REV-P4 = PARCIAL — bloqueado por ADMIN_EMAILS (is_admin = false após login pós-deploy)
+
+---
+
+## REV-P4 — Fase D (continuação) e Fase E — validação final
+
+Data: **26/09/2026, 01:46 UTC**. Código em produção = `5fe6fba` (os commits seguintes só
+mexem neste registro).
+
+### ADMIN_EMAILS — desbloqueado
+
+Depois de o Daniel configurar `ADMIN_EMAILS` no `cornerlab-backend`, **uma** chamada a
+`POST /api/v1/discovery/run` com a sessão dele (no Chrome, pela extensão, sem exibir o
+token) respondeu:
+
+```
+202 {"started": true, "message": "varredura iniciada — acompanhe em /discovery/progress"}
+```
+
+**O backend reconhece o administrador; `ADMIN_EMAILS` está em vigor.** O
+`cornerlab_user.is_admin` salvo no navegador ainda dizia `false`: é o usuário gravado
+num login anterior à variável valer. Por isso o botão ainda não aparecia para ele (a
+regra do frontend funcionando para quem "não é admin" na sessão). Basta sair e entrar
+de novo.
+
+### Execução manual (única)
+
+| Campo | Valor |
+|---|---|
+| Início / fim | 2026-09-26 01:46:39 → 01:47:06 UTC |
+| Duração | 27,5 s |
+| Ligas | 12 |
+| Geradas | **1.944 = 12 × 162** |
+| Sem odd real | **1.671** |
+| Amostra insuficiente | 273 |
+| Sem métrica / não testável / erros | 0 / 0 / 0 |
+| Testadas estatisticamente | **0** |
+| Sobreviventes do FDR / validadas no holdout | 0 / 0 |
+| Publicadas / desativadas | **0 / 0** |
+| Identidade | 1.671 + 273 = 1.944 ✅ |
+
+`rejections` no topo do resultado: `{"sem_odd_real": 1671, "amostra_insuficiente": 273}`
+— o campo que antes não existia.
+
+### Casos reais — funil por liga (`/discovery/progress`)
+
+| Liga | temporadas agrupadas | treino até / validação desde | geradas | sem odd real | amostra | testadas | publicadas | fecha |
+|---|---|---|---|---|---|---|---|---|
+| Brasileirão Série A (18) | 2 | 2026-05-31 | 162 | 162 | 0 | 0 | 0 | ✅ |
+| La Liga (8) | 2 | 2026-04-22 | 162 | 144 | 18 | 0 | 0 | ✅ |
+| UEFA Champions League (23) | 2 | 2026-08-11 | 162 | 9 | 153 | 0 | 0 | ✅ |
+| Premier League (6) | 2 | 2026-03-20 | 162 | 162 | 0 | 0 | 0 | ✅ |
+| Bundesliga (12) | 2 | 2026-03-22 | 162 | 111 | 51 | 0 | 0 | ✅ |
+| Ligue 1 (16) | 2 | 2026-04-05 | 162 | 111 | 51 | 0 | 0 | ✅ |
+| demais 6 ligas | 1–2 | — | 162 cada | 162 cada | 0 | 0 | 0 | ✅ |
+
+**Checagem cruzada independente:** as datas de corte do motor batem **exatamente** com as
+calculadas por SQL no banco (Brasileirão 31/05, La Liga 22/04, Premier 20/03, Champions
+11/08). Partidas por liga (SQL): Brasileirão 348, La Liga 449, Champions 108 — todas com
+**0 odd real**. Unidade: em escanteios observação = partida; nos 27 de resultado são 2
+por partida. Champions tem só 108 partidas, por isso 153 combinações param em amostra
+antes da odd.
+
+### B2 e B2b (já registrados acima)
+
+B2: 21 partidas, 0 duplicadas, casa 19, fora 21, equipe = mesmas 21 partidas. B2b: 20
+execuções → 1 resultado, em escanteios e em vitória.
+
+### B1 e B1c
+
+- **B1:** ordem publicada = gerada → estrutural → p-valor → BY → critérios de resultado
+  → holdout → publicação (código de `5fe6fba`, testes `TestB1_*`). Evidência estatística
+  local, **não reproduzida em produção** (por instrução): 200 seeds, m médio 60,
+  1 % de ciclos com falso significativo, 0 publicações. Em produção nenhuma combinação
+  chega ao teste (0 odd real), então a ordem é observável só até a etapa estrutural.
+- **B1c:** **nenhuma falha foi provocada em produção.** Validado por código publicado e
+  `TestB1c_CicloInterrompidoNaoDesativa`. As execuções reais (manual e cron) terminaram
+  com `interrupted` ausente e 0 desativadas.
+
+### B4
+
+| Caso | Resultado |
+|---|---|
+| Sem token | `401 {"error":"token ausente"}` (produção) |
+| Admin | `202` (produção) |
+| Usuário comum | **NA em produção** — não há segunda conta; eu não crio contas. Coberto por `TestRotaDiscoveryRun_UsuarioComumRecebe403` no roteador real |
+| Botão para não-admin | ausente em produção (sessão com `is_admin=false`) |
+| Botão para admin | **não observado** — sessão do Daniel ainda sem `is_admin=true` |
+
+### Cron do Discovery
+
+Roda todo dia (worker_runs 30, 33, 36; ~11:17 UTC; status `ok`; 24.804 combinações com
+a grade por equipe). As três execuções vistas são **anteriores** ao deploy, sem funil. A
+primeira com `funnel`/`rejections` em `worker_runs.details` será a de 26/09 — **ainda não
+observada**.
+
+### UI em produção
+
+Verificado no bundle servido (15 arquivos JS): tooltip do DSFR com os pesos v1.1
+("retorno (30)"), sem "pondera ROI, EV"; "(70%)" no texto da barra, sem "sobre o
+histórico completo"; "combinações geradas", "testadas estatisticamente", "validados no
+holdout", "sem odd real de mercado", "padrões históricos publicados"; nenhum termo
+proibido. O payload real da execução, passado pelas funções da tela, produz:
+
+> 1944 combinações geradas · 0 testadas estatisticamente · 0 significativas · 0
+> validadas no holdout · 0 publicadas
+>
+> Nenhum padrão foi publicado. Das 1944 combinações, 1671 (86%) pararam em: sem odd real
+> de mercado. […] É um resultado legítimo, não um erro.
+
+#### ⚠️ Achado novo de UI — o funil só aparece para quem acompanhou a execução
+
+O bloco "Última varredura" só é preenchido quando a página **acompanha** a varredura até
+o fim (polling). Ao abrir a página depois, `ngOnInit` ignora o resultado já disponível
+em `/discovery/progress`. E esse resultado fica **só em memória** da API: some a cada
+deploy/reinício e **não inclui o ciclo do cron**, que roda em outro processo. Na prática,
+usuários comuns nunca veem a causa do zero pela tela — só o texto fixo do estado vazio,
+que menciona odd real mas não mostra números. Correção proposta (não aplicada):
+carregar o último resultado ao abrir a página e expor o funil do último ciclo do cron
+(`worker_runs`) por endpoint.
+
+### Riscos registrados (não corrigidos, por instrução)
+
+- **Concorrência manual × cron:** a trava do disparo manual só vale no processo da API; o
+  cron roda em outro container. Podem rodar juntos e publicar/desativar a mesma liga.
+- **Reavaliação:** Discovery original = treino + holdout; reavaliação diária = histórico
+  inteiro. É **monitoramento**, não nova validação fora da amostra. A partir de 26/09 o
+  worker `strategy` passa a reavaliar as estratégias de teste 43 e 44 e deve registrar
+  erro para cada uma (sem odd real) — esperado, não regressão.
+
+### Regressão (código = `5fe6fba`)
+
+`gofmt` vazio · `go build`/`vet` OK · `go test -count=1` 11 pacotes ok · teste de ruído
+m 60 / 1 % / 0 · `ng build` 642,44 kB · suítes puras 28/28, 11/11, 13/13 · runner de
+componente Angular **NA — inexistente**.
+
+### Definition of Done — 40 itens
+
+| # | Item | St. | Evidência |
+|---|---|---|---|
+| 1 | pipeline documentado | ✅ | Fase A + comentários no código + `aidocs` atualizado |
+| 2 | grade correta | ✅ | produção 1.944 = 12 × 162; cron 24.804 = 12 × 162 + 45 × 508; `TestGrade_*` |
+| 3 | sem opponent tier | ✅ | campo removido; `TestGenerateCombosNaoUsaTier` (nenhuma definição com `opponent_tier`) |
+| 4 | split temporal correto | ✅ | `train_until` de produção = corte SQL independente, nas 4 ligas conferidas |
+| 5 | sem leakage | ✅ | janelas `[From,To)`; só `FINALIZADO`; mesma data vai para validação; `TestJanelasNaoSeSobrepoem` |
+| 6 | amostra correta | ✅ | B2 em produção; filtro estrutural; unidade documentada por métrica |
+| 7 | holdout correto | ✅ | `TestCheckHoldoutReprovaCadaMotivo`; em produção não alcançado (0 odd real — legítimo) |
+| 8 | p-valor correto | ✅ | `TestBreakEvenProbabilityVemDasOdds`, `TestPValorNaoPremiaAcertoAltoComOddBaixa` |
+| 9 | FDR correto | ✅ | `TestFDR_BH_E_BY_CalculadosAMao` (m = 5, à mão) |
+| 10 | múltiplos testes correto | ✅ | B1: m = todas as elegíveis; 200 seeds → 1 % |
+| 11 | odd real exigida | ✅ | produção: 1.671 sem odd real; SQL: 0 odd real em 12 ligas; 0 testadas |
+| 12 | sintética rejeitada | ✅ | 1.968 partidas sintéticas em produção, 0 testadas; `TestB3_SemOddReal_CausaCorreta` |
+| 13 | unknown rejeitada | ✅ | MLS e Champions (sem sintética) rejeitadas; teste com `unknown` |
+| 14 | EV não fabricado | ✅ | DSFR v1.1 sem EV; tooltip de produção sem EV |
+| 15 | ROI correto | ✅ | mesmo motor validado no REV-P3 (auditoria manual em produção) |
+| 16 | Yield não duplicado | ✅ | DSFR v1.1 sem Yield; gate documentado como a mesma quantidade |
+| 17 | drawdown auditado | ✅ | duas normalizações opostas documentadas (Fase A); AUD-006 backlog |
+| 18 | DSFR v1.1 correto | ✅ | pesos 30/20/15/15/15/5 no código chamado; tooltip de produção |
+| 19 | AUD-007 registrado | ✅ | Fase A §14 |
+| 20 | partida sem dupla contagem | ✅ | produção: 21 partidas, 0 duplicadas |
+| 21 | equipe correta | ✅ | produção: 40 observações nas mesmas 21 partidas (19 casa, 21 fora) |
+| 22 | persistência auditável | ⚠️ | funil gravado em `worker_runs.details` por código publicado, **não observado ainda** (1º cron com funil: 26/09); evidência de treino/holdout segue só como texto |
+| 23 | publicação auditável | ✅ | critérios testados; funil de produção mostra onde cada combinação parou |
+| 24 | reavaliação auditada | ✅ | histórico inteiro, rotulada como monitoramento; `worker_runs` strategy observado |
+| 25 | zero descobertas válido | ✅ | produção: 0 publicadas, 0 erros, status `concluido`; estado vazio da tela |
+| 26 | funil explicável | ✅ | produção: 1.671 + 273 = 1.944; fecha nas 12 ligas |
+| 27 | UI fiel ao backend | ⚠️ | textos confirmados no bundle; funil real validado pelas funções da tela; **não observado renderizado** (só aparece para quem acompanhou — achado acima); botão de admin não observado |
+| 28 | linguagem não preditiva | ✅ | varredura do bundle: nenhum termo proibido |
+| 29 | "Procurar agora" auditado | ✅ | produção: sem token 401, admin 202; 403 de usuário comum só em teste (NA em produção, sem 2ª conta) |
+| 30 | ≥ 3 casos reais | ✅ | 12 ligas; Brasileirão, La Liga e Champions detalhados com SQL cruzado |
+| 31 | testes determinísticos | ✅ | suíte verde |
+| 32 | noise test | ✅ | 200 seeds, 0 publicadas |
+| 33 | go build | ✅ | |
+| 34 | go vet | ✅ | |
+| 35 | go test | ✅ | 11 pacotes |
+| 36 | frontend build | ✅ | 642,44 kB |
+| 37 | runner frontend ou ausência | ✅ | ausência registrada (NA) |
+| 38 | sem regressão P0–P3 | ✅ | testes do P3 verdes; escanteios Brasileirão 2026 continua 100 / 67 / 50 / 0,5 % |
+| 39 | registro append-only | ✅ | este registro |
+| 40 | nada publicado sem evidência | ✅ | 0 publicadas (manual e cron) |
+
+**Total: 38 ✅ · 2 ⚠️ · 0 ❌.**
+
+### O que falta para fechar
+
+1. **Item 22** — conferir no `worker_runs` do cron de **26/09** que `details` traz `funnel`
+   e `rejections` (mesma consulta de antes).
+2. **Item 27** — (a) Daniel sair e entrar para o botão aparecer e ser observado;
+   (b) decidir sobre o achado de UI: o funil só aparece para quem acompanhou a execução.
+   Enquanto isso não for resolvido, a tela **não** mostra a causa real do zero a quem
+   abre a página depois — o que o prompt exige ("sem odds reais, a UI deve mostrar
+   corretamente a causa").
+
+## REV-P4 = PARCIAL — 38 ✅ / 2 ⚠️ / 0 ❌. Faltam: funil no worker_runs do cron (22) e funil visível na tela para quem abre depois (27).

@@ -9,14 +9,18 @@
 //   node /tmp/df/features/discovery/discovery-funnel.spec.js
 
 import assert from 'node:assert';
-import { DiscoveryFunnel } from '../../core/models';
+import { DiscoveryFunnel, DiscoveryLastRun, DiscoveryLastRunResponse } from '../../core/models';
 import {
   causaDominante,
+  estadoUltimoCiclo,
   etapasFunil,
   explicacaoZero,
   funilFecha,
+  quandoTerminou,
   resumoFunil,
   rotuloMotivo,
+  rotuloOrigem,
+  rotuloStatus,
 } from './discovery-funnel';
 
 let executados = 0;
@@ -126,6 +130,76 @@ teste('sessão antiga sem is_admin é tratada como não-admin', () => {
 teste('admin vê o botão; sem token ninguém vê', () => {
   assert.strictEqual(isAdmin('t', { is_admin: true }), true);
   assert.strictEqual(isAdmin(null, { is_admin: true }), false);
+});
+
+
+// --- REV-P4 (item 27): último ciclo persistido --------------------------------
+
+// Resposta REAL de produção, reconstruída a partir da execução manual de
+// 26/09/2026 01:46 UTC (mesmo contrato de GET /discovery/last-run).
+const funilReal = funil({ generated: 1944, rejected_no_real_odds: 1671, rejected_insufficient_sample: 273 });
+const respReal: DiscoveryLastRunResponse = {
+  available: true,
+  run: {
+    id: 37, status: 'ok', trigger: 'manual',
+    started_at: '2026-09-26T01:46:39Z', finished_at: '2026-09-26T01:47:06Z', duration_ms: 27524,
+    leagues: 12, combinations: 1944, published: 0, deactivated: 0, errors: 0,
+    funnel: funilReal, rejections: { sem_odd_real: 1671, amostra_insuficiente: 273 },
+  } as DiscoveryLastRun,
+};
+
+teste('11. ao abrir, com ciclo registrado, o painel mostra o ciclo', () => {
+  const e = estadoUltimoCiclo(true, respReal);
+  assert.strictEqual(e.tipo, 'ciclo');
+});
+
+teste('12. refresh preserva: a mesma resposta produz o mesmo painel', () => {
+  // A tela não guarda estado próprio: o painel é função da resposta do backend,
+  // que vem de worker_runs. Duas cargas iguais → mesmo resultado.
+  const a = estadoUltimoCiclo(true, respReal);
+  const b = estadoUltimoCiclo(true, JSON.parse(JSON.stringify(respReal)));
+  assert.deepStrictEqual(a, b);
+});
+
+teste('13. sem ciclo registrado: estado vazio, sem zeros inventados', () => {
+  const e = estadoUltimoCiclo(true, { available: false });
+  assert.strictEqual(e.tipo, 'vazio');
+  assert.ok(!('run' in e));
+  // Sem login a rota não é chamada: estado próprio, não "vazio".
+  assert.strictEqual(estadoUltimoCiclo(false, null).tipo, 'sem-login');
+});
+
+teste('14. funil renderiza os valores reais do ciclo persistido', () => {
+  const f = respReal.run!.funnel!;
+  assert.strictEqual(funilFecha(f), true);
+  const et = etapasFunil(f).map(x => `${x.rotulo}=${x.quantidade}`);
+  assert.deepStrictEqual(et, [
+    'combinações geradas=1944', 'sem odd real de mercado=1671', 'amostra insuficiente=273',
+    'testadas estatisticamente=0', 'padrões históricos publicados=0',
+  ]);
+});
+
+teste('15. geradas nunca são chamadas de testadas', () => {
+  const r = resumoFunil(respReal.run!.funnel!);
+  assert.ok(r.includes('1944 combinações geradas'));
+  assert.ok(r.includes('0 testadas estatisticamente'));
+  assert.ok(!/1944 combinações testadas/.test(r));
+});
+
+teste('16. origem cron/manual e ciclo antigo sem origem', () => {
+  assert.strictEqual(rotuloOrigem('cron'), 'automática (diária)');
+  assert.strictEqual(rotuloOrigem('manual'), 'manual (administrador)');
+  assert.strictEqual(rotuloOrigem(null), 'origem não registrada');
+});
+
+teste('status de erro aparece como erro', () => {
+  assert.strictEqual(rotuloStatus('ok'), 'concluída');
+  assert.strictEqual(rotuloStatus('error'), 'com erro ou interrompida');
+});
+
+teste('horário exibido em Brasília (UTC−3)', () => {
+  assert.ok(quandoTerminou(respReal.run!).includes('25/09/2026'), quandoTerminou(respReal.run!));
+  assert.ok(quandoTerminou(respReal.run!).includes('22:47'), quandoTerminou(respReal.run!));
 });
 
 console.log(`\n${executados} testes do funil do Discovery — todos passaram.`);

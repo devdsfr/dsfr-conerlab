@@ -5540,3 +5540,88 @@ componente Angular **NA — inexistente**.
    corretamente a causa").
 
 ## REV-P4 = PARCIAL — 38 ✅ / 2 ⚠️ / 0 ❌. Faltam: funil no worker_runs do cron (22) e funil visível na tela para quem abre depois (27).
+
+---
+
+## REV-P4 — Item 27: último ciclo persistido na tela (implementação local)
+
+Data: **26/09/2026**. Autorizado pelo Daniel. O item 22 não foi alterado (aguarda o
+próximo cron).
+
+### Causa
+
+1. A tela só preenchia "Última varredura" no polling de uma execução acompanhada pela
+   página; ao abrir depois, `ngOnInit` ignorava o resultado.
+2. O resultado vivia só em `progress.Tracker` (memória da API): sumia em deploy/restart.
+3. **A execução manual não gravava em `worker_runs`** — só o cron gravava. E o cron
+   roda em outro processo, então nunca aparecia na tela.
+
+### Solução — sem mudança de schema
+
+| Peça | O que faz |
+|---|---|
+| `discovery.Result.RunDetails(trigger)` | **Formato único** de `worker_runs.details` para cron e manual: `trigger`, `leagues`, `combinations`, `published`, `deactivated`, `funnel`, `rejections` |
+| `discovery.RunStatus(result, err)` | `error` se houve erro **ou** ciclo interrompido; `ok` só se completou |
+| Cron (`cmd/worker`) | usa `RunDetails("cron")` e `RunStatus` |
+| Manual (handler) | passa a abrir e fechar um registro em `worker_runs` com `RunDetails("manual")` |
+| `AnalyticsRepo.RecentWorkerRuns` | lê os 20 registros mais recentes do worker `discovery` |
+| `discovery.LatestFinished` | **regra explícita:** último ciclo **concluído** = maior `finished_at`, empate pelo maior `id`; ignora linhas sem `finished_at` (rodando ou mortas no meio) |
+| `discovery.ToLastRun` | lê só as chaves conhecidas de `details`; o que o ciclo não gravou fica **nulo** (ex.: ciclos anteriores ao REV-P4 não têm `funnel` nem `trigger`) |
+
+### Endpoint
+
+`GET /api/v1/discovery/last-run` — **autenticado, sem exigir admin**.
+
+```json
+{"available": false}
+{"available": true, "run": {"id", "status", "trigger", "started_at", "finished_at",
+  "duration_ms", "leagues", "combinations", "published", "deactivated", "errors",
+  "funnel", "rejections"}}
+```
+
+Não expõe e-mail, token, SQL nem erro interno (falha de leitura → 500 com mensagem
+genérica; detalhe só no log). `POST /discovery/run` continua **admin only**.
+
+Observação de coerência: `GET /discovery/progress`, que é **público**, também traz o
+funil da última execução manual em memória. Não foi alterado nesta passagem.
+
+### Frontend
+
+- `ngOnInit` chama `loadLastRun()`; ao fim de uma execução manual, o painel **recarrega
+  do mesmo endpoint** (não usa mais o resultado em memória). Um contrato só.
+- Estados: **ciclo** (data/hora em Brasília, origem, status, resumo, funil, causa do
+  zero); **vazio** ("Ainda não há uma varredura registrada."); **sem login** (convite
+  para entrar); ciclo antigo sem funil mostra só os totais gravados, com aviso.
+- Funções puras novas em `discovery-funnel.ts`: `estadoUltimoCiclo`, `rotuloOrigem`,
+  `rotuloStatus`, `quandoTerminou`.
+
+### Testes
+
+Backend (novos): `TestLatestFinished_SemRegistro`, `_MaisNovoVence`,
+`_EmpateDesfeitoPeloID`, `TestToLastRun_CronEManual_FunilPreservado`,
+`TestToLastRun_CicloAntigoSemFunilNaoInventaZero`, `TestRunStatus_ErroNaoViraSucesso`,
+`TestRunDetails_MesmoFormatoParaCronEManual`; no **roteador real**:
+`TestLastRun_UsuarioComumLe` (200, funil, nada sensível no corpo),
+`TestLastRun_SemCicloEstadoVazio`, `TestLastRun_ExigeLogin`. Continuam valendo
+`TestRotaDiscoveryRun_UsuarioComumRecebe403` e `TestRequireAdmin_AdminPassa`.
+
+Frontend (`discovery-funnel.spec.ts`, 21/21): testes 11–16 do prompt, com a resposta
+real da execução de 26/09 — carrega ao abrir, refresh preserva, vazio sem zeros,
+funil com os valores reais, "geradas" ≠ "testadas", origem cron/manual/não registrada.
+Uma fixture minha estava errada (usei o funil de uma liga no lugar do da execução
+real); corrigida no teste, não no código.
+
+### Regressão
+
+`gofmt` vazio · `go build`/`vet` OK · `go test -count=1` 11 pacotes ok · `ng build`
+642,52 kB · suítes puras 28/28, 11/11, 21/21 · runner Angular **NA — inexistente**.
+
+### O que vai acontecer depois do deploy (para a validação não surpreender)
+
+- A execução manual de 26/09 01:46 **não** está em `worker_runs` (código anterior).
+  Até o próximo ciclo, o último registrado é o **cron de 25/09 (id 36)**, sem funil: a
+  tela deve mostrar os totais e o aviso de "registrado antes do funil".
+- O **cron de 26/09 ~11:17 UTC** grava o funil (código `5fe6fba` já gravava). Se o
+  Cron Job for reconstruído com este commit antes disso, grava também `trigger: "cron"`.
+
+## REV-P4 = PARCIAL — item 27 implementado localmente, aguardando push/deploy e o cron de 26/09

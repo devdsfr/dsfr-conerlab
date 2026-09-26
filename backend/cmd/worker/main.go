@@ -396,25 +396,17 @@ func runStrategyDiscovery(ctx context.Context, e *discovery.Engine, repo *postgr
 		"published", result.Published, "deactivated", result.Deactivated,
 		"errors", result.Errors,
 	}
-	status := "ok"
-	if err != nil {
-		status = "error"
-		slog.Error("ciclo de descoberta de estratégias falhou", append(fields, "error", err)...)
+	// REV-P4 (item 27): status e details vêm das MESMAS funções usadas pela
+	// execução manual — um formato só em worker_runs, lido pela tela. Ciclo
+	// interrompido é "error", nunca "ok".
+	status := discovery.RunStatus(result, err)
+	if status != "ok" {
+		slog.Error("ciclo de descoberta de estratégias falhou ou foi interrompido", append(fields, "error", err)...)
 	} else {
 		slog.Info("ciclo de descoberta de estratégias concluído", fields...)
 	}
 	if idErr == nil {
-		// REV-P4 (B3): o funil completo e os motivos entram no registro do ciclo.
-		// Antes só ficavam ligas/combinações/publicadas/desativadas, e não havia
-		// como saber, depois, por que um ciclo não publicou nada.
-		details := map[string]any{
-			"leagues":      result.Leagues,
-			"combinations": result.Combinations,
-			"published":    result.Published,
-			"deactivated":  result.Deactivated,
-			"funnel":       result.Funnel,
-			"rejections":   result.Rejections,
-		}
+		details := result.RunDetails(discovery.TriggerCron)
 		if err := repo.FinishWorkerRun(ctx, runID, status, result.Published, result.Errors, start, details); err != nil {
 			slog.Error("falha ao registrar worker_run de descoberta", "error", err)
 		}

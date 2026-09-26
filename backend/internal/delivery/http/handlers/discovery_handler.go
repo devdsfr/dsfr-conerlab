@@ -30,10 +30,50 @@ type DiscoveryHandler struct {
 	strategies repository.StrategyRepository
 	engine     *discovery.Engine
 	progress   *progress.Tracker
+
+	// REV-P4 (item 27): registro persistido dos ciclos (worker_runs). A
+	// execução manual grava aqui e GET /discovery/last-run lê daqui.
+	runs repository.WorkerRunLog
 }
 
-func NewDiscoveryHandler(strategies repository.StrategyRepository, engine *discovery.Engine) *DiscoveryHandler {
-	return &DiscoveryHandler{strategies: strategies, engine: engine, progress: progress.NewTracker()}
+func NewDiscoveryHandler(strategies repository.StrategyRepository, engine *discovery.Engine, runs repository.WorkerRunLog) *DiscoveryHandler {
+	return &DiscoveryHandler{strategies: strategies, engine: engine, progress: progress.NewTracker(), runs: runs}
+}
+
+// lastRunScan é quantos registros recentes são lidos para achar o último ciclo
+// concluído. Ciclos ficam presos em "running" só se o processo morrer no meio;
+// 20 dá folga larga para pular esses sem varrer a tabela.
+const lastRunScan = 20
+
+// LastRun godoc
+// @Summary Último ciclo concluído do Discovery (cron ou manual)
+// @Tags discovery
+// @Router /api/v1/discovery/last-run [get]
+//
+// REV-P4 (item 27). Lê de worker_runs — sobrevive a refresh, novo navegador e
+// deploy/restart da API, e inclui o ciclo do cron. Resposta:
+//
+//	{"available": false}                  — nenhum ciclo concluído registrado
+//	{"available": true, "run": {...}}     — discovery.LastRun
+//
+// Só leitura: não expõe e-mail, token, SQL nem erro interno.
+func (h *DiscoveryHandler) LastRun(c *gin.Context) {
+	if h.runs == nil {
+		c.JSON(http.StatusOK, gin.H{"available": false})
+		return
+	}
+	runs, err := h.runs.RecentWorkerRuns(c.Request.Context(), discovery.WorkerName, lastRunScan)
+	if err != nil {
+		slog.Error("ler último ciclo do discovery", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "não foi possível ler o último ciclo"})
+		return
+	}
+	last := discovery.LatestFinished(runs)
+	if last == nil {
+		c.JSON(http.StatusOK, gin.H{"available": false})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"available": true, "run": discovery.ToLastRun(*last)})
 }
 
 // discoveryTimeout limita a varredura em segundo plano. O último ciclo real testou
@@ -201,18 +241,46 @@ func (h *DiscoveryHandler) Run(c *gin.Context) {
 
 		engine := h.engine.WithProgress(h.progress)
 
+		// REV-P4 (item 27): a execução manual grava em worker_runs, como o
+		// cron, com o mesmo formato. Falha ao abrir o registro não impede a
+		// varredura — só a deixa sem registro, e isso vai para o log.
+		start := time.Now()
+		var runID int64
+		registrar := h.runs != nil
+		if registrar {
+			id, err := h.runs.StartWorkerRun(context.Background(), discovery.WorkerName)
+			if err != nil {
+				slog.Error("abrir registro da varredura manual", "error", err)
+				registrar = false
+			}
+			runID = id
+		}
+		fechar := func(result discovery.Result, runErr error) {
+			if !registrar {
+				return
+			}
+			if err := h.runs.FinishWorkerRun(context.Background(), runID,
+				discovery.RunStatus(result, runErr), result.Published, result.Errors, start,
+				result.RunDetails(discovery.TriggerManual)); err != nil {
+				slog.Error("fechar registro da varredura manual", "error", err)
+			}
+		}
+
 		if leagueID > 0 {
-			result, err := engine.RunLeague(ctx, leagueID, seasonIDs)
+			lr, err := engine.RunLeague(ctx, leagueID, seasonIDs)
+			result := discovery.FromLeague(lr)
+			fechar(result, err)
 			if err != nil {
 				slog.Error("varredura de descobertas falhou", "league_id", leagueID, "error", err)
 				h.progress.Finish(err, nil)
 				return
 			}
-			h.progress.Finish(nil, discovery.FromLeague(result))
+			h.progress.Finish(nil, result)
 			return
 		}
 
 		result, err := engine.RunAll(ctx)
+		fechar(result, err)
 		if err != nil {
 			slog.Error("varredura de descobertas falhou", "error", err)
 			h.progress.Finish(err, nil)

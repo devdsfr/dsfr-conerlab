@@ -237,6 +237,17 @@ type AnalyticsRepository interface {
 	FinishWorkerRun(ctx context.Context, id int64, status string, processed, errCount int, started time.Time, details map[string]any) error
 }
 
+// WorkerRunLog grava e lê os registros de execução de workers (worker_runs).
+// REV-P4 (item 27): o Discovery manual passa a gravar aqui, como o cron, e a
+// tela lê o último ciclo desta tabela — fonte persistida, não memória da API.
+type WorkerRunLog interface {
+	StartWorkerRun(ctx context.Context, worker string) (int64, error)
+	FinishWorkerRun(ctx context.Context, id int64, status string, processed, errCount int, started time.Time, details map[string]any) error
+	// RecentWorkerRuns devolve os registros mais recentes do worker, do mais
+	// novo para o mais antigo (por id), no máximo limit.
+	RecentWorkerRuns(ctx context.Context, worker string, limit int) ([]domain.WorkerRun, error)
+}
+
 // DiscoveredStrategy agrega uma estratégia descoberta automaticamente com todos
 // os artefatos que o ranking do Discovery Engine precisa exibir de uma vez
 // (doc 08: Score, ROI, Yield, EV, Jogos, Lucro, Drawdown, Confiabilidade). Os

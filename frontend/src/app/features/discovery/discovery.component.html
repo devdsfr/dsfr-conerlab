@@ -92,57 +92,72 @@
     <div class="cl-card p-4 border border-red-500/40 text-sm text-red-300">{{ error() }}</div>
   }
 
-  <!-- Resultado do último ciclo disparado manualmente -->
-  @if (lastRun(); as run) {
-    <section class="cl-card p-4 space-y-2">
-      <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
-      <p class="text-sm text-slate-300">{{ lastRunSummary() }}</p>
-
-      <!-- REV-P4 (B3): funil auditável. Cada combinação para em exatamente um
-           estágio; se as contas não fecharem, a tela avisa em vez de exibir. -->
-      @if (run.funnel; as f) {
-        @if (lastRunZero(); as zero) {
-          <p class="text-sm text-slate-300">{{ zero }}</p>
-        }
-        @if (funilFecha(f)) {
-          <ol class="text-xs space-y-0.5">
-            @for (e of etapasFunil(f); track e.chave) {
-              <li class="flex justify-between gap-4 max-w-md"
-                  [class.text-slate-200]="e.tipo === 'passou'"
-                  [class.text-slate-400]="e.tipo === 'saida'"
-                  [class.pl-4]="e.tipo === 'saida'">
-                <span>{{ e.tipo === 'saida' ? '↳ ' : '' }}{{ e.rotulo }}</span>
-                <span class="tabular-nums">{{ e.quantidade }}</span>
-              </li>
-            }
-          </ol>
-        } @else {
-          <p class="text-xs text-amber-400">
-            {{ f.interrupted ? 'A varredura foi interrompida antes de terminar; nada foi publicado nem desativado.'
-                             : 'As contagens deste ciclo não fecham — o funil não é exibido.' }}
-          </p>
-        }
-      } @else if (rejectionEntries(run.rejections).length) {
-        <div>
-          <p class="text-xs text-slate-400 mb-1">
-            Combinações descartadas por não atenderem aos critérios mínimos:
-          </p>
-          <ul class="flex flex-wrap gap-2">
-            @for (r of rejectionEntries(run.rejections); track r.label) {
-              <li class="text-xs px-2 py-0.5 rounded border border-slate-700 text-slate-300">
-                {{ r.label }}: {{ r.count }}
-              </li>
-            }
-          </ul>
-        </div>
+  <!-- REV-P4 (item 27): ÚLTIMO CICLO PERSISTIDO (worker_runs), cron ou manual.
+       Carregado ao abrir a tela — não depende de ter acompanhado a execução, e
+       sobrevive a refresh, novo navegador e deploy da API. -->
+  @if (lastRunLoaded()) {
+    @switch (ultimoCiclo().tipo) {
+      @case ('vazio') {
+        <section class="cl-card p-4">
+          <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
+          <p class="text-sm text-slate-400">Ainda não há uma varredura registrada.</p>
+        </section>
       }
-
-      @if (run.errors) {
-        <p class="text-xs text-amber-400">
-          {{ run.errors }} combinação(ões) não pôde(puderam) ser avaliada(s) nesta execução.
-        </p>
+      @case ('sem-login') {
+        <section class="cl-card p-4">
+          <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
+          <p class="text-sm text-slate-400">Entre na sua conta para ver o detalhe da última varredura e o motivo de cada descarte.</p>
+        </section>
       }
-    </section>
+      @case ('ciclo') {
+        @if (ultimoCiclo(); as e) {
+          @if (e.tipo === 'ciclo') {
+            <section class="cl-card p-4 space-y-2">
+              <h2 class="text-sm font-semibold text-slate-100">Última varredura</h2>
+              <p class="text-xs text-slate-400">
+                {{ quandoTerminou(e.run) }} · {{ rotuloOrigem(e.run.trigger) }} ·
+                <span [class.text-amber-400]="e.run.status !== 'ok'">{{ rotuloStatus(e.run.status) }}</span>
+              </p>
+              <p class="text-sm text-slate-300">{{ lastRunSummary() }}</p>
+
+              @if (e.run.funnel; as f) {
+                @if (lastRunZero(); as zero) {
+                  <p class="text-sm text-slate-300">{{ zero }}</p>
+                }
+                @if (funilFecha(f)) {
+                  <ol class="text-xs space-y-0.5">
+                    @for (etapa of etapasFunil(f); track etapa.chave) {
+                      <li class="flex justify-between gap-4 max-w-md"
+                          [class.text-slate-200]="etapa.tipo === 'passou'"
+                          [class.text-slate-400]="etapa.tipo === 'saida'"
+                          [class.pl-4]="etapa.tipo === 'saida'">
+                        <span>{{ etapa.tipo === 'saida' ? '↳ ' : '' }}{{ etapa.rotulo }}</span>
+                        <span class="tabular-nums">{{ etapa.quantidade }}</span>
+                      </li>
+                    }
+                  </ol>
+                } @else {
+                  <p class="text-xs text-amber-400">
+                    {{ f.interrupted ? 'A varredura foi interrompida antes de terminar; nada foi publicado nem desativado.'
+                                     : 'As contagens deste ciclo não fecham — o funil não é exibido.' }}
+                  </p>
+                }
+              } @else {
+                <p class="text-xs text-slate-400">
+                  Este ciclo foi registrado antes de o funil de descarte passar a ser gravado; só os totais estão disponíveis.
+                </p>
+              }
+
+              @if (e.run.errors) {
+                <p class="text-xs text-amber-400">
+                  {{ e.run.errors }} combinação(ões) não pôde(puderam) ser avaliada(s) nesta execução.
+                </p>
+              }
+            </section>
+          }
+        }
+      }
+    }
   }
 
   <!-- Ranking -->

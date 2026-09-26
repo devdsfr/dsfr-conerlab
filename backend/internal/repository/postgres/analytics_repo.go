@@ -110,3 +110,27 @@ func (r *AnalyticsRepo) FinishWorkerRun(ctx context.Context, id int64, status st
 		id, status, time.Since(started).Milliseconds(), processed, errCount, raw)
 	return err
 }
+
+// RecentWorkerRuns devolve os últimos registros de um worker (REV-P4, item 27).
+// A escolha do "último ciclo concluído" é feita em Go (discovery.LatestFinished),
+// para a regra ser testável; aqui só se limita o volume lido.
+func (r *AnalyticsRepo) RecentWorkerRuns(ctx context.Context, worker string, limit int) ([]domain.WorkerRun, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, worker, status, started_at, finished_at, duration_ms, processed, errors, details::text
+		FROM worker_runs WHERE worker = $1
+		ORDER BY id DESC LIMIT $2`, worker, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.WorkerRun
+	for rows.Next() {
+		var w domain.WorkerRun
+		if err := rows.Scan(&w.ID, &w.Worker, &w.Status, &w.StartedAt, &w.FinishedAt,
+			&w.DurationMs, &w.Processed, &w.Errors, &w.Details); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}

@@ -33,6 +33,7 @@ import {
   DiscoveredStrategiesResponse,
   DiscoveryRunResult,
   DiscoveryProgress,
+  DiscoveryLastRunResponse,
 } from './models';
 
 // URL base da API. Em produção (docker-compose) o frontend é servido pelo nginx, que
@@ -199,6 +200,12 @@ export class ApiService {
   /** Andamento da varredura — alimenta a barra de progresso da tela Descobertas. */
   getDiscoveryProgress(): Observable<DiscoveryProgress> {
     return this.http.get<DiscoveryProgress>(`${this.base}/discovery/progress`);
+  }
+
+  // REV-P4 (item 27): último ciclo concluído (cron ou manual), persistido.
+  // Requer login; executar a varredura continua restrito a admin.
+  getDiscoveryLastRun(): Observable<DiscoveryLastRunResponse> {
+    return this.http.get<DiscoveryLastRunResponse>(`${this.base}/discovery/last-run`);
   }
 
   /**

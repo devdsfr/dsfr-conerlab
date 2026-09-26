@@ -166,6 +166,10 @@ func NewRouter(h Handlers, jwtSecret string, users repository.UserRepository) *g
 			// da API; antes bastava estar logado. A barreira é esta, no backend;
 			// o frontend só esconde o botão.
 			authGroup.POST("/discovery/run", middleware.RequireAdmin(users), h.Discovery.Run)
+			// REV-P4 (item 27): último ciclo concluído (cron ou manual), lido de
+			// worker_runs. Leitura para qualquer usuário autenticado; executar
+			// continua restrito a administrador (rota acima).
+			authGroup.GET("/discovery/last-run", h.Discovery.LastRun)
 
 			authGroup.GET("/billing/status", h.Billing.Status)
 			authGroup.POST("/billing/checkout", h.Billing.Checkout)

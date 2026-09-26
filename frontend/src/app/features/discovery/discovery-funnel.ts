@@ -11,7 +11,7 @@
 //   - zero publicadas é resultado legítimo, e a frase diz POR QUÊ com a causa
 //     dominante real.
 
-import { DiscoveryFunnel } from '../../core/models';
+import { DiscoveryFunnel, DiscoveryLastRun, DiscoveryLastRunResponse } from '../../core/models';
 
 export interface EtapaFunil {
   chave: string;
@@ -121,4 +121,42 @@ export function funilFecha(f: DiscoveryFunnel): boolean {
     f.fdr_survivors === f.rejected_secondary + f.holdout_input &&
     f.holdout_input === f.holdout_errors + f.rejected_holdout + f.holdout_validated + f.holdout_interrupted &&
     f.holdout_validated === f.capped_per_league + f.publish_errors + f.published;
+}
+
+// =============================================================================
+// REV-P4 (item 27) — último ciclo PERSISTIDO (GET /discovery/last-run)
+// =============================================================================
+
+/** Estado do painel "Última varredura". */
+export type EstadoUltimoCiclo =
+  | { tipo: 'sem-login' }
+  | { tipo: 'vazio' }                     // nenhum ciclo concluído registrado
+  | { tipo: 'ciclo'; run: DiscoveryLastRun };
+
+export function estadoUltimoCiclo(autenticado: boolean, resp: DiscoveryLastRunResponse | null): EstadoUltimoCiclo {
+  if (!autenticado) return { tipo: 'sem-login' };
+  if (!resp || !resp.available || !resp.run) return { tipo: 'vazio' };
+  return { tipo: 'ciclo', run: resp.run };
+}
+
+/** Origem do ciclo. Nulo = ciclo gravado antes de a origem ser registrada. */
+export function rotuloOrigem(trigger: string | null | undefined): string {
+  if (trigger === 'cron') return 'automática (diária)';
+  if (trigger === 'manual') return 'manual (administrador)';
+  return 'origem não registrada';
+}
+
+export function rotuloStatus(status: string): string {
+  if (status === 'ok') return 'concluída';
+  if (status === 'error') return 'com erro ou interrompida';
+  return status;
+}
+
+/** Data/hora de término em pt-BR, horário de Brasília. */
+export function quandoTerminou(run: DiscoveryLastRun): string {
+  const iso = run.finished_at ?? run.started_at;
+  return new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 }

@@ -510,6 +510,30 @@ export interface DiscoveryRunResult {
   funnel?: DiscoveryFunnel;
 }
 
+// REV-P4 (item 27): último ciclo CONCLUÍDO do Discovery, lido de worker_runs
+// (GET /discovery/last-run). Sobrevive a refresh e deploy e inclui o cron.
+// Campos nulos = o ciclo não gravou aquilo (ciclos antigos): nunca zero.
+export interface DiscoveryLastRun {
+  id: number;
+  status: 'ok' | 'error' | string;
+  trigger: 'cron' | 'manual' | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  leagues: number | null;
+  combinations: number | null;
+  published: number | null;
+  deactivated: number | null;
+  errors: number;
+  funnel: DiscoveryFunnel | null;
+  rejections: Record<string, number> | null;
+}
+
+export interface DiscoveryLastRunResponse {
+  available: boolean;
+  run?: DiscoveryLastRun;
+}
+
 // REV-P4 (B3): onde cada combinação gerada parou. Espelha discovery.Funnel no
 // backend; as identidades estão em discovery-funnel.ts (funilFecha).
 export interface DiscoveryFunnel {

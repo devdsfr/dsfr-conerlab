@@ -10,9 +10,19 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
-import { DiscoveredStrategy, DiscoveryProgress, DiscoveryRunResult, League } from '../../core/models';
+import { DiscoveredStrategy, DiscoveryLastRunResponse, DiscoveryProgress, League } from '../../core/models';
 import { PageLoaderComponent } from '../../shared/page-loader.component';
-import { etapasFunil, explicacaoZero, funilFecha, resumoFunil, rotuloMotivo } from './discovery-funnel';
+import {
+  estadoUltimoCiclo,
+  etapasFunil,
+  explicacaoZero,
+  funilFecha,
+  quandoTerminou,
+  resumoFunil,
+  rotuloMotivo,
+  rotuloOrigem,
+  rotuloStatus,
+} from './discovery-funnel';
 
 // Página "Descobertas" — Strategy Discovery Engine (Remodelagem F6, doc 08).
 //
@@ -52,7 +62,12 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
   loading = signal(false);
   running = signal(false);
   error = signal<string | null>(null);
-  lastRun = signal<DiscoveryRunResult | null>(null);
+  // REV-P4 (item 27): último ciclo PERSISTIDO (worker_runs), carregado ao abrir
+  // a tela. Antes vinha só do polling de uma execução acompanhada pela página —
+  // quem abria depois nunca via o funil, e o ciclo do cron nunca aparecia.
+  private lastRunResp = signal<DiscoveryLastRunResponse | null>(null);
+  lastRunLoaded = signal(false);
+  ultimoCiclo = computed(() => estadoUltimoCiclo(this.auth.isAuthenticated(), this.lastRunResp()));
 
   // Andamento da varredura, consultado por polling enquanto ela roda.
   progress = signal<DiscoveryProgress | null>(null);
@@ -89,6 +104,9 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
   // Funil do último ciclo (REV-P4, B3) — funções puras em discovery-funnel.ts.
   readonly etapasFunil = etapasFunil;
   readonly funilFecha = funilFecha;
+  readonly rotuloOrigem = rotuloOrigem;
+  readonly rotuloStatus = rotuloStatus;
+  readonly quandoTerminou = quandoTerminou;
 
   /**
    * Resumo do último ciclo em uma frase. REV-P4: antes dizia "N combinações
@@ -96,18 +114,39 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
    * estatisticamente são outro número, e sem odd real são zero.
    */
   lastRunSummary = computed(() => {
-    const r = this.lastRun();
-    if (!r) return '';
-    const scope = r.league_name ? `no ${r.league_name}` : `em ${r.leagues ?? 0} campeonato(s)`;
-    if (r.funnel) return `${resumoFunil(r.funnel)} (${scope})`;
-    return `${r.combinations} combinações geradas ${scope} · ${r.published} publicada(s)`;
+    const e = this.ultimoCiclo();
+    if (e.tipo !== 'ciclo') return '';
+    const r = e.run;
+    const scope = r.leagues != null ? ` (${r.leagues} campeonato(s))` : '';
+    if (r.funnel) return resumoFunil(r.funnel) + scope;
+    // Ciclo antigo, sem funil: mostra só o que foi gravado — nada de zeros.
+    const partes: string[] = [];
+    if (r.combinations != null) partes.push(`${r.combinations} combinações geradas`);
+    if (r.published != null) partes.push(`${r.published} publicadas`);
+    return partes.join(' · ') + scope;
   });
 
   /** Por que nada foi publicado, com a causa dominante real. */
   lastRunZero = computed(() => {
-    const f = this.lastRun()?.funnel;
-    return f ? explicacaoZero(f) : null;
+    const e = this.ultimoCiclo();
+    return e.tipo === 'ciclo' && e.run.funnel ? explicacaoZero(e.run.funnel) : null;
   });
+
+  /** Carrega o último ciclo persistido. Só para quem está logado (a rota exige). */
+  loadLastRun(): void {
+    if (!this.auth.isAuthenticated()) {
+      this.lastRunLoaded.set(true);
+      return;
+    }
+    this.api.getDiscoveryLastRun().subscribe({
+      next: r => {
+        this.lastRunResp.set(r);
+        this.lastRunLoaded.set(true);
+      },
+      // Falha de leitura não vira "sem ciclo": o painel simplesmente não aparece.
+      error: () => this.lastRunLoaded.set(false),
+    });
+  }
 
   constructor(private api: ApiService, public auth: AuthService, private router: Router) {}
 
@@ -116,6 +155,7 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
       next: list => this.leagues.set(list ?? []),
     });
     this.load();
+    this.loadLastRun();
 
     // Se uma varredura já estiver rodando (outra aba, ou a página foi recarregada
     // no meio), a barra reaparece sozinha em vez de sumir.
@@ -207,7 +247,9 @@ export class DiscoveryComponent implements OnInit, OnDestroy {
           return;
         }
         if (p.phase === 'concluido') {
-          this.lastRun.set((p.result ?? null) as DiscoveryRunResult | null);
+          // Mesmo contrato do carregamento inicial: o painel lê o ciclo que
+          // acabou de ser gravado em worker_runs, não o resultado em memória.
+          this.loadLastRun();
           this.load();
         }
       },

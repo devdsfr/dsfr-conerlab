@@ -172,7 +172,7 @@ func main() {
 		Sync:            handlers.NewSyncHandler(discoverySyncUC, updateSyncUC, syncRunRepo),
 		Overview:        handlers.NewOverviewHandler(matchRepo),
 		Strategy:        handlers.NewStrategyHandler(strategyRepo, strategyEngine),
-		Discovery:       handlers.NewDiscoveryHandler(strategyRepo, discoveryEngine),
+		Discovery:       handlers.NewDiscoveryHandler(strategyRepo, discoveryEngine, postgres.NewAnalyticsRepo(pool)),
 		AIDocs:          handlers.NewAIDocsHandler(),
 		MyData: handlers.NewMyDataHandler(
 			filterRepo, betRepo, bankrollRepo, alertRepo, strategyHistoryRepo),

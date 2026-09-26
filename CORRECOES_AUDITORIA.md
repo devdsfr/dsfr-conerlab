@@ -5625,3 +5625,97 @@ real); corrigida no teste, não no código.
   Cron Job for reconstruído com este commit antes disso, grava também `trigger: "cron"`.
 
 ## REV-P4 = PARCIAL — item 27 implementado localmente, aguardando push/deploy e o cron de 26/09
+
+---
+
+## REV-P4 — validação pós-deploy do item 27
+
+Data: **26/09/2026, ~09:55 UTC** (antes do cron do dia).
+
+### Commit em produção — os três serviços no mesmo commit
+
+Conferido no painel do Render (sessão do Daniel, só leitura):
+
+| Serviço | Commit | Estado |
+|---|---|---|
+| `cornerlab-backend` (web) | **`2eaf7b2`** | Deployed, Auto-Deploy, há 2 min |
+| `cornerlab-frontend` (static) | **`2eaf7b2`** | Deployed, há 2 min |
+| `cornerlab-worker` (cron) | **`2eaf7b2`** | "Last successfully deployed commit" |
+
+Também visível: deploy **manual** do `5fe6fba` 8 h antes — o reinício que colocou o
+`ADMIN_EMAILS` em vigor. `origin/main = 2eaf7b2`, árvore local limpa.
+
+### Endpoint — `GET /api/v1/discovery/last-run`
+
+Com a sessão autenticada do Daniel: **200**. Sem token: **401**. Payload real:
+
+```json
+{"available": true,
+ "run": {"id": 36, "status": "ok", "trigger": null,
+         "started_at": "2026-09-25T11:17:00.960008Z",
+         "finished_at": "2026-09-25T11:17:21.138925Z",
+         "duration_ms": 20178, "leagues": 12, "combinations": 24804,
+         "published": 0, "deactivated": 0, "errors": 0,
+         "funnel": null, "rejections": null}}
+```
+
+- É o **cron de 25/09**, gravado pela versão anterior: `trigger`, `funnel` e `rejections`
+  vêm **nulos**, não zerados — comportamento esperado.
+- A execução manual de 26/09 01:46 não aparece: rodou com o código anterior, que não
+  gravava a execução manual (causa do item 27).
+- Varredura do corpo por `admin@`, e-mail do administrador, `Bearer`, `eyJ` (JWT),
+  `SELECT`, `postgres`, `goroutine`, `.go:` → **nada encontrado**.
+- "Não exige admin": provado no roteador real (`TestLastRun_UsuarioComumLe`, token de
+  usuário comum → 200). Em produção não há segunda conta para repetir.
+
+### Tela aberta do zero (sem acompanhar nenhuma execução, sem "Procurar agora")
+
+> **Última varredura**
+> 25/09/2026, 08:17 · origem não registrada · concluída
+> 24804 combinações geradas · 0 publicadas (12 campeonato(s))
+> Este ciclo foi registrado antes de o funil de descarte passar a ser gravado; só os
+> totais estão disponíveis.
+
+Data/hora em Brasília ✅ · status ✅ · origem (ausente, dita como tal) ✅ · totais reais
+✅ · nenhuma categoria do funil preenchida com zero ✅. A página fez a chamada ao
+`last-run` por conta própria.
+
+### Refresh e nova navegação
+
+| Momento | Painel |
+|---|---|
+| Abertura direta | texto acima |
+| Refresh completo (`?refresh=1`) | **idêntico**; 1 chamada ao `last-run` nessa carga |
+| Aba fechada, aba nova, rota aberta de novo | **idêntico** |
+
+A fonte é o backend (`worker_runs`), não estado do componente.
+
+### Admin
+
+- Backend: reconhece o administrador (`POST /discovery/run` → 202 em 26/09 01:46).
+- Frontend: a sessão do Daniel no Chrome **ainda tem `is_admin: false`** — o usuário
+  salvo é de um login anterior à variável valer; o botão "Procurar agora" não aparece.
+  **Pendente de o Daniel sair e entrar.** Não é defeito do código: a sessão antiga é
+  tratada, por desenho, como não-admin. Nenhuma busca manual foi executada nesta passagem.
+
+### Segurança do POST (evidência preservada)
+
+Sem token → 401 (produção) · usuário comum → 403 (roteador real, teste) · admin → 202
+(produção, 26/09 01:46).
+
+### Regressão curta
+
+`gofmt` vazio · `go build`/`vet` OK · `go test -short` 11 pacotes ok (o `-short` pula só
+o experimento de 200 seeds, que não foi repetido, por instrução) · `ng build` 642,52 kB ·
+suítes puras 28/28, 11/11, 21/21 · runner Angular **NA — inexistente**.
+
+### Itens
+
+| # | Antes | Agora | Evidência |
+|---|---|---|---|
+| 27 — UI fiel ao backend | ⚠️ | **✅** | abertura direta, refresh e nova aba mostram o mesmo ciclo, lido do endpoint persistido; campos ausentes não viram zero |
+| 22 — persistência auditável | ⚠️ | ⚠️ | aguarda o cron de 26/09 (~11:17 UTC), já em `2eaf7b2`, gravar `funnel` e `trigger` em `worker_runs` |
+
+Pendência menor, fora da DoD: observar o botão de admin após novo login.
+
+## REV-P4 = PARCIAL — 39 ✅ / 1 ⚠️ / 0 ❌. Resta o item 22: confirmar o funil persistido pelo cron de 26/09.

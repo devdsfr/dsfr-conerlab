@@ -5741,3 +5741,129 @@ O item 22 continua dependendo do **cron** (~11:17 UTC de 26/09): é ele que prec
 gravar o funil com `trigger = cron` e, por ser mais recente, substituir este ciclo na tela.
 
 ## REV-P4 = PARCIAL — 39 ✅ / 1 ⚠️ / 0 ❌. Resta o item 22 (cron de 26/09).
+
+---
+
+## REV-P4 — Fechamento
+
+Data: **26/09/2026, ~13:05 UTC**. Código em produção nos três serviços: `2eaf7b2`.
+
+### Cron de 26/09 — `worker_runs` (Neon, projeto `cornerlab`, só `SELECT`)
+
+| Campo | id 40 (cron) | id 37 (manual, referência) |
+|---|---|---|
+| started_at → finished_at (UTC) | 11:17:35 → 11:17:59 | 10:12:30 → 10:12:59 |
+| duração | 24,7 s | 29,0 s |
+| status | **ok** | ok |
+| origem (`trigger`) | **cron** | manual |
+| ligas | 12 | 12 |
+| geradas | **24.804** | 1.944 |
+| erros de backtest / sem métrica / não testável | 0 / 0 / 0 | 0 / 0 / 0 |
+| sem odd real | **1.671** | 1.671 |
+| amostra insuficiente | **23.133** | 273 |
+| testadas estatisticamente | **0** | 0 |
+| rejeitadas no FDR / sobreviventes | 0 / 0 | 0 / 0 |
+| rejeitadas por critério secundário | 0 | 0 |
+| entrada no holdout / validadas | 0 / 0 | 0 / 0 |
+| publicadas / desativadas / erros | **0 / 0 / 0** | 0 / 0 / 0 |
+| motivos | `{"sem_odd_real": 1671, "amostra_insuficiente": 23133}` | `{"sem_odd_real": 1671, "amostra_insuficiente": 273}` |
+
+**Contas do funil do cron (semântica implementada):**
+
+```
+geradas 24.804 = erros 0 + sem odd real 1.671 + sem métrica 0
+                 + amostra 23.133 + não testável 0 + testadas 0     ✅
+testadas 0     = rejeitadas no FDR 0 + sobreviventes 0              ✅
+sobreviventes 0 = rejeitadas secundários 0 + entrada no holdout 0   ✅
+holdout 0      = erros 0 + reprovadas 0 + validadas 0 + interrompidas 0 ✅
+validadas 0    = teto 0 + erros de publicação 0 + publicadas 0      ✅
+```
+
+**Por que o cron tem 23.133 "amostra insuficiente" e a execução manual 273:** o cron roda
+com a grade por equipe (`IncludeTeams = true`): 24.804 = 12 × 162 (ligas) + 22.860 (45 por
+vínculo equipe–liga). As 1.944 combinações de liga se dividem como na execução manual
+(1.671 + 273); as 22.860 por equipe caem **todas** em amostra, porque a janela de treino de
+uma equipe isolada não chega a 100 jogos nem se houvesse odd real. É a classificação
+correta: para elas a falta de odd não é o que impede o teste.
+
+**Zero odd real, de novo:** nenhuma combinação chegou ao teste, 0 publicadas, 0
+desativadas. Entre as combinações que **teriam amostra**, 100 % param por falta de odd
+real (1.671 de 1.671).
+
+### DB × API × UI
+
+| Campo | DB (`worker_runs` 40) | API (`/discovery/last-run`) | UI (Descobertas) | OK |
+|---|---|---|---|---|
+| id | 40 | 40 | (ciclo das 08:17) | ✅ |
+| origem | cron | `"cron"` | "automática (diária)" | ✅ |
+| status | ok | `"ok"` | "concluída" | ✅ |
+| data/hora | 11:17:59 UTC | `finished_at` 11:17:59Z | 26/09/2026, 08:17 (Brasília) | ✅ |
+| ligas | 12 | 12 | "(12 campeonato(s))" | ✅ |
+| geradas | 24.804 | 24.804 | 24804 | ✅ |
+| sem odd real | 1.671 | 1.671 | 1671 | ✅ |
+| amostra insuficiente | 23.133 | 23.133 | 23133 | ✅ |
+| testadas estatisticamente | 0 | 0 | 0 | ✅ |
+| sobreviventes do FDR | 0 | 0 | "0 significativas" | ✅ |
+| validadas no holdout | 0 | 0 | "0 validadas no holdout" | ✅ |
+| publicadas | 0 | 0 | 0 | ✅ |
+
+Texto da tela: "Nenhum padrão foi publicado. Das 24804 combinações, 23133 (93%) pararam em:
+amostra insuficiente. É um resultado legítimo, não um erro."
+
+### Abertura direta, refresh e nova aba
+
+A tela foi aberta do zero, sem acompanhar execução e **sem clicar em "Procurar agora"**.
+O painel mostrou o ciclo do cron; refresh completo e aba nova mostraram o **mesmo ciclo
+e os mesmos números**. A fonte é `worker_runs`, lida pelo backend.
+
+Observação operacional (não é defeito do P4): na primeira abertura a chamada ao
+`last-run` levou **11,4 s** — o web service no plano gratuito do Render hiberna sem uso
+("free instance will spin down with inactivity"). Enquanto isso o painel fica ausente e
+depois aparece; não mostra dado errado nem vazio falso.
+
+### Regressão curta (código = `2eaf7b2`)
+
+`gofmt -l internal/ pkg/ cmd/` vazio · `go build`/`vet` OK · `go test -short` 11 pacotes
+ok (experimento de 200 seeds não repetido) · `ng build` 642,52 kB · suítes puras 28/28,
+11/11, 21/21 · runner Angular **NA — inexistente**.
+
+### Item 22
+
+Cron com a versão nova ✅ · `trigger = cron` ✅ · funil persistido e fechando ✅ · API
+devolve o funil ✅ · tela carrega sozinha ✅ · refresh e nova aba preservam ✅ →
+**item 22 = ✅**.
+
+### Total final dos 40 itens
+
+**40 ✅ · 0 ⚠️ · 0 ❌.** (Os itens 22 e 27, últimos ⚠️, estão fechados com evidência de
+produção; os demais mantêm a evidência registrada na Fase E.)
+
+### Backlog que NÃO bloqueia o REV-P4
+
+1. **Concorrência manual × cron** — a trava do disparo manual só vale no processo da API;
+   o cron roda em outro container. Os dois podem rodar juntos e publicar/desativar a mesma
+   liga. Com admin-only o risco é menor, mas existe. Sugestão: advisory lock no Postgres
+   por liga.
+2. **Reavaliação com histórico inteiro** — a descoberta usa treino + holdout; a
+   reavaliação diária usa o histórico todo, inclusive o treino. É **monitoramento**, não
+   nova validação fora da amostra; a evidência de descoberta fica só na descrição, sem
+   colunas estruturadas.
+3. **AUD-006** — drawdown com duas normalizações opostas (filtro relativo ao apostado;
+   score em stakes absolutos).
+4. **AUD-007** — `InvVariance` função pura do win rate e `Consistency` composta de outros
+   componentes: win rate pesa ~34 pontos efetivos no DSFR v1.1.
+
+Outros registros, também fora do fechamento:
+
+- escanteios `NULL → 0` na ingestão (backlog estrutural do REV-P3);
+- o Simulador não tem formulário de login;
+- estratégias de teste 43 e 44 geram 1 erro/dia no worker `strategy` enquanto existirem
+  (sem odd real) — o Daniel pode excluí-las;
+- o cabeçalho da tela diz "162 por campeonato", que é a grade da execução manual; o
+  cron soma 45 combinações por equipe (24.804 no total). O painel mostra o número real
+  do ciclo, mas o texto do cabeçalho não menciona a grade por equipe;
+- `GET /discovery/progress` continua público com o funil da última execução manual em
+  memória, enquanto `GET /discovery/last-run` exige login;
+- hibernação do plano gratuito: primeira requisição do dia pode levar mais de 10 s.
+
+## REV-P4 = RESOLVIDO — 40 ✅ / 0 ⚠️ / 0 ❌

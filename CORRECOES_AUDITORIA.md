@@ -5719,3 +5719,25 @@ suítes puras 28/28, 11/11, 21/21 · runner Angular **NA — inexistente**.
 Pendência menor, fora da DoD: observar o botão de admin após novo login.
 
 ## REV-P4 = PARCIAL — 39 ✅ / 1 ⚠️ / 0 ❌. Resta o item 22: confirmar o funil persistido pelo cron de 26/09.
+
+### Complemento — botão de admin e execução manual persistida (26/09/2026)
+
+Depois de sair e entrar de novo, a tela de Descobertas do Daniel (captura enviada por
+ele) mostra:
+
+- **Botão "Procurar agora" visível** para o administrador → B4 confirmado também no
+  frontend (antes: ausente com a sessão antiga, `is_admin: false`).
+- **"Última varredura" · 26/09/2026, 07:12 · manual (administrador) · concluída** ·
+  "1944 combinações geradas · 0 testadas estatisticamente · 0 significativas · 0
+  validadas no holdout · 0 publicadas (12 campeonato(s))" · causa dominante "1671 (86%)
+  … sem odd real de mercado" · funil 1944 / 1671 / 273 / 0 / 0.
+
+Essa execução manual (disparada pelo administrador; não por mim) é a primeira gravada
+em `worker_runs` pelo código `2eaf7b2`, e prova em produção o caminho **manual →
+worker_runs → GET /last-run → tela**, com `trigger = manual` e funil persistido. Os
+números batem com a execução manual de 26/09 01:46 (mesma base, sem odd real).
+
+O item 22 continua dependendo do **cron** (~11:17 UTC de 26/09): é ele que precisa
+gravar o funil com `trigger = cron` e, por ser mais recente, substituir este ciclo na tela.
+
+## REV-P4 = PARCIAL — 39 ✅ / 1 ⚠️ / 0 ❌. Resta o item 22 (cron de 26/09).

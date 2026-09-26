@@ -5200,3 +5200,71 @@ independente em vez de usar números fixos.
 7. AUD-006 e AUD-007 — continuam abertos.
 
 ## REV-P4 = PARCIAL — Fases A/B/C concluídas, aguardando deploy e validação em produção
+
+---
+
+## REV-P4 — Fase D (deploy e validação em produção) — BLOQUEADA
+
+Data: **25/09/2026**.
+
+### Pré-requisitos
+
+| # | Pré-requisito | Resultado | Evidência |
+|---|---|---|---|
+| 2 | `5fe6fba` em origin/main | ✅ | `git merge-base --is-ancestor 5fe6fba origin/main` |
+| 3 | Frontend publicado no commit certo | ✅ | `/descobertas` exibe os textos novos ("162 por campeonato", "Nenhum padrão histórico publicado"), sem os antigos |
+| 3 | Backend publicado no commit certo | ✅ | comportamento novo do B2 em produção (abaixo); `POST /discovery/run` sem token → `401 {"error":"token ausente"}` |
+| 1 | `ADMIN_EMAILS` configurado no web service | ❌ **FALHOU** | ver abaixo |
+| 4 | Sessão de admin renovada | ❌ bloqueado pelo 1 | — |
+
+**Por que o pré-requisito 1 é dado como falho.** Na sessão do Daniel no Chrome, lida
+pela extensão, `cornerlab_user.is_admin` = **`false`**. O valor **presente e falso**
+(não ausente) indica login feito **depois** do deploy, porque sessões anteriores nem
+têm o campo. Então o backend avaliou o e-mail e respondeu "não é admin". A causa mais
+provável é que `ADMIN_EMAILS` não esteja definido no `cornerlab-backend`, ou não tenha
+entrado em vigor; o log de inicialização da API diria "ADMIN_EMAILS vazio". O botão
+"Procurar agora" não aparece, coerente com isso. **Nenhuma varredura foi disparada.**
+
+**Neon.** A tentativa de rodar as consultas de `worker_runs` e de contagem de partidas
+pelo navegador integrado caiu na tela de login do Neon (sem sessão). Não foi feito
+login com senha; **as consultas não foram executadas**.
+
+### Validado em produção antes do bloqueio (anônimo, limite de 90 dias)
+
+**B2 — janela em regra de partida.** Brasileirão 2026, escanteios, `last_n = 2`:
+
+| Recorte | Partidas | Duplicadas | Observação |
+|---|---|---|---|
+| Qualquer mando | **21** | 0 | todas representadas pelo mandante; datas **12/09 a 20/09** |
+| Só casa | 19 | 0 | todas em casa |
+| Só fora | 21 | 0 | todas fora |
+| Vitória (equipe) | 40 observações em **21 partidas** | — | 19 casa + 21 fora |
+
+As regras de partida e de equipe selecionaram **as mesmas 21 partidas** — checagem
+cruzada independente. A regra antiga (últimos 2 jogos **em casa** de cada equipe)
+voltaria cerca de 4 rodadas, até o fim de agosto. Uma equipe pode aparecer em até 3
+partidas: um jogo mais antigo seu entra quando está entre os 2 últimos do adversário, o
+que é a semântica definida ("entra se estiver na janela de qualquer das duas equipes").
+Troca de temporada: não testável anonimamente (o limite de 90 dias corta 2024 inteira);
+coberta por `TestB2_SemMisturaDeTemporada`.
+
+**B2b — determinismo.** `last_n = 10`, **20 execuções idênticas → 1 resultado único**
+nos dois casos:
+
+| Caso | n | acertos/erros | seq. acertos/erros | drawdown | lucro | ROI |
+|---|---|---|---|---|---|---|
+| Escanteios (odd 1,50) | 100 | 67/33 | 10/3 | 650 | 50 | 0,5 % |
+| Vitória (odd 1,80) | 195 | 65/130 | 2/9 | 7.840 | −7.800 | −40 % |
+
+Ids e ordem idênticos em todas as execuções (primeiras: 16440, 16442, 16444, 16446…).
+
+### O que falta para destravar
+
+1. Definir `ADMIN_EMAILS` no web service `cornerlab-backend` do Render com o e-mail do
+   administrador; salvar (o Render reinicia o serviço); confirmar no log que **não**
+   aparece "ADMIN_EMAILS vazio".
+2. Sair e entrar de novo no CornerLab; `is_admin` precisa passar a `true`.
+3. Refazer a validação: botão, execução manual única, funil.
+4. Consultas de `worker_runs` e de partidas: rodadas por quem tiver sessão no Neon.
+
+## REV-P4 = PARCIAL — bloqueado por ADMIN_EMAILS (is_admin = false após login pós-deploy)
